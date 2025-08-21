@@ -1,0 +1,78 @@
+# Cosmological parameters for Planck 2018 data releases
+# https://wiki.cosmos.esa.int/planck-legacy-archive/images/b/be/Baseline_params_table_2018_68pc.pdf
+#
+# Selection and title of entries are based on the `monophonic` code by Oliver Hahn
+# https://bitbucket.org/ohahn/monofonic/
+
+
+# 2.17 base_plikHM_TTTEEE_lowl_lowE_lensing
+["Planck2018EE"]
+H0 = {best = 67.32, mean = 67.36, error = 0.54}
+OMEGA_M = {best = 0.3158, mean = 0.3153, error = 0.0073}
+OMEGA_B = {best = 0.049389, mean = 0.04930, error = 0.00086}
+OMEGA_L = {best = 0.6842, mean = 0.6847, error = 0.0073}
+NS = {best = 0.96605, mean = 0.9649, error = 0.0042}
+AS = {best = 2.1005e-9, mean = 2.100e-9, error = 0.030e-9}
+SIGMA8 = {best = 0.8120, mean = 0.8111, error = 0.0060}
+YHE = {best = 0.245401, mean = 0.245395, error = 0.000060}
+MNU = 0.06
+NNU = 3.046
+ZREI = {best = 7.68, mean = 7.67, error = 0.73}
+TCMB = 2.7255
+KPIVOT = 0.05
+W0 = -1.0
+WA = 0.0
+
+# 2.18 base_plikHM_TTTEEE_lowl_lowE_lensing_post_BAO
+["Planck2018EE+BAO"]
+H0 = {best = 67.702, mean = 67.66, error = 0.42}
+OMEGA_M = {best = 0.3106, mean = 0.3111, error = 0.0056}
+OMEGA_B = {best = 0.048972, mean = 0.04897, error = 0.00068}
+OMEGA_L = {best = 0.6894, mean = 0.6889, error = 0.0056}
+NS = {best = 0.96824, mean = 0.9665, error = 0.0038}
+AS = {best = 2.1073e-9, mean = 2.105e-9, error = 0.030e-9}
+SIGMA8 = {best = 0.8110, mean = 0.8102, error = 0.0060}
+YHE = {best = 0.245425, mean = 0.245414, error = 0.000055}
+MNU = 0.06
+NNU = 3.046
+ZREI = {best = 7.90, mean = 7.82, error = 0.71}
+TCMB = 2.7255
+KPIVOT = 0.05
+W0 = -1.0
+WA = 0.0
+
+# 2.19 base_plikHM_TTTEEE_lowl_lowE_lensing_post_Pantheon
+["Planck2018EE+SN"]
+H0 = {best = 67.49, mean = 67.48, error = 0.50}
+OMEGA_M = {best = 0.3134, mean = 0.3136, error = 0.0068}
+OMEGA_B = {best = 0.049195, mean = 0.04917, error = 0.00079}
+OMEGA_L = {best = 0.6866, mean = 0.6864, error = 0.0068}
+NS = {best = 0.96654, mean = 0.9655, error = 0.0041}
+AS = {best = 2.1020e-9, mean = 2.102e-9, error = 0.030e-9}
+SIGMA8 = {best = 0.8111, mean = 0.8108, error = 0.0060}
+YHE = {best = 0.245411, mean = 0.245403, error = 0.000058}
+MNU = 0.06
+NNU = 3.046
+ZREI = {best = 7.75, mean = 7.73, error = 0.73}
+TCMB = 2.7255
+KPIVOT = 0.05
+W0 = -1.0
+WA = 0.0
+
+# 2.20 base_plikHM_TTTEEE_lowl_lowE_lensing_post_BAO_Pantheon
+["Planck2018EE+BAO+SN"]
+H0 = {best = 67.742, mean = 67.72, error = 0.40}
+OMEGA_M = {best = 0.3099, mean = 0.3103, error = 0.0054}
+OMEGA_B = {best = 0.048891, mean = 0.04891, error = 0.00064}
+OMEGA_L = {best = 0.6901, mean = 0.6897, error = 0.0054}
+NS = {best = 0.96822, mean = 0.9668, error = 0.0037}
+AS = {best = 2.1064e-9, mean = 2.105e-9, error = 0.030e-9}
+SIGMA8 = {best = 0.8105, mean = 0.8100, error = 0.0060}
+YHE = {best = 0.245421, mean = 0.245418, error = 0.000054}
+MNU = 0.06
+NNU = 3.046
+ZREI = {best = 7.89, mean = 7.85, error = 0.70}
+TCMB = 2.7255
+KPIVOT = 0.05
+W0 = -1.0
+WA = 0.0

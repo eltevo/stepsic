@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stepsic"
+version = "2.0.0"
+authors = [
+  { name = "Gabor Racz", email = "gabor.racz@helsinki.fi" },
+  { name = "Balazs Pal", email = "pal.balazs@ttk.elte.hu" }
+]
+description = "StePS cosmological initial condition generator"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "toml",
+  "tabulate",
+  "h5py",
+  "numpy",
+  "scipy",
+  "astropy",
+  "camb",
+  "colossus"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/eltevo/StePS/"
