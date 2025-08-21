@@ -108,16 +108,17 @@ def main():
     if params['TYPE'] == 'glass':
         ic_orig = CosmoData.load_snapshot(Path(params['INPUT_GLASS']))
         ic_orig.to_internal_units(params)
-        ic_orig.rescale_snapshot_mass(params)
-        ic_orig.center_snapshot(params)
-        ic = copy.deepcopy(ic_orig)  # The output IC will be stored here
     if params['TYPE'] == 'grid':
-        raise NotImplementedError
-        x, _ = create_grid(nvox, dk)
+        nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
+        pos, _ = create_grid(nvox, dk)
+        ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
     elif params['TYPE'] == 'random':
-        raise NotImplementedError
-        x = create_particles(
+        pos = create_particles(
             npart=params['NPART'], Lbox=params['LBOX'], seed=params['SEED'])
+        ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
+    ic_orig.rescale_snapshot_mass(params)
+    ic_orig.center_snapshot(params)
+    ic = copy.deepcopy(ic_orig)  # The output IC will be stored here
 
     log.info('Calculating the displacement and velocity field...')
     if params['NMESH'] == 0:
