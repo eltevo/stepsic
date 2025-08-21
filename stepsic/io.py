@@ -266,9 +266,13 @@ class CosmoIO:
             log.info(f'Opening HDF file {path}...')
             with h5py.File(path, 'r') as hdf:
                 for ai in args:
-                    arguments[ai].append(hdf[f'/PartType{part_type}/{ai}'][:])
+                    g = f'/PartType{part_type}/{ai}'
+                    if g not in hdf:
+                        log.warning(f'Group {g} not found in HDF5 file {path}.')
+                        continue
+                    arguments[ai].append(hdf[g][:])
                     dtypes[ai] = hdf[f'/PartType{part_type}/{ai}'].dtype
-                if 'Masses' in args:
+                if 'Masses' in args and 'Masses' in hdf[f'/PartType{part_type}']:
                     N_part = hdf['/Header'].attrs['NumPart_ThisFile'][part_type]
                     mass_part_type = hdf['/Header'].attrs['MassTable'][part_type]
                     if np.all(arguments['Masses'] == 0):
@@ -276,7 +280,10 @@ class CosmoIO:
                     if kwargs.get('constant_res', False):
                         arguments['Masses'] *= mass_part_type
         for ai in args:
-            arguments[ai] = np.concatenate(arguments[ai], dtype=dtypes[ai])
+            if not arguments[ai]:
+                arguments[ai] = None
+            else:
+                arguments[ai] = np.concatenate(arguments[ai], dtype=dtypes[ai])
         return arguments.values()
     
     @staticmethod
