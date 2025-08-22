@@ -180,7 +180,7 @@ class ColossusCosmology:
         Parameters
         ----------
         z : float
-            Redshift(s) at which to compute the growth factor.
+            Redshift at which to compute the growth factor.
         
         Returns
         -------
@@ -335,4 +335,5 @@ class CAMBCosmology:
         kh, _, pk = results.get_matter_power_spectrum(
             minkh=kmin, maxkh=kmax, npoints=npoints, var1=component, var2=component)
         pk3 = pk * kh**3/(2*np.pi**2)  # Save (log(kh), log(pk3)).T for StePS/Gadget
+        #np.savetxt(f'output/power_spectrum_z{z}.txt', np.log10(kh, pk, pk3).T)
         return kh, pk, pk3

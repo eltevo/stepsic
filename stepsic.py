@@ -103,6 +103,8 @@ def main():
         kh_log, pk3_log = np.genfromtxt(params['INPUT_SPECTRUM'])
         kh, pk3 = np.exp(kh_log), np.exp(pk3_log)
         pk = pk3 / (kh**3/(2*np.pi**2))
+    # CAMB uses [U/h] units, so we need to scale back to physical units
+    kh, pk, pk3 = kh/params['H'], pk/params['H']**3, pk3/params['H']**3
 
     # Construct the initial conditions
     if params['TYPE'] == 'glass':
@@ -196,13 +198,14 @@ def main():
         ic.vel = vpert
 
     # Prepare the IC for final output
+    ic.vel /= np.sqrt(params['SCALE'])  # Gadget/StePS convention
     ic.periodic_shift(params)
     ic.from_internal_units(params)
 
     if not params['COMOVING']:
         log.info('Converting the IC to proper coordinates...')
         ic.pos *= params['SCALE']
-        ic.vel *= np.sqrt(params['SCALE'])  # StePS/Gadget convention
+        ic.vel *= np.sqrt(params['SCALE'])
         ic.vel += ic.pos * Hz
 
     if params['HINDEPENDENT']:
