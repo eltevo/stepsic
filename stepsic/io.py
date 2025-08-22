@@ -310,11 +310,11 @@ class CosmoIO:
         data : stepsic.CosmoData
             The cosmological data to save.
 
-        .. Optional Parameters :
-        header arguments
+        .. Optional Parameters:
+        *header arguments*
             Additional parameters for the snapshot header. TODO.
         part_type : int
-            The particle type to save (e.g., 1 for dark matter in Gadget).
+            The particle type to save (e.g. 1 for dark matter in Gadget).
         dtype : numpy.dtype
             The data type to use for the snapshot positions, velocities
             and masses.
@@ -324,9 +324,10 @@ class CosmoIO:
             part_type = kwargs.get('part_type', 1)
             dtype = kwargs.get('dtype', np.float32)
 
-            h = hdf_file.create_group("/Header")
             num_part_array = np.zeros(6, dtype=np.uint32)
             num_part_array[part_type] = data.N_part
+
+            h = hdf_file.create_group("/Header")
             h.attrs['NumPart_ThisFile'] = num_part_array
             h.attrs['NumPart_Total'] = num_part_array
             h.attrs['NumPart_Total_HighWord'] = np.zeros(6, dtype=np.uint32)

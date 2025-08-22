@@ -103,8 +103,8 @@ def main():
         kh_log, pk3_log = np.genfromtxt(params['INPUT_SPECTRUM'])
         kh, pk3 = np.exp(kh_log), np.exp(pk3_log)
         pk = pk3 / (kh**3/(2*np.pi**2))
-    # CAMB uses [U/h] units, so we need to scale back to physical units
-    kh, pk, pk3 = kh/params['H'], pk/params['H']**3, pk3/params['H']**3
+    # CAMB uses [U/h] units
+    #kh, pk, pk3 = kh/params['H'], pk/params['H']**3, pk3/params['H']**3
 
     # Construct the initial conditions
     if params['TYPE'] == 'glass':
@@ -151,14 +151,14 @@ def main():
             if params['LPTORDER'] == 1:
                 # Use 1st order Lagrangian PT (Zel'dovich approximation)
                 xpert, vpert = lpt1(
-                    ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk, g1=g1, aHf1=aHf1,
-                    counter=params['COUNTER'])
+                    ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk,
+                    g1=g1, aHf1=aHf1, counter=params['COUNTER'])
                 log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='1LPT')
             elif params['LPTORDER'] == 2:
                 # Use 2nd order Lagrangian PT
                 xpert, vpert = lpt2(
-                    ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk, g1=g1, g2=g2,
-                    aHf1=aHf1, aHf2=aHf2, counter=params['COUNTER'])
+                    ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk,
+                    g1=g1, g2=g2, aHf1=aHf1, aHf2=aHf2, counter=params['COUNTER'])
                 log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='2LPT')
 
             # Calculating the displacement field for every grid
@@ -185,33 +185,36 @@ def main():
         if params['LPTORDER'] == 1:
             # Use 1st order Lagrangian PT (Zel'dovich approximation)
             xpert, vpert = lpt1(
-                ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk, g1=g1, aHf1=aHf1,
-                counter=params['COUNTER'])
+                ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk,
+                g1=g1, aHf1=aHf1, counter=params['COUNTER'])
             log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='1LPT')
         elif params['LPTORDER'] == 2:
             # Use 2nd order Lagrangian PT
             xpert, vpert = lpt2(
-                ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk, g1=g1, g2=g2,
-                aHf1=aHf1, aHf2=aHf2, counter=params['COUNTER'])
+                ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk,
+                g1=g1, g2=g2, aHf1=aHf1, aHf2=aHf2, counter=params['COUNTER'])
             log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='2LPT')
         ic.pos = xpert
         ic.vel = vpert
 
     # Prepare the IC for final output
+    ic.vel /= params['H']  # Convert to [km/s] in all cases
     ic.vel /= np.sqrt(params['SCALE'])  # Gadget/StePS convention
     ic.periodic_shift(params)
-    ic.from_internal_units(params)
+
+    if params['TYPE'] == 'glass':
+        ic.from_internal_units(params)
+
+    if not params['HINDEPENDENT']:
+        log.info('Converting the IC to H0 dependent units...')
+        ic.pos *= params['H']
+        ic.mass *= params['H']
 
     if not params['COMOVING']:
         log.info('Converting the IC to proper coordinates...')
         ic.pos *= params['SCALE']
         ic.vel *= np.sqrt(params['SCALE'])
         ic.vel += ic.pos * Hz
-
-    if params['HINDEPENDENT']:
-        log.info('Converting the IC to H0 independent units...')
-        ic.pos *= params['H']
-        ic.mass *= params['H']
 
     # Save the IC to a file
     header = {

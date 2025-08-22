@@ -65,7 +65,7 @@ def lpt1(x, delta_k, nvox, dk, g1, aHf1, counter=False):
     Parameters
     ----------
     x : ndarray of shape (N, 3)
-        Initial unperturbed particle positions in physical [Mpc].
+        Initial unperturbed particle positions in physical [Mpc/h].
     delta_k : ndarray
         A 3D complex-valued array of shape (Nx, Ny, Nz//2+1) representing
         the Fourier modes of the overdensity field.
@@ -91,7 +91,7 @@ def lpt1(x, delta_k, nvox, dk, g1, aHf1, counter=False):
     Returns
     -------
     xpert : ndarray of shape (N, 3)
-        Perturbed particle positions in physical [Mpc].
+        Perturbed particle positions in physical [Mpc/h].
     vpert : ndarray of shape (N, 3)
         Particle peculiar velocities in [km/s]. The velocity is computed
         according to the specific formula implemented in this function:
@@ -152,7 +152,7 @@ def lpt1(x, delta_k, nvox, dk, g1, aHf1, counter=False):
         disp_field_interp[:, i] = interpolate_field(x, disp_field[i], dk)
     xpert = x + g1 * disp_field_interp  # Bernardeau et al. 2002, eq. 98
     vpert = g1 * aHf1 * disp_field_interp  # Bernardeau et al. 2002, eq. 99
-    return xpert, vpert  # Mpc, km/s
+    return xpert, vpert
 
 
 def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False):
@@ -230,7 +230,7 @@ def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False):
     Parameters
     ----------
     x : ndarray of shape (N, 3)
-        Initial unperturbed particle positions in physical [Mpc].
+        Initial unperturbed particle positions in physical [Mpc/h].
     delta_k : ndarray
         A 3D complex-valued array of shape (Nx, Ny, Nz//2+1) representing
         the Fourier modes of the overdensity field.
@@ -261,7 +261,7 @@ def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False):
     Returns
     -------
     xpert : ndarray of shape (N, 3)
-        Perturbed particle positions in physical [Mpc].
+        Perturbed particle positions in physical [Mpc/h].
     vpert : ndarray of shape (N, 3)
         Particle peculiar velocities in [km/s], computed as:
 
@@ -352,4 +352,4 @@ def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False):
     
     xpert = x + g1 * disp_field1_interp + g2 * disp_field2_interp
     vpert = g1 * aHf1 * disp_field1_interp + g2 * aHf2 * disp_field2_interp
-    return xpert, vpert  # Mpc, km/s
+    return xpert, vpert
