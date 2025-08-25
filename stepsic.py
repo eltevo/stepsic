@@ -66,6 +66,32 @@ def main():
         raise ValueError('Error: missing toml file!\nUsage: ./StePS_IC.py <input toml file>\nExiting.')
     params = CosmoParameters(path=Path(sys.argv[1])).get_parameters()
 
+    if not params['HINDEPENDENT']:
+        params['LBOX'] *= params['H']
+        params['COI'] *= params['H']
+        params['R_3D'] *= params['H']
+        params['D_4D'] *= params['H']
+
+    # Construct the initial conditions
+    if params['TYPE'] == 'glass':
+        ic_orig = CosmoData.load_snapshot(Path(params['INPUT_GLASS']))
+        ic_orig.to_internal_units(params)
+        if not params['HINDEPENDENT']:
+            log.info('Converting the IC to H0 independent units...')
+            ic_orig.pos *= params['H']
+            ic_orig.mass *= params['H']
+    if params['TYPE'] == 'grid':
+        nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
+        pos, _ = create_grid(nvox, dk)
+        ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
+    elif params['TYPE'] == 'random':
+        pos = create_particles(
+            npart=params['NPART'], Lbox=params['LBOX'], seed=params['SEED'])
+        ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
+    ic_orig.rescale_snapshot_mass(params)
+    ic_orig.center_snapshot(params)
+    ic = copy.deepcopy(ic_orig)  # The output IC will be stored here
+
     # Initialize cosmology models and calculate growth parameters
     cosmo_colossus = ColossusCosmology(
         H0=params['H0'], Om0=params['OMEGA_M'], Ob0=params['OMEGA_B'],
@@ -105,26 +131,6 @@ def main():
         pk = pk3 / (kh**3/(2*np.pi**2))
     # CAMB uses [U/h] units
     #kh, pk, pk3 = kh/params['H'], pk/params['H']**3, pk3/params['H']**3
-
-    # Construct the initial conditions
-    if params['TYPE'] == 'glass':
-        ic_orig = CosmoData.load_snapshot(Path(params['INPUT_GLASS']))
-        ic_orig.to_internal_units(params)
-        if not params['HINDEPENDENT']:
-            log.info('Converting the IC to H0 independent units...')
-            ic_orig.pos *= params['H']
-            ic_orig.mass *= params['H']
-    if params['TYPE'] == 'grid':
-        nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
-        pos, _ = create_grid(nvox, dk)
-        ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
-    elif params['TYPE'] == 'random':
-        pos = create_particles(
-            npart=params['NPART'], Lbox=params['LBOX'], seed=params['SEED'])
-        ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
-    ic_orig.rescale_snapshot_mass(params)
-    ic_orig.center_snapshot(params)
-    ic = copy.deepcopy(ic_orig)  # The output IC will be stored here
 
     log.info('Calculating the displacement and velocity field...')
     if params['NMESH'] == 0:
@@ -214,6 +220,9 @@ def main():
         ic.pos /= params['H']
         ic.mass /= params['H']
         params['LBOX'] /= params['H']
+        params['COI'] /= params['H']
+        params['R_3D'] /= params['H']
+        params['D_4D'] /= params['H']
 
     if not params['COMOVING']:
         log.info('Converting the IC to proper coordinates...')
