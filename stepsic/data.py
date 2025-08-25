@@ -106,7 +106,6 @@ class CosmoData:
         midx : int, optional; default=6
             Index of the mass column in the data array.
         '''
-        log.info('Rescaling the particle masses to fit the cosmological parameters...')
         M_tot = np.sum(self.mass)
         if params['GEOMETRY'] == 'spherical':
             V_sim = 4/3 * params['R_3D']**3 * np.pi
@@ -115,6 +114,7 @@ class CosmoData:
         elif params['GEOMETRY'] == 'cubical':
             V_sim = np.prod(params['LBOX'])
         rho_crit = 3 * params['H0']**2 / (8*np.pi) / UNIT_V / UNIT_V
+        rho_crit /= params['H']**2  # Since H0 is in km/s/Mpc instead of km/s/(Mpc/h)
         rho_mean = params['OMEGA_M'] * rho_crit
         omega_m_box = (M_tot / V_sim) / rho_crit
         if np.isclose(omega_m_box, params['OMEGA_M'], rtol=1e-9):
@@ -122,6 +122,9 @@ class CosmoData:
         else:
             self.mass *= params['OMEGA_M'] / omega_m_box
             log.info(f'Particle masses were rescaled to fit Omega_m = {params["OMEGA_M"]}')
+        log.info(f': {np.sum(self.mass)*1e11:.6e} Msol')
+        log.info(f'Minimal particle mass: {np.min(self.mass)*1e11:.6e} Msol')
+        log.info(f'Maximal particle mass: {np.max(self.mass)*1e11:.6e} Msol')
         log.info(f'Total mass in the box: {np.sum(self.mass)*1e11:.6e} Msol')
         # Calculate mass statistics after rescaling
         self.mass_list = np.unique(self.mass)
