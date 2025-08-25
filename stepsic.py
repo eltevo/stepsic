@@ -112,8 +112,8 @@ def main():
         ic_orig.to_internal_units(params)
         if not params['HINDEPENDENT']:
             log.info('Converting the IC to H0 independent units...')
-            ic_orig.pos /= params['H']
-            ic_orig.mass /= params['H']
+            ic_orig.pos *= params['H']
+            ic_orig.mass *= params['H']
     if params['TYPE'] == 'grid':
         nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
         pos, _ = create_grid(nvox, dk)
@@ -211,8 +211,8 @@ def main():
 
     if not params['HINDEPENDENT']:
         log.info('Converting the IC to H0 dependent units...')
-        ic.pos *= params['H']
-        ic.mass *= params['H']
+        ic.pos /= params['H']
+        ic.mass /= params['H']
 
     if not params['COMOVING']:
         log.info('Converting the IC to proper coordinates...')
