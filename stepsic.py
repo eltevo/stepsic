@@ -213,6 +213,7 @@ def main():
         log.info('Converting the IC to H0 dependent units...')
         ic.pos /= params['H']
         ic.mass /= params['H']
+        params['LBOX'] /= params['H']
 
     if not params['COMOVING']:
         log.info('Converting the IC to proper coordinates...')
