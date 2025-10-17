@@ -76,3 +76,22 @@ TCMB = 2.7255
 KPIVOT = 0.05
 W0 = -1.0
 WA = 0.0
+
+# Dark Energy Survey Year Three (DES Y3; Abbott et al. 2022) ‘3 × 2pt + All Ext.’ (D3A)
+# https://journals.aps.org/prd/abstract/10.1103/PhysRevD.105.023520
+["D3A-LCDM"]
+H0 = {best = 68.1, mean = 68.0, error = 0.4}
+OMEGA_M = {best = 0.306, mean = 0.306, error = 0.005}
+OMEGA_B = {best = 0.0486, mean = 0.0487, error = 0.0005}
+OMEGA_L = {best = 0.6901, mean = 0.694, error = 0.0054}
+NS = {best = 0.967, mean = 0.969, error = 0.004}
+AS = {best = 2.084472e-09, mean = 2.084472e-09, error = 0.040e-9}
+SIGMA8 = {best = 0.807, mean = 0.804, error = 0.0080}
+YHE = {best = 0.245421, mean = 0.245418, error = 0.000054}
+MNU = 0.06
+NNU = 3.046
+ZREI = {best = 7.89, mean = 7.85, error = 0.70}
+TCMB = 2.7255
+KPIVOT = 0.05
+W0 = -1.0
+WA = 0.0
