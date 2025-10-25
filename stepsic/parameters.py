@@ -170,17 +170,28 @@ class CosmoParameters:
         if self.P['BIN_MODE'] not in ['omega', 'volume']:
             raise ValueError(f"Error: unknown binning mode `{self.P['BIN_MODE']}`!\nExiting.")
 
+        self._check_boolean('HINDEPENDENT')
+        unit = 'Mpc/h' if self.P['HINDEPENDENT'] else 'Mpc'
+
         self._check_scalar('NMESH', dtype=int)
         self._check_array_or_scalar('LBOX', length=3)
+        if not self.P['HINDEPENDENT']:
+            self.P['LBOX'] *= self.P['H']
         self._check_array_or_scalar('PERIODIC', length=3, dtype=bool)
         self._check_array_or_scalar('COI', length=3)
+        if not self.P['HINDEPENDENT']:
+            self.P['COI'] *= self.P['H']
         self._check_scalar('LPTORDER', dtype=int)
 
         self._check_scalar('REDSHIFT')
         self.P['SCALE'] = 1.0 / (self.P['REDSHIFT'] + 1.0)
 
         self._check_scalar('R_3D')
+        if not self.P['HINDEPENDENT']:
+            self.P['R_3D'] *= self.P['H']
         self._check_scalar('D_4D')
+        if not self.P['HINDEPENDENT']:
+            self.P['D_4D'] *= self.P['H']
         self._check_scalar('NRBINS', dtype=int)
 
         self._check_string('TYPE')
@@ -206,7 +217,6 @@ class CosmoParameters:
 
         self._check_boolean('SPHEREMODE')
         self._check_boolean('COMOVING')
-        self._check_boolean('HINDEPENDENT')
 
         self._check_boolean('COUNTER')
         self._check_scalar('PHASE_SHIFT')
@@ -227,13 +237,13 @@ class CosmoParameters:
         -------------
         Random seed:                   {self.P['SEED']:d}
         Mesh size:                     {self.P['NMESH']} voxels
-        Box size:                      {self.P['LBOX']} Mpc/h
+        Box size:                      {self.P['LBOX']} {unit}
         Periodicity along x-y-z axis:  {self.P['PERIODIC']}
         Target redshift:               {self.P['REDSHIFT']:.3f}
         Target scale factor:           {self.P['SCALE']:.6f}
-        Center of interest:            {self.P['COI']} Mpc/h
-        Euclidean simulation radius:   {self.P['R_3D']} Mpc/h
-        Compact. simulation diameter:  {self.P['D_4D']} Mpc/h
+        Center of interest:            {self.P['COI']} {unit}
+        Euclidean simulation radius:   {self.P['R_3D']} {unit}
+        Compact. simulation diameter:  {self.P['D_4D']} {unit}
         Number of grid samples:        {self.P['NGRIDSAMPLES']:d}
         Glass input file:              {self.P['INPUT_GLASS']}
         IC output directory:           {self.P['IC_DIR']}

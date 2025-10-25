@@ -200,7 +200,7 @@ def fourier_grid(nvox, dk, hermitian=False):
           - :math:`(3, {N_x}, {N_y}, {N_z})` if ``hermitian`` is `False`.
         Each sub-array corresponds to the ``x``, ``y``, or ``z`` component
         of the wavevector.
-    
+
     kmod : ndarray
         The magnitude of the wavevector at each grid point, computed as
         :math:`\|\mathbf{k}\| = \sqrt{k_x^2 + k_y^2 + k_z^2}`.
@@ -326,6 +326,6 @@ def create_nres_mass_map(n_grid_samples, mass_list, M_box, Lbox):
 
     log.info('The generated resolution-mass map:')
     print(tabulate([*zip(nres_tab, mass_tab)],
-                   headers=['Resolution', 'Mass [1e11 Msol]'],
+                   headers=['Resolution', 'Mass [1e11 Msol/h]'],
                    floatfmt=('.0f', '.6f')))
     return nres_tab, mass_tab

@@ -66,12 +66,6 @@ def main():
         raise ValueError('Error: missing toml file!\nUsage: ./StePS_IC.py <input toml file>\nExiting.')
     params = CosmoParameters(path=Path(sys.argv[1])).get_parameters()
 
-    if not params['HINDEPENDENT']:
-        params['LBOX'] *= params['H']
-        params['COI'] *= params['H']
-        params['R_3D'] *= params['H']
-        params['D_4D'] *= params['H']
-
     # Construct the initial conditions
     if params['TYPE'] == 'glass':
         ic_orig = CosmoData.load_snapshot(Path(params['INPUT_GLASS']))
@@ -88,6 +82,7 @@ def main():
         pos = create_particles(
             npart=params['NPART'], Lbox=params['LBOX'], seed=params['SEED'])
         ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
+    ic_orig.rescale_snapshot_size(params)
     ic_orig.rescale_snapshot_mass(params)
     ic_orig.center_snapshot(params)
     ic = copy.deepcopy(ic_orig)  # The output IC will be stored here
