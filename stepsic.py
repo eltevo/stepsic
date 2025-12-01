@@ -74,6 +74,7 @@ def main():
             log.info('Converting the IC to H0 independent units...')
             ic_orig.pos *= params['H']
             ic_orig.mass *= params['H']
+        ic_orig.rescale_snapshot_size(params)
     if params['TYPE'] == 'grid':
         nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
         pos, _ = create_grid(nvox, dk)
@@ -82,7 +83,6 @@ def main():
         pos = create_particles(
             npart=params['NPART'], Lbox=params['LBOX'], seed=params['SEED'])
         ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
-    ic_orig.rescale_snapshot_size(params)
     ic_orig.rescale_snapshot_mass(params)
     ic_orig.center_snapshot(params)
     ic = copy.deepcopy(ic_orig)  # The output IC will be stored here

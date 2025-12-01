@@ -95,6 +95,18 @@ class CosmoData:
         CosmoIO.save_snapshot(path, self, **io_kwargs)
         log.info(f'Snapshot saved to {path}.')
 
+    def rescale_snapshot_size(self, params):
+        '''
+        Rescale the particle positions to fit the input box size.
+        
+        Parameters
+        ----------
+        params : dict
+            Dictionary containing the cosmological parameters.
+        '''
+        return NotImplementedError
+        self.pos *= Lbox_new / params['LBOX']
+
     def rescale_snapshot_mass(self, params):
         '''
         Rescale the particle masses to fit the cosmological parameters.

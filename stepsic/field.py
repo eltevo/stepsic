@@ -292,6 +292,7 @@ def generate_delta_k(kh, pk, nvox, dk, *, field=None, seed=None):
     # Sirko 2005; Bagla & Padmanabhan 1997; Klypin & Holtzman 1997
     return field * np.sqrt(pk_grid / dk**3)
 
+
 def create_nres_mass_map(n_grid_samples, mass_list, M_box, Lbox):
     '''
     Creates a lookup table for the number of voxels per mass bin
