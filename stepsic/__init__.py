@@ -5,8 +5,9 @@ StePS initial-condition generator package.
 from textwrap import dedent
 
 __version__ = '2.0.0'
-__year__ = '2017-2025'
-__authors__ = ['Gabor Racz', 'Balazs Pal']
+__year__ = '2017-2026'
+__authors__ = ['Balazs Pal', 'Gabor Racz']
+__programname__ = "stepsic.py"
 
 
 def _make_header(Nart: int = 79, Ncop: int = 79, Nwar: int = 79):
@@ -19,7 +20,7 @@ def _make_header(Nart: int = 79, Ncop: int = 79, Nwar: int = 79):
     \t|___/\__\___| .__/|___/_|\___|
     \t            | |               
     \t            |_|               
-    stepsic {__version__}
+    {__programname__} {__version__}
     \tAn IC generator python script for
     \tSTEreographically Projected cosmological Simulations
     ''')
@@ -33,10 +34,8 @@ def _make_header(Nart: int = 79, Ncop: int = 79, Nwar: int = 79):
     # ''')
     cop = dedent(f'''
     Copyright (C) ({__year__}) {', '.join(__authors__)}
-    \tJet Propulsion Laboratory, California Institute of Technology
     \tDepartment of Physics of Complex Systems, Eotvos Lorand University
     \tHeavy-ion Physics Research Group, HUN-REN Wigner RCP
-    \tDepartment of Physics & Astronomy, Johns Hopkins University
     \tDepartment of Physics, University of Helsinki
     ''')
     war = dedent(f'''

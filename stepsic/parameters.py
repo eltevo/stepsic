@@ -139,6 +139,7 @@ class CosmoParameters:
         Cosmological Parameters
         -----------------------
         H0:                {self.P['H0']:.3f} km s^-1 Mpc^-1
+        h:                 {self.P['H']:.6f}
         Omega_m:           {self.P['OMEGA_M']:.6f}
         Omega_m h^2:       {self.P['OMMH2']:.6f}
         Omega_c h^2:       {self.P['OMCH2']:.6f}
@@ -176,11 +177,11 @@ class CosmoParameters:
         self._check_scalar('NMESH', dtype=int)
         self._check_array_or_scalar('LBOX', length=3)
         if not self.P['HINDEPENDENT']:
-            self.P['LBOX'] *= self.P['H']
+            self.P['LBOX'] *= self.P['H'] # convert to internal (/h) units
         self._check_array_or_scalar('PERIODIC', length=3, dtype=bool)
         self._check_array_or_scalar('COI', length=3)
         if not self.P['HINDEPENDENT']:
-            self.P['COI'] *= self.P['H']
+            self.P['COI'] *= self.P['H'] # convert to internal (/h) units
         self._check_scalar('LPTORDER', dtype=int)
 
         self._check_scalar('REDSHIFT')
@@ -188,10 +189,10 @@ class CosmoParameters:
 
         self._check_scalar('R_3D')
         if not self.P['HINDEPENDENT']:
-            self.P['R_3D'] *= self.P['H']
+            self.P['R_3D'] *= self.P['H'] # convert to internal (/h) units
         self._check_scalar('D_4D')
         if not self.P['HINDEPENDENT']:
-            self.P['D_4D'] *= self.P['H']
+            self.P['D_4D'] *= self.P['H'] # convert to internal (/h) units
         self._check_scalar('NRBINS', dtype=int)
 
         self._check_string('TYPE')
@@ -222,6 +223,8 @@ class CosmoParameters:
 
         self._check_boolean('SPHEREMODE')
         self._check_boolean('COMOVING')
+        if not self.P['COMOVING'] and self.P['GEOMETRY'] != 'spherical':
+            raise ValueError("Error: non-comoving simulations are only supported in 'spherical' geometry!\nExiting.")
 
         self._check_boolean('COUNTER')
         self._check_scalar('PHASE_SHIFT')
@@ -237,24 +240,46 @@ class CosmoParameters:
         self._check_scalar('UNIT_M_IN_G')
         self._check_scalar('UNIT_V_IN_KMPS')
 
-        text = dedent(f'''
-        IC parameters
-        -------------
-        Random seed:                   {self.P['SEED']:d}
-        Mesh size:                     {self.P['NMESH']} voxels
-        Box size:                      {self.P['LBOX']} {unit}
-        Periodicity along x-y-z axis:  {self.P['PERIODIC']}
-        Target redshift:               {self.P['REDSHIFT']:.3f}
-        Target scale factor:           {self.P['SCALE']:.6f}
-        Center of interest:            {self.P['COI']} {unit}
-        Euclidean simulation radius:   {self.P['R_3D']} {unit}
-        Compact. simulation diameter:  {self.P['D_4D']} {unit}
-        Number of grid samples:        {self.P['NGRIDSAMPLES']:d}
-        Glass input file:              {self.P['INPUT_GLASS']}
-        IC output directory:           {self.P['IC_DIR']}
-        IC name prefix:                {self.P['IC_PREFIX']}
-        Comoving IC:                   {self.P['COMOVING']}
-        Counter phase simulation:      {self.P['COUNTER']}
-        Phase shift:                   {self.P['PHASE_SHIFT']:.2f} degrees
-        ''')
+        if self.P['HINDEPENDENT']:
+            text = dedent(f'''
+            IC parameters
+            -------------
+            Random seed:                   {self.P['SEED']:d}
+            Mesh size:                     {self.P['NMESH']} voxels
+            Box size:                      {self.P['LBOX']} {unit}
+            Periodicity along x-y-z axis:  {self.P['PERIODIC']}
+            Target redshift:               {self.P['REDSHIFT']:.3f}
+            Target scale factor:           {self.P['SCALE']:.6f}
+            Center of interest:            {self.P['COI']} {unit}
+            Euclidean simulation radius:   {self.P['R_3D']} {unit}
+            Compact. simulation diameter:  {self.P['D_4D']} {unit}
+            Number of grid samples:        {self.P['NGRIDSAMPLES']:d}
+            Glass input file:              {self.P['INPUT_GLASS']}
+            IC output directory:           {self.P['IC_DIR']}
+            IC name prefix:                {self.P['IC_PREFIX']}
+            Comoving IC:                   {self.P['COMOVING']}
+            Counter phase simulation:      {self.P['COUNTER']}
+            Phase shift:                   {self.P['PHASE_SHIFT']:.2f} degrees
+            ''')
+        else:
+            text = dedent(f'''
+            IC parameters
+            -------------
+            Random seed:                   {self.P['SEED']:d}
+            Mesh size:                     {self.P['NMESH']} voxels
+            Box size:                      {np.array2string(self.P['LBOX']/self.P['H'], precision=2, floatmode='fixed')} {unit}\t= {np.array2string(self.P['LBOX'], precision=2, floatmode='fixed')} {unit}/h
+            Periodicity along x-y-z axis:  {self.P['PERIODIC']}
+            Target redshift:               {self.P['REDSHIFT']:.3f}
+            Target scale factor:           {self.P['SCALE']:.6f}
+            Center of interest:            {np.array2string(self.P['COI']/self.P['H'], precision=2, floatmode='fixed')} {unit}\t\t= {np.array2string(self.P['COI'], precision=2, floatmode='fixed')} {unit}/h             
+            Euclidean simulation radius:   {self.P['R_3D']/self.P['H']:.4f} {unit}\t\t\t= {self.P['R_3D']:.4f} {unit}/h
+            Compact. simulation diameter:  {self.P['D_4D']/self.P['H']:.4f} {unit}\t\t\t= {self.P['D_4D']:.4f} {unit}/h
+            Number of grid samples:        {self.P['NGRIDSAMPLES']:d}
+            Glass input file:              {self.P['INPUT_GLASS']}
+            IC output directory:           {self.P['IC_DIR']}
+            IC name prefix:                {self.P['IC_PREFIX']}
+            Comoving IC:                   {self.P['COMOVING']}
+            Counter phase simulation:      {self.P['COUNTER']}
+            Phase shift:                   {self.P['PHASE_SHIFT']:.2f} degrees
+            ''')
         log.info(text)

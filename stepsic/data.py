@@ -39,7 +39,7 @@ class CosmoData:
     data : ndarray of shape (N, 7)
         Array containing the particle data, where N is the number of particles.
     '''
-    def __init__(self, id=None, pos=None, vel=None, mass=None):
+    def __init__(self, id=None, pos=None, vel=None, mass=None, Lbox=None):
         if pos is None:
             raise ValueError('Particle positions must be provided!')
         if id is None:
@@ -52,6 +52,7 @@ class CosmoData:
         self.pos = pos    # Particle positions
         self.vel = vel    # Particle velocities
         self.mass = mass  # Particle masses
+        self.Lbox = Lbox  # Linear size of the simulation volume (in z direction)
 
         # Calculated values
         self.N_part = self.id.size  # Number of particles
@@ -88,7 +89,9 @@ class CosmoData:
     def load_snapshot(cls, path: Path, **io_kwargs):
         '''Load snapshot data from a file.'''
         ids, pos, vel, mass = CosmoIO.load_snapshot(path, **io_kwargs)
-        instance = cls(id=ids, pos=pos, vel=vel, mass=mass)
+        Lbox = CosmoIO.get_box_size(path)
+        log.info(f'Loaded snapshot from {path} with box size {Lbox} (internal units).')
+        instance = cls(id=ids, pos=pos, vel=vel, mass=mass, Lbox=Lbox)
         return instance
     def save_snapshot(self, path: Path, **io_kwargs):
         '''Save the snapshot data to a file.'''
@@ -104,8 +107,19 @@ class CosmoData:
         params : dict
             Dictionary containing the cosmological parameters.
         '''
-        return NotImplementedError
-        self.pos *= Lbox_new / params['LBOX']
+        if params['GEOMETRY'] == 'cylindrical' or params['GEOMETRY'] == 'cubical':
+            log.info('Rescaling the snapshot size to fit the desired box size...')
+            log.info(f'Target box size (along the z axis): {params["LBOX"][2]} (internal units), loaded box size: {self.Lbox} (internal units).')
+            self.pos *= params['LBOX'][2] / self.Lbox
+            self.Lbox = params['LBOX'][2]
+            return
+        elif params['GEOMETRY'] == 'spherical':
+            # no rescaling needed for spherical (R^3) geometry
+            return
+        else:
+            # this should never happen 
+            raise ValueError(f'Unknown geometry type: {params["GEOMETRY"]}')
+            return NotImplementedError
 
     def rescale_snapshot_mass(self, params):
         '''
