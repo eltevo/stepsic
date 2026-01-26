@@ -148,7 +148,6 @@ class CosmoData:
         else:
             self.mass *= params['OMEGA_M'] / omega_m_box
             log.info(f'Particle masses were rescaled to fit Omega_m = {params["OMEGA_M"]}')
-        log.info(f': {np.sum(self.mass)*1e11:.6e} Msol')
         log.info(f'Minimal particle mass: {np.min(self.mass)*1e11:.6e} Msol')
         log.info(f'Maximal particle mass: {np.max(self.mass)*1e11:.6e} Msol')
         log.info(f'Total mass in the box: {np.sum(self.mass)*1e11:.6e} Msol')
