@@ -16,9 +16,9 @@
 
 import numpy as np
 from tabulate import tabulate
-from scipy.interpolate import RegularGridInterpolator, CubicSpline
+from scipy.interpolate import CubicSpline
 
-from stepsic.random import RNG
+from stepsic.rng import RNG
 
 import logging
 log = logging.getLogger(__name__)
@@ -42,43 +42,6 @@ def wrap(x, Lbox):
         The wrapped coordinates.
     '''
     return np.mod(x+Lbox/2, Lbox)
-
-
-def interpolate_field(x, field, dk, method='linear'):
-    r'''
-    Interpolate a grid-based field onto particle positions using periodic
-    boundaries.
-
-    Parameters
-    ----------
-    x : ndarray of shape (N, 3)
-        Particle positions in physical [Mpc].
-    field : ndarray
-        The grid-based field (e.g. a displacement field) defined on a
-        regular grid.
-    dk : float
-        The uniform step size in each dimension, calculated as the length
-        of the shortest dimension divided by the number of voxels in
-        that dimension.
-    method : str
-        The interpolation method to use. This can be 'linear', 'nearest',
-        or 'cubic'. The default is 'linear'.
-
-    Returns
-    -------
-    interp_values : ndarray of shape (N,)
-        Field values interpolated at the particle positions.
-    '''
-    nvox = field.shape
-    mesh = tuple(np.arange(-(n-1)*dk/2, n*dk/2, dk) for n in nvox)
-    interpolator = RegularGridInterpolator(
-        points=mesh,
-        values=field,
-        method=method,
-        bounds_error=False,
-        fill_value=None  # Extrapolate using periodic wrapping if needed
-    )
-    return interpolator(x)
 
 
 def create_grid(nvox, dk):

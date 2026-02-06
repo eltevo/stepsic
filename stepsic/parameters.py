@@ -215,6 +215,11 @@ class CosmoParameters:
         self._check_scalar('NPART', dtype=int)
         self._check_scalar('SEED', dtype=int)
 
+        self._check_string('INTERPOLATION')
+        if self.P['INTERPOLATION'] not in ['ngp', 'cic', 'tsc']:
+            raise ValueError(f"Error: unknown interpolation method `{self.P['INTERPOLATION']}`!\nExiting.")
+        self._check_boolean('COMPENSATE')
+
         self._check_boolean('SPHEREMODE')
         self._check_boolean('COMOVING')
 

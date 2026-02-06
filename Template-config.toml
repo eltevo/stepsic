@@ -2,7 +2,6 @@
 
 # IC parameters
 GEOMETRY = "cylindrical"     # Geometry of the simulation, options: "cylindrical", "spherical", "cubical".
-NMESH = 0                    # Number of mesh points along the shortest dimension of the box. Other dimensions will be scaled accordingly. Set to 0 to initiate a multiscale IC generation.
 LBOX = [ 1000, 1000, 1000 ]  # Box dimensions in [Mpc]. You can use a single scalar to define a cubical box, or an array in the form of `[ Lx, Ly, Lz ]` for any rectangular cuboid.
 PERIODIC = [ 0, 0, 1 ]       # Periodic boundary conditions in the form of `[ Px, Py, Pz ]`. `true` or `1` for periodic, `false` or `0` for non-periodic. You can use a single value to set periodicity for all dimensions at once.
 REDSHIFT = 63                # Target redshift of the IC generation.
@@ -11,14 +10,15 @@ COI = [ 0, 0, 0 ]            # Center of interest in Mpc. This is the point wher
 
 # IC generation parameters
 TYPE = "glass"         # Type of the IC generation, options: "glass", "grid", "random".
+NMESH = 0              # Number of mesh points along the shortest dimension of the box. Other dimensions will be scaled accordingly. Set to 0 to initiate an adaptive multiscale IC generation.
+NGRIDSAMPLES = 7       # Number of grid samples to use for the adaptive multiscale IC generation.
 NPART = 32768          # Number of particles in the simulation if "random" generation is used. This is the total number of particles, not per dimension.
 SPHEREMODE = false     # If `true`, the IC will be generated in a spherical shell in k-space, otherwise it will be generated in a cubical box in k-space.
-SEED = 137             # Random seed to initialize the Numpy RNG with. This will be used in particle generation and in the sampling of Gaussian displacements.
-NGRIDSAMPLES = 7       # Number of grid samples to use for the multiscale IC generation.
 COMOVING = true        # If `true`, the IC will be generated in comoving coordinates, otherwise in physical coordinates. This is useful for cosmological simulations where the expansion of the universe is taken into account.
 COUNTER = false        # If `true`, the IC will be generated with a phase flip in Fourier space.
 PHASE_SHIFT = 0.0      # Phase shift to apply to the IC. This is useful for generating IC with a specific phase shift in the Fourier space, primarily to reduce the cosmic variance by pairing normal and antipodal simulations.
 HINDEPENDENT = true    # If `true`, the IC will be generated in units of [U/h] instead of [U]. By default, the code calculates everything in [U/h] units. If set to `false`, then the code also expects the input glass to be in units of [U] instead of [U/h].
+SEED = 137             # Random seed to initialize the Numpy RNG with. This will be used in particle generation and in the sampling of Gaussian displacements.
 
 # IO parameters
 INPUT_GLASS = "./examples/input_glass.hdf5"  # Path to the input glass file inserted into the middle of the simulation. If not provided, a glass will be generated. See "IC generation parameters" below for that.

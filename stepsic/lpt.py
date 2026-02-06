@@ -1,7 +1,7 @@
 #*******************************************************************************#
 #  stepsic - An initial condition generator for                                 #
 #            STEreographically Projected cosmological Simulations               #
-#    Copyright (C) 2017-2025 Gabor Racz, Balazs Pal                             #
+#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                             #
 #                                                                               #
 #    This program is free software; you can redistribute it and/or modify       #
 #    it under the terms of the GNU General Public License as published by       #
@@ -16,7 +16,8 @@
 
 import numpy as np
 
-from stepsic.field import fourier_grid, interpolate_field
+from stepsic.field import fourier_grid
+from stepsic.interpolation import interpolate_field, interpolate_field_deprecated, compensation_kernel
 
 import logging
 log = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ def log_lpt(x, xpert, vpert, *, title=None) -> None:
     return
 
 
-def lpt1(x, delta_k, nvox, dk, g1, aHf1, counter=False):
+def lpt1(x, delta_k, nvox, dk, g1, aHf1, counter=False, compensate=False, method='cic'):
     r'''
     Apply first-order Lagrangian Perturbation Theory (LPT), i.e., the
     Zel'dovich approximation, to generate perturbed particle positions
@@ -87,6 +88,15 @@ def lpt1(x, delta_k, nvox, dk, g1, aHf1, counter=False):
         field (equivalent to a :math:`\pi` phase shift). This is useful
         for running "counter-phased" simulations to reduce sample
         variance. See more in Angulo-Pontzen (2017).
+    compensate : bool
+        If True, applies a deconvolution kernel in Fourier space before
+        the inverse FFT to compensate for the smoothing introduced by
+        the interpolation scheme. Required when particles do not sit on
+        grid nodes (e.g. glass initial conditions). For regular lattices
+        (SC, BCC, FCC) where particles coincide with grid points, this
+        should be False.
+    method : str
+        Interpolation method: 'ngp', 'cic', or 'tsc' (default: 'cic').
     
     Returns
     -------
@@ -125,6 +135,8 @@ def lpt1(x, delta_k, nvox, dk, g1, aHf1, counter=False):
         - The Fourier-space displacement field :math:`\mathbf{\Psi}(\mathbf{k})`
           is computed for each spatial component. Division by zero at the
           DC mode (:math:`|\mathbf{k}| = 0`) is avoided.
+        - If ``compensate=True``, a deconvolution kernel is applied to
+          pre-sharpen the Fourier modes before the inverse FFT.
         - An inverse FFT converts :math:`\mathbf{\Psi}(\mathbf{k})` back
           to a real-space grid.
 
@@ -146,16 +158,22 @@ def lpt1(x, delta_k, nvox, dk, g1, aHf1, counter=False):
     phi_k = np.zeros_like(kmod, dtype=complex)
     phi_k[mask] = -delta_k[mask] / kmod[mask]**2  # Gravitational potential in Fourier space
     psi1_k = -1j * phi_k[np.newaxis, ...] * kvec  # Displacement field in Fourier space
+    boxsize = np.asarray(nvox) * dk
+    # Apply deconvolution to pre-sharpen the field before interpolation
+    if compensate:
+        W_inv = compensation_kernel(kvec, nvox, boxsize, method=method)
+        psi1_k *= W_inv[np.newaxis, ...]
     disp_field = np.fft.irfftn(psi1_k, s=nvox, axes=(-3, -2, -1))
-    disp_field_interp = np.empty_like(x, dtype=np.float32)
-    for i in range(3):
-        disp_field_interp[:, i] = interpolate_field(x, disp_field[i], dk)
+    disp_field_interp = interpolate_field(
+        pos=x, field=disp_field, boxsize=boxsize,
+        origin=-boxsize / 2, method=method, vox_offset=0.5,
+        periodic=True).astype(np.float32)
     xpert = x + g1 * disp_field_interp  # Bernardeau et al. 2002, eq. 98
     vpert = g1 * aHf1 * disp_field_interp  # Bernardeau et al. 2002, eq. 99
     return xpert, vpert
 
 
-def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False):
+def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False, compensate=False, method='cic'):
     r'''
     Apply second-order Lagrangian Perturbation Theory (2LPT) to generate
     perturbed particle positions and velocities.
@@ -296,6 +314,11 @@ def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False):
     kvec, kmod = fourier_grid(nvox, dk, hermitian=True)
     delta_k = delta_k * np.exp(1j * np.pi) if counter else delta_k
     mask = kmod > 0.0  # Avoid division by zero at k = 0
+    boxsize = np.asarray(nvox) * dk
+
+    # Precompute deconvolution kernel if needed
+    if compensate:
+        W_inv = compensation_kernel(kvec, nvox, boxsize, method=method)
 
     # ------------------------------
     # 1. First-order displacement (Psi^(1))
@@ -303,16 +326,21 @@ def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False):
     phi1_k = np.zeros_like(kmod, dtype=complex)
     phi1_k[mask] = -delta_k[mask] / kmod[mask]**2  # Gravitational potential in Fourier space
     psi1_k = -1j * phi1_k[np.newaxis, ...] * kvec  # Displacement field in Fourier space
-    disp_field1 = np.fft.irfftn(psi1_k, s=nvox, axes=(-3, -2, -1))
+    # Apply deconvolution to pre-sharpen before interpolation
+    if compensate:
+        psi1_k_comp = psi1_k * W_inv[np.newaxis, ...]
+    else:
+        psi1_k_comp = psi1_k
+    disp_field1 = np.fft.irfftn(psi1_k_comp, s=nvox, axes=(-3, -2, -1))
 
     # ------------------------------
     # 2. Compute derivatives of Psi^(1) for the second-order source
     # ------------------------------
-    # The derivative of the i-th component of the first-order displacement
-    # Psi^(1) with respect to the j-th coordinate in Fourier space is given by
-    #
-    #     d[Psi^(1)_i]/dx_j = irfftn(1j * psi1_k[i] * kvec[j])
-    #
+    # NOTE: The derivatives for the 2LPT source term use the
+    # *uncompensated* psi1_k. The compensation corrects for
+    # interpolation artifacts, but the source term S(x) is computed
+    # on the grid (no interpolation involved), so it must use the
+    # physically correct (uncompensated) displacement field.
     axes = (0, 1, 2)
     dPxx = np.fft.irfftn(1j * psi1_k[0] * kvec[0], s=nvox, axes=axes)  # d(Psi_x)/dx
     dPxy = np.fft.irfftn(1j * psi1_k[0] * kvec[1], s=nvox, axes=axes)  # d(Psi_x)/dy
@@ -337,6 +365,10 @@ def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False):
     phi2_k = np.zeros_like(S_k, dtype=complex)
     phi2_k[mask] = -S_k[mask] / kmod[mask]**2
     psi2_k = -1j * phi2_k[np.newaxis, ...] * kvec  # Displacement field in Fourier space
+    # Compensate the second-order field as well
+    # We can simply overwrite psi2_k here, because it will not be reused
+    if compensate:
+        psi2_k *= W_inv[np.newaxis, ...]
     disp_field2 = np.fft.irfftn(psi2_k, s=nvox, axes=(-3, -2, -1))
 
     # ------------------------------
@@ -344,12 +376,15 @@ def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False):
     # ------------------------------
     # For each spatial axis, interpolate the displacement fields (both
     # first- and second-order) from the grid to the particle positions.
-    disp_field1_interp = np.empty_like(x, dtype=np.float32)
-    disp_field2_interp = np.empty_like(x, dtype=np.float32)
-    for i in range(3):
-        disp_field1_interp[:, i] = interpolate_field(x, disp_field1[i], dk)
-        disp_field2_interp[:, i] = interpolate_field(x, disp_field2[i], dk)
-    
+    disp_field1_interp = interpolate_field(
+        pos=x, field=disp_field1, boxsize=boxsize,
+        origin=-boxsize / 2, method=method, vox_offset=0.5,
+        periodic=True).astype(np.float32)
+    disp_field2_interp = interpolate_field(
+        pos=x, field=disp_field2, boxsize=boxsize,
+        origin=-boxsize / 2, method=method, vox_offset=0.5,
+        periodic=True).astype(np.float32)
+
     xpert = x + g1 * disp_field1_interp + g2 * disp_field2_interp
     vpert = g1 * aHf1 * disp_field1_interp + g2 * aHf2 * disp_field2_interp
     return xpert, vpert
