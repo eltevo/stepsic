@@ -16,7 +16,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
+from typing import Dict, Tuple, Type, Union, Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -181,7 +181,7 @@ class TSCKernel(InterpolationKernel):
         return (w0, w1, w2)
 
 # Kernel registry
-KERNELS: dict[str, type[InterpolationKernel]] = {
+KERNELS: Dict[str, Type[InterpolationKernel]] = {
     'ngp': NGPKernel,
     'cic': CICKernel,
     'tsc': TSCKernel,
