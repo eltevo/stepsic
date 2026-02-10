@@ -147,7 +147,7 @@ def main():
 
         for si, (res, mass) in enumerate(zip(nres_tab, mass_tab)):
             log.info(f"Generating sample {si+1}/{params['NGRIDSAMPLES']}...")
-            log.info(f'Resolution: {res:.0f} voxels, Mass: {mass:.6f} 1e11 Msol')
+            log.info(f'Resolution: {res:.0f} voxels, Mass: {mass:.6f} 1e11 Msol/h')
             nvox, dk = cubic_voxels(res, params['LBOX'])
             # White noise field for complete reproducibility
             field = white_noise(nvox=nvox, seed=params['SEED'])
