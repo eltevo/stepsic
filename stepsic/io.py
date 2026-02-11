@@ -21,6 +21,7 @@ import re
 import h5py
 import numpy as np
 from pathlib import Path
+from stepsic.__init__ import __programname__, __version__, __year__, __authors__, __header__, __githash__, __gitbranch__
 
 # Gadget IO library for reading Gadget snapshots
 # Download from https://www.github.com/masterdesky/glio
@@ -392,6 +393,9 @@ class CosmoIO:
             num_part_array[part_type] = data.N_part
 
             h = hdf_file.create_group("/Header")
+            h.attrs['ProgramName'] = __programname__
+            h.attrs['ProgramVersion'] = __version__
+            h.attrs['ProgramCommitID'] = __githash__
             h.attrs['NumPart_ThisFile'] = num_part_array
             h.attrs['NumPart_Total'] = num_part_array
             h.attrs['NumPart_Total_HighWord'] = np.zeros(6, dtype=np.uint32)
