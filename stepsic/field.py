@@ -123,7 +123,7 @@ def cubic_voxels(nmesh, Lbox):
     nvox = np.ceil(Lbox / (np.min(Lbox) / nmesh)).astype(int)
     nvox = (nvox + nvox % 2).astype(int)  # Ensure even number of voxels
     dk = np.min(Lbox) / np.min(nvox)
-    log.info('mesh: Nx={}, Ny={}, Nz={}; step size: {}'.format(*nvox, dk))
+    #log.info('mesh: Nx={}, Ny={}, Nz={}; step size: {}'.format(*nvox, dk))
     return nvox, dk
 
 
@@ -288,8 +288,11 @@ def create_nres_mass_map(n_grid_samples, mass_list, M_box, Lbox):
     nres_tab = nres_list[idx[::-1]]
     mass_tab = mass_list[idx[::-1]]
 
-    log.info('The generated resolution-mass map:')
-    print(tabulate([*zip(nres_tab, mass_tab)],
-                   headers=['Resolution', 'Mass [1e11 Msol/h]'],
-                   floatfmt=('.0f', '.6f')))
+    log.info('The generated resolution-mass map:') #The full nresx x nresy x nresz grid resolution is printed here
+    nvox = np.zeros((n_grid_samples, 3), dtype=int)
+    for i in range(n_grid_samples):
+        nvox[i], dk = cubic_voxels(nres_tab[i], Lbox)
+    print(tabulate([*zip(nvox[:,0], nvox[:,1], nvox[:,2], mass_tab)],
+                   headers=['Resolution_x', 'Resolution_y', 'Resolution_z', 'Mass [1e11 Msol/h]'],
+                   floatfmt=('.0f', '.0f', '.0f', '.6f')))
     return nres_tab, mass_tab

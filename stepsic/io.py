@@ -21,6 +21,7 @@ import re
 import h5py
 import numpy as np
 from pathlib import Path
+from stepsic.__init__ import __programname__, __version__, __year__, __authors__, __header__, __githash__, __gitbranch__
 
 # Gadget IO library for reading Gadget snapshots
 # Download from https://www.github.com/masterdesky/glio
@@ -94,6 +95,70 @@ class CosmoIO:
         path = path.expanduser().resolve()
         saver = CosmoIO._find_saver(fmt)
         saver(path, data=data, **kwargs)
+
+    @staticmethod
+    def get_box_size(path: Path):
+        '''
+        Retrieves the box size from the snapshot file.
+
+        Parameters
+        ----------
+        path : pathlib.Path
+            Path to the snapshot file.
+
+        Returns
+        -------
+        box_size : float
+            The box size in internal units.
+        '''
+        path = path.expanduser().resolve()
+        ext = CosmoIO._get_extension(path)
+        if ext in ['hdf5', 'h5']:
+            with h5py.File(path, 'r') as hdf:
+                box_size = hdf['/Header'].attrs['BoxSize']
+            return box_size
+        elif ext in ['dat', 'txt']:
+            raise NotImplementedError('Box size retrieval from ASCII files is not implemented.')
+        else:
+            if glio is None:
+                raise UnsupportedFormatError(
+                    f'`{ext}` is an unsupported extension and glio is not installed.'
+                )
+            s = glio.GadgetSnapshot(path)
+            box_size = s.header.BoxSize
+            return box_size
+    
+    def get_simulation_radius(path: Path):
+        '''
+        Retrieves the simulation radius from the snapshot file.
+        This will be useful for re-scaling spherical snapshots.
+
+        Parameters
+        ----------
+        path : pathlib.Path
+            Path to the snapshot file.
+
+        Returns
+        -------
+        box_size : float
+            The box size in internal units.
+        '''
+        path = path.expanduser().resolve()
+        ext = CosmoIO._get_extension(path)
+        if ext in ['hdf5', 'h5']:
+            with h5py.File(path, 'r') as hdf:
+                sim_radius = hdf['/Header'].attrs['SimulationRadius']
+            return sim_radius
+        elif ext in ['dat', 'txt']:
+            raise NotImplementedError('Box size retrieval from ASCII files is not implemented.')
+        else:
+            if glio is None:
+                raise UnsupportedFormatError(
+                    f'`{ext}` is an unsupported extension and glio is not installed.'
+                )
+            s = glio.GadgetSnapshot(path)
+            box_size = s.header.BoxSize
+            return box_size / 2.0
 
     @staticmethod
     def _match_extension(path: Path):
@@ -328,13 +393,17 @@ class CosmoIO:
             num_part_array[part_type] = data.N_part
 
             h = hdf_file.create_group("/Header")
+            h.attrs['ProgramName'] = __programname__
+            h.attrs['ProgramVersion'] = __version__
+            h.attrs['ProgramCommitID'] = __githash__
             h.attrs['NumPart_ThisFile'] = num_part_array
             h.attrs['NumPart_Total'] = num_part_array
             h.attrs['NumPart_Total_HighWord'] = np.zeros(6, dtype=np.uint32)
             h.attrs['MassTable'] = np.zeros(6, dtype=dtype)
             h.attrs['Time'] = 1.0 / (kwargs.get('Redshift', 0) + 1.0)
             h.attrs['Redshift'] = float(kwargs.get('Redshift', 0.0))
-            h.attrs['BoxSize'] = float(kwargs.get('BoxSize', 0.0))
+            h.attrs['BoxSize'] = float(kwargs.get('BoxSize', 0.0)) # only Lz is stored to have compatibility with both T^3 and S^1xR^2 simulations
+            h.attrs['SimulationRadius'] = float(kwargs.get('SimulationRadius', 0.0)) # Rsim, only relevant for R^1xR^2 and R^3 simulations
             h.attrs['NumFilesPerSnapshot'] = kwargs.get('NumFilesPerSnapshot', 1)
             h.attrs['Omega0'] = float(kwargs.get('Omega0', 0.0))
             h.attrs['OmegaLambda'] = float(kwargs.get('OmegaLambda', 0.0))

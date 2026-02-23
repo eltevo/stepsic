@@ -30,7 +30,7 @@ def log_lpt(x, xpert, vpert, *, title=None) -> None:
     vmax, vavg = np.max(vabs, axis=0), np.mean(vabs, axis=0)
     for i, xi in enumerate(('x', 'y', 'z')):
         log.info(f"{title} '{xi}' displacements: "
-                 f"d_max = {xmax[i]*1e3:.3f} kpc; d_avg = {xavg[i]*1e3:.3f} kpc")
+                 f"d_max = {xmax[i]*1e3:.3f} kpc/h; d_avg = {xavg[i]*1e3:.3f} kpc/h ")
         log.info(f"{title} 'v{xi}' velocities:   "
                  f"v_max = {vmax[i]:.3f} km/s; v_avg = {vavg[i]:.3f} km/s")
     return

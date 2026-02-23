@@ -3,7 +3,7 @@
 #*******************************************************************************#
 #  stepsic - An initial condition generator for                                 #
 #            STEreographically Projected cosmological Simulations               #
-#    Copyright (C) 2017-2025 Gabor Racz, Balazs Pal                             #
+#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                             #
 #                                                                               #
 #    This program is free software; you can redistribute it and/or modify       #
 #    it under the terms of the GNU General Public License as published by       #
@@ -63,14 +63,16 @@ def main():
     print(stepsic.__header__)
     # Reading in input parameter file
     if len(sys.argv) != 2:
-        raise ValueError('Error: missing toml file!\nUsage: ./StePS_IC.py <input toml file>\nExiting.')
+        raise ValueError("Error: missing toml file!\nUsage: ./%s <input toml file>\nExiting."%stepsic.__programname__)
     params = CosmoParameters(path=Path(sys.argv[1])).get_parameters()
 
-    # Construct the initial conditions
+    # Construct the initial particle load
+    log.info('Constructing the initial particle load...')
     if params['TYPE'] == 'glass':
         ic_orig = CosmoData.load_snapshot(Path(params['INPUT_GLASS']))
         ic_orig.to_internal_units(params)
-        if not params['HINDEPENDENT']:
+        if not params['HINDEPENDENT'] and params['GEOMETRY'] == 'spherical':
+            #Since a periodic glass is always scaled to the defined periodic box size, we only need to do this for spherical geometry
             log.info('Converting the IC to H0 independent units...')
             ic_orig.pos *= params['H']
             ic_orig.mass *= params['H']
@@ -145,7 +147,7 @@ def main():
 
         for si, (res, mass) in enumerate(zip(nres_tab, mass_tab)):
             log.info(f"Generating sample {si+1}/{params['NGRIDSAMPLES']}...")
-            log.info(f'Resolution: {res:.0f} voxels, Mass: {mass:.6f} 1e11 Msol')
+            log.info(f'Resolution: {res:.0f} voxels, Mass: {mass:.6f} 1e11 Msol/h')
             nvox, dk = cubic_voxels(res, params['LBOX'])
             # White noise field for complete reproducibility
             field = white_noise(nvox=nvox, seed=params['SEED'])
@@ -236,7 +238,9 @@ def main():
         'Omega0': params['OMEGA_M'],
         'OmegaLambda': params['OMEGA_L'],
         'HubbleParam': params['H'],
-        'dtype': params['DTYPE']
+        'dtype': params['DTYPE'],
+        'BoxSize': params['LBOX'][2],
+        'SimulationRadius': params['R_3D']
     }
     path = Path(params['IC_DIR'], create_filename(params))
     ic.save_snapshot(path=path, fmt=params['IC_FORMAT'], **header)
