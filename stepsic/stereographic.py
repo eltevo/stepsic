@@ -1,7 +1,7 @@
 #*******************************************************************************#
-#  StePS_IC.py - An initial condition generator for                             #
-#     STEreographically Projected cosmological Simulations                      #
-#    Copyright (C) 2017-2025 Gabor Racz                                         #
+#  stepsic - An initial condition generator for                                 #
+#           STEreographically Projected cosmological Simulations                #
+#    Copyright (C) 2017-2026 Gabor Racz, Balazs Pal                             #
 #                                                                               #
 #    This program is free software; you can redistribute it and/or modify       #
 #    it under the terms of the GNU General Public License as published by       #

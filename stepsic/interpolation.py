@@ -1,6 +1,6 @@
 #*******************************************************************************#
 #  stepsic - An initial condition generator for                                 #
-#            STEreographically Projected cosmological Simulations               #
+#           STEreographically Projected cosmological Simulations                #
 #    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                             #
 #                                                                               #
 #    This program is free software; you can redistribute it and/or modify       #
@@ -131,7 +131,9 @@ class NGPKernel(InterpolationKernel):
     '''
     Implements Nearest Grid Point (NGP) interpolation in a hacky way.
     Defines a 2-point kernel with a step weight function to select the
-    nearest grid point based on the fractional position.
+    nearest grid point based on the fractional position. This is purely
+    for the convenience of using the same interpolation machinery for all
+    kernels, and I could not think of a better way, even with ChatGPT.
     '''
 
     @property
@@ -269,11 +271,10 @@ def compensation_kernel(
     W = np.ones_like(kvec[0])
     for i in range(3):
         arg = kvec[i] / (2.0 * k_ny[i])  # dimensionless, in [0, 0.5]
-        W *= np.sinc(arg) ** power  # np.sinc(x) = sin(pi*x)/(pi*x)
+        W *= np.sinc(arg)**power  # np.sinc(x) = sin(pi*x)/(pi*x)
 
-    # Return the inverse: the deconvolution factor
-    # Guard against division by zero (should not happen for k < k_Ny,
-    # but protect anyway)
+    # Guard against division by zero near k_Ny
+    # Should not happen for k < k_Ny, but protect anyway
     return np.where(np.abs(W) > 1e-15, 1.0 / W, 1.0)
 
 

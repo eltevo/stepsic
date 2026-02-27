@@ -1,7 +1,7 @@
 #*******************************************************************************#
-#  StePS_IC.py - An initial condition generator for                             #
-#     STEreographically Projected cosmological Simulations                      #
-#    Copyright (C) 2017-2025 Gabor Racz, Balazs Pal                             #
+#  stepsic - An initial condition generator for                                 #
+#           STEreographically Projected cosmological Simulations                #
+#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                             #
 #                                                                               #
 #    This program is free software; you can redistribute it and/or modify       #
 #    it under the terms of the GNU General Public License as published by       #
@@ -26,7 +26,6 @@ from stepsic.units import UNIT_L, UNIT_V, UNIT_M
 
 import logging
 log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 
 class CosmoData:
@@ -90,6 +89,14 @@ class CosmoData:
         '''Load snapshot data from a file.'''
         ids, pos, vel, mass = CosmoIO.load_snapshot(path, **io_kwargs)
         Lbox = CosmoIO.get_box_size(path)
+        if Lbox is None:
+            # Fallback: infer box size from the particle extent along the
+            # shortest axis (consistent with how StePS glasses are built)
+            Lbox = float(np.max(pos) - np.min(pos))
+            log.warning(
+                f'BoxSize not found or invalid in snapshot header. '
+                f'Inferred Lbox={Lbox:.6f} from particle positions.'
+            )
         log.info(f'Loaded snapshot from {path} with box size {Lbox} (internal units).')
         instance = cls(id=ids, pos=pos, vel=vel, mass=mass, Lbox=Lbox)
         return instance
@@ -107,6 +114,11 @@ class CosmoData:
         params : dict
             Dictionary containing the cosmological parameters.
         '''
+        if self.Lbox is None or not np.isfinite(self.Lbox) or self.Lbox <= 0:
+            raise ValueError(
+                f'Cannot rescale snapshot: invalid Lbox={self.Lbox}. '
+                f'Check the input snapshot header.'
+            )
         if params['GEOMETRY'] == 'cylindrical' or params['GEOMETRY'] == 'cubical':
             log.info('Rescaling the snapshot size to fit the desired box size...')
             log.info(f'Target box size (along the z axis): {params["LBOX"][2]} (internal units), loaded box size: {self.Lbox} (internal units).')
@@ -119,7 +131,6 @@ class CosmoData:
         else:
             # this should never happen 
             raise ValueError(f'Unknown geometry type: {params["GEOMETRY"]}')
-            return NotImplementedError
 
     def rescale_snapshot_mass(self, params):
         '''

@@ -1,7 +1,7 @@
 #*******************************************************************************#
-#  StePS_IC.py - An initial condition generator for                             #
-#     STEreographically Projected cosmological Simulations                      #
-#    Copyright (C) 2017-2025 Gabor Racz                                         #
+#  stepsic - An initial condition generator for                                 #
+#           STEreographically Projected cosmological Simulations                #
+#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                             #
 #                                                                               #
 #    This program is free software; you can redistribute it and/or modify       #
 #    it under the terms of the GNU General Public License as published by       #
@@ -101,6 +101,11 @@ class CosmoIO:
         '''
         Retrieves the box size from the snapshot file.
 
+        If the header contains a missing, zero, or clearly invalid
+        ``BoxSize`` (e.g. a denormalized float), the value is logged
+        as a warning and ``None`` is returned so the caller can decide
+        how to handle it.
+
         Parameters
         ----------
         path : pathlib.Path
@@ -108,15 +113,17 @@ class CosmoIO:
 
         Returns
         -------
-        box_size : float
-            The box size in internal units.
+        boxsize : float or None
+            The box size in internal units, or ``None`` if the header
+            value is missing or invalid.
         '''
         path = path.expanduser().resolve()
         ext = CosmoIO._get_extension(path)
+        boxsize = None
         if ext in ['hdf5', 'h5']:
             with h5py.File(path, 'r') as hdf:
-                box_size = hdf['/Header'].attrs['BoxSize']
-            return box_size
+                if '/Header' in hdf and 'BoxSize' in hdf['/Header'].attrs:
+                    boxsize = float(hdf['/Header'].attrs['BoxSize'])
         elif ext in ['dat', 'txt']:
             raise NotImplementedError('Box size retrieval from ASCII files is not implemented.')
         else:
@@ -125,8 +132,18 @@ class CosmoIO:
                     f'`{ext}` is an unsupported extension and glio is not installed.'
                 )
             s = glio.GadgetSnapshot(path)
-            box_size = s.header.BoxSize
-            return box_size
+            boxsize = float(s.header.BoxSize)
+
+        # Validate: reject zero, negative, subnormal, inf, nan
+        if boxsize is not None and (
+            not np.isfinite(boxsize) or boxsize <= 0.0 or np.isclose(boxsize, 0.0)
+        ):
+            log.warning(
+                f'Invalid BoxSize={boxsize} in header of {path.name}. '
+                f'Treating as unset.'
+            )
+            boxsize = None
+        return boxsize
     
     def get_simulation_radius(path: Path):
         '''
@@ -140,15 +157,15 @@ class CosmoIO:
 
         Returns
         -------
-        box_size : float
+        boxsize : float
             The box size in internal units.
         '''
         path = path.expanduser().resolve()
         ext = CosmoIO._get_extension(path)
         if ext in ['hdf5', 'h5']:
             with h5py.File(path, 'r') as hdf:
-                sim_radius = hdf['/Header'].attrs['SimulationRadius']
-            return sim_radius
+                boxsize = hdf['/Header'].attrs['SimulationRadius']
+            return boxsize
         elif ext in ['dat', 'txt']:
             raise NotImplementedError('Box size retrieval from ASCII files is not implemented.')
         else:
@@ -157,8 +174,8 @@ class CosmoIO:
                     f'`{ext}` is an unsupported extension and glio is not installed.'
                 )
             s = glio.GadgetSnapshot(path)
-            box_size = s.header.BoxSize
-            return box_size / 2.0
+            boxsize = s.header.BoxSize
+            return boxsize / 2.0
 
     @staticmethod
     def _match_extension(path: Path):
@@ -402,8 +419,8 @@ class CosmoIO:
             h.attrs['MassTable'] = np.zeros(6, dtype=dtype)
             h.attrs['Time'] = 1.0 / (kwargs.get('Redshift', 0) + 1.0)
             h.attrs['Redshift'] = float(kwargs.get('Redshift', 0.0))
-            h.attrs['BoxSize'] = float(kwargs.get('BoxSize', 0.0)) # only Lz is stored to have compatibility with both T^3 and S^1xR^2 simulations
-            h.attrs['SimulationRadius'] = float(kwargs.get('SimulationRadius', 0.0)) # Rsim, only relevant for R^1xR^2 and R^3 simulations
+            h.attrs['BoxSize'] = float(kwargs.get('BoxSize', 0.0))  # L_z; used in T^3 and S^1xR^2 simulations
+            h.attrs['SimulationRadius'] = float(kwargs.get('SimulationRadius', 0.0))  # R_sim; used in R^1xR^2 and R^3 simulations
             h.attrs['NumFilesPerSnapshot'] = kwargs.get('NumFilesPerSnapshot', 1)
             h.attrs['Omega0'] = float(kwargs.get('Omega0', 0.0))
             h.attrs['OmegaLambda'] = float(kwargs.get('OmegaLambda', 0.0))
