@@ -1,9 +1,10 @@
 name: stepsic
 channels:
+  - bccp
   - conda-forge
   - defaults
 dependencies:
-  - python=3.11
+  - python=3.8
   - toml
   - tabulate
   - h5py
@@ -11,6 +12,7 @@ dependencies:
   - scipy
   - astropy
   - camb
+  - nbodykit
   - matplotlib
   - seaborn
   - pip
