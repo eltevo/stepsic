@@ -176,10 +176,11 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('COI', ptype=PType.ARRAY, label="Center of Interest [X, Y, Z]", h_scaled=True, h_display=True),
 
     # -- IC type and generation ----------------------------------------
-    Param('TYPE', ptype=PType.STRING, label="IC type", choices=('grid', 'random', 'glass')),
+    Param('TYPE', ptype=PType.STRING, label="IC type", choices=('grid', 'random', 'shells', 'glass')),
     Param('NMESH', ptype=PType.INT, label="Mesh size", unit="voxels"),
     Param('NGRIDSAMPLES', ptype=PType.INT, label="Grid samples"),
-    Param('NPART', ptype=PType.INT, label="N particles (random)", condition=lambda P: P.get('TYPE') == "random"),
+    Param('NSHELL', ptype=PType.INT, label="Particles per shell", condition=lambda P: P.get('TYPE') == 'shells'),
+    Param('NPART', ptype=PType.INT, label="N particles (random)", condition=lambda P: P.get('TYPE') == 'random'),
     Param('INTERPOLATION', ptype=PType.STRING, label="Interpolation", choices=('ngp', 'cic', 'tsc')),
     Param('COMPENSATE', ptype=PType.BOOL, label="Compensation kernel"),
     Param('SPHEREMODE', ptype=PType.BOOL, label="Sphere mode"),
@@ -190,7 +191,7 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('SEED', ptype=PType.INT, label="Random seed"),
 
     # -- Input/output files and format ---------------------------------
-    Param('INPUT_GLASS', ptype=PType.PATH, label="Glass input file", condition=lambda P: P.get('TYPE') == "glass"),
+    Param('INPUT_GLASS', ptype=PType.PATH, label="Glass input file", condition=lambda P: P.get('TYPE') == 'glass'),
     # TODO: Param('INPUT_WHITE_NOISE', ptype=PType.PATH, label="White noise input file"),
     # TODO: Param('INPUT_DELTA_K', ptype=PType.PATH, label="Delta(k) input file"),
     Param('IC_DIR', ptype=PType.PATH_MKDIR, label="IC output directory"),
@@ -205,7 +206,7 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('NRBINS', ptype=PType.INT, label="Radial bins"),
 
     # -- Rotation ------------------------------------------------------
-    Param('ROTATE', label="Rotation", fmt=".4f", unit="rad/Gyr", condition=lambda P: 'ROTATE' in P),
+    Param('ROTATE', label="Rotation", fmt=".4f", unit="rad/Gyr"),
 
     # -- Cosmology default ---------------------------------------------
     # The "choices" here are checked at load time against cosmology.toml,
