@@ -92,7 +92,7 @@ class CosmoData:
         if Lbox is None:
             # Fallback: infer box size from the particle extent along the
             # shortest axis (consistent with how StePS glasses are built)
-            Lbox = float(np.max(pos) - np.min(pos))
+            Lbox = float(np.max(pos[:, 2]) - np.min(pos[:, 2]))
             log.warning(
                 f'BoxSize not found or invalid in snapshot header. '
                 f'Inferred Lbox={Lbox:.6f} from particle positions.'
@@ -150,10 +150,7 @@ class CosmoData:
             V_sim = params['R_3D']**2 * np.min(params['LBOX']) * np.pi
         elif params['GEOMETRY'] == 'cubical':
             V_sim = np.prod(params['LBOX'])
-        rho_crit = 3 * params['H0']**2 / (8*np.pi) / UNIT_V / UNIT_V
-        rho_crit /= params['H']**2  # Since H0 is in km/s/Mpc instead of km/s/(Mpc/h)
-        rho_mean = params['OMEGA_M'] * rho_crit
-        omega_m_box = (M_tot / V_sim) / rho_crit
+        omega_m_box = (M_tot / V_sim) / params['RHO_CRIT']
         if np.isclose(omega_m_box, params['OMEGA_M'], rtol=1e-9):
             log.info(f'Omega_m calculated from particle masses: {omega_m_box = :.6f}')
         else:
@@ -165,7 +162,7 @@ class CosmoData:
         # Calculate mass statistics after rescaling
         self.mass_list = np.unique(self.mass)
         log.info(f'Number of different masses: {self.mass_list.size}')
-        self.M_box = rho_mean * np.prod(params['LBOX'])
+        self.M_box = params['RHO_MEAN'] * np.prod(params['LBOX'])
 
     def center_snapshot(self, params):
         '''
