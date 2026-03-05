@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 
-#*******************************************************************************#
-#  stepsic - An initial condition generator for                                 #
-#           STEreographically Projected cosmological Simulations                #
-#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                             #
-#                                                                               #
-#    This program is free software; you can redistribute it and/or modify       #
-#    it under the terms of the GNU General Public License as published by       #
-#    the Free Software Foundation; either version 2 of the License, or          #
-#    (at your option) any later version.                                        #
-#                                                                               #
-#    This program is distributed in the hope that it will be useful,            #
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of             #
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the              #
-#    GNU General Public License for more details.                               #
-#*******************************************************************************#
+#*****************************************************************************#
+#  stepsic - An initial condition generator for                               #
+#           STEreographically Projected cosmological Simulations              #
+#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                           #
+#                                                                             #
+#    This program is free software; you can redistribute it and/or modify     #
+#    it under the terms of the GNU General Public License as published by     #
+#    the Free Software Foundation; either version 2 of the License, or        #
+#    (at your option) any later version.                                      #
+#                                                                             #
+#    This program is distributed in the hope that it will be useful,          #
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of           #
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the            #
+#    GNU General Public License for more details.                             #
+#*****************************************************************************#
 
 import sys
 import copy
@@ -31,39 +31,22 @@ from stepsic.cosmology import \
 from stepsic.field import \
     cubic_voxels, white_noise, generate_delta_k, \
     create_grid, create_particles, create_nres_mass_map
+from stepsic.geometry import create_shell_particles
 from stepsic.lpt import lpt1, lpt2, log_lpt
+from stepsic._util import create_filename
 
 import logging
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-def create_filename(params):
-    '''
-    Construct a filename for the output IC based on its parameters.
-
-    Parameters
-    ----------
-    params : dict
-        Dictionary containing the ``stepsic`` simulation parameters.
-
-    Returns
-    -------
-    str
-        The generated filename.
-    '''
-    fname = f"{params['IC_PREFIX']}_"
-    fname += "Lx{}_Ly{}_Lz{}_".format(*map(int, params['LBOX']))
-    fname += f"R3D{params['R_3D']:.0f}_D4D{params['D_4D']:.0f}_"
-    fname += f"z{params['REDSHIFT']:.0f}"
-    return fname
-
 def main():
     start = time.time()
     print(stepsic.__header__)
+
     # Reading in input parameter file
     if len(sys.argv) != 2:
-        raise ValueError("Error: missing toml file!\nUsage: ./%s <input toml file>\nExiting."%stepsic.__programname__)
+        raise ValueError(f"Error: missing toml file!\nUsage: ./{stepsic.__programname__} <input toml file>\nExiting.")
     params = CosmoParameters(path=Path(sys.argv[1])).get_parameters()
 
     # Construct the initial particle load
@@ -77,11 +60,35 @@ def main():
             ic_orig.pos *= params['H']
             ic_orig.mass *= params['H']
         ic_orig.rescale_snapshot_size(params)
-    if params['TYPE'] == 'grid':
+    elif params['TYPE'] == 'shells':
+        # Shell-based particle generation for StePS geometries
+        if params['GEOMETRY'] == 'cubical':
+            raise ValueError(
+                "TYPE='shells' is not valid for cubical geometry. "
+                "Use TYPE='grid' or TYPE='random' instead."
+            )
+        pos, mass = create_shell_particles(params)
+        ic_orig = CosmoData(
+            pos=pos.astype(params['DTYPE']),
+            mass=mass.astype(params['DTYPE']),
+        )
+    elif params['TYPE'] == 'grid':
+        if params['GEOMETRY'] != 'cubical':
+            raise ValueError(
+                f"TYPE='grid' is only valid for cubical geometry, "
+                f"got GEOMETRY='{params['GEOMETRY']}'. "
+                f"Use TYPE='shells' for cylindrical/spherical geometries."
+            )
         nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
         pos, _ = create_grid(nvox, dk)
         ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
     elif params['TYPE'] == 'random':
+        if params['GEOMETRY'] != 'cubical':
+            raise ValueError(
+                f"TYPE='random' is only valid for cubical geometry, "
+                f"got GEOMETRY='{params['GEOMETRY']}'. "
+                f"Use TYPE='shells' for cylindrical/spherical geometries."
+            )
         pos = create_particles(
             npart=params['NPART'], Lbox=params['LBOX'], seed=params['SEED'])
         ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
@@ -89,66 +96,113 @@ def main():
     ic_orig.center_snapshot(params)
     ic = copy.deepcopy(ic_orig)  # The output IC will be stored here
 
-    # Initialize cosmology models and calculate growth parameters
-    cosmo_colossus = ColossusCosmology(
-        H0=params['H0'], Om0=params['OMEGA_M'], Ob0=params['OMEGA_B'],
-        Ol0=params['OMEGA_L'], sigma8=params['SIGMA8'], ns=params['NS'],
-        Neff=params['NNU'], w0=params['W0'], wa=params['WA'], Tcmb0=1e-6)
-    g1 = 1
-    D1 = g1 * cosmo_colossus.Dzplus0(params['REDSHIFT'])
-    g2 = - 3.0/7.0 * params['OMEGA_M']**(-1/143)
-    D2 = g2 * D1**2  # Bernardeau et al. 2002, eq. 97  # Unused!
-    log.info(f"D1(z={params['REDSHIFT']}) = {D1:.6f}")
-    log.info(f"D2(z={params['REDSHIFT']}) = {D2:.6f}")
+    if params['LPTORDER'] == 0:
+        # No perturbations applied. The unperturbed particle load is
+        # written directly, ready for reverse-gravity relaxation into
+        # a glass. Velocities remain zero.
+        log.info(
+            'LPTORDER=0: skipping perturbation theory. '
+            'Writing unperturbed particle load for glass-making.'
+        )
+        ic.periodic_shift(params)
 
-    # Bernardeau et al. 2002, eq. 99
-    # velocity prefactors (a*H*f) should be in km/s/Mpc
-    Hz = hubble_a(params['SCALE'], params['H0'], params['OMEGA_M'], params['OMEGA_L'])
-    log.info(f'Initial Hubble parameter: {Hz} km/s/Mpc')
-    aHf1 = params['SCALE'] * Hz * F_omega(params['SCALE'], params['OMEGA_M'], params['OMEGA_L'])
-    aHf2 = params['SCALE'] * Hz * F2_omega(params['SCALE'], params['OMEGA_M'], params['OMEGA_L'])
-    log.info(f"1st vel. prefac(z={params['REDSHIFT']}) = {aHf1:.6f}")
-    log.info(f"2nd vel. prefac(z={params['REDSHIFT']}) = {aHf2:.6f}")
+    else:
+        # Initialize cosmology models and calculate growth parameters
+        cosmo_colossus = ColossusCosmology(
+            H0=params['H0'], Om0=params['OMEGA_M'], Ob0=params['OMEGA_B'],
+            Ol0=params['OMEGA_L'], sigma8=params['SIGMA8'], ns=params['NS'],
+            Neff=params['NNU'], w0=params['W0'], wa=params['WA'], Tcmb0=1e-6)
+        g1 = 1
+        D1 = g1 * cosmo_colossus.Dzplus0(params['REDSHIFT'])
+        g2 = - 3.0/7.0 * params['OMEGA_M']**(-1/143)
+        D2 = g2 * D1**2  # Bernardeau et al. 2002, eq. 97  # Unused!
+        log.info(f"D1(z={params['REDSHIFT']}) = {D1:.6f}")
+        log.info(f"D2(z={params['REDSHIFT']}) = {D2:.6f}")
 
-    # Construct the linear power spectrum and backscale it to `z`
-    if params['SPECTRUM'] == 'camb':
-        cosmo_camb = CAMBCosmology(
-            H0=params['H0'], ombh2=params['OMBH2'], omch2=params['OMCH2'],
-            omk=params.get('OMK', 0.0), mnu=params['MNU'], nnu=params['NNU'],
-            YHe=params['YHE'], TCMB=params['TCMB'], zrei=params['ZREI'],
-            w0=params['W0'], wa=params['WA'], nonlinear=False)
-        kh, pk, pk3 = cosmo_camb.get_spectrum(
-            z=0, As=params['AS'], ns=params['NS'], sigma8_init=params['SIGMA8'],
-            kmin=1/np.min(params['LBOX']), kmax=100, npoints=2048)
-        pk = pk[0]*D1**2  # Backscale P(k,z=0) with D1^2 to desired `z`
-    elif params['SPECTRUM'] == 'input':
-        # Should contain 2 rows or columns: log(k) and a scaled log(P^3(k))
-        kh_log, pk3_log = np.genfromtxt(params['INPUT_SPECTRUM'])
-        kh, pk3 = np.exp(kh_log), np.exp(pk3_log)
-        pk = pk3 / (kh**3/(2*np.pi**2))
-    # CAMB uses [U/h] units
-    #kh, pk, pk3 = kh/params['H'], pk/params['H']**3, pk3/params['H']**3
+        # Bernardeau et al. 2002, eq. 99
+        # Velocity prefactors (a*H*f) should be in km/s/Mpc
+        Hz = hubble_a(params['SCALE'], params['H0'], params['OMEGA_M'], params['OMEGA_L'])
+        log.info(f'Initial Hubble parameter: {Hz} km/s/Mpc')
+        aHf1 = params['SCALE'] * Hz * F_omega(params['SCALE'], params['OMEGA_M'], params['OMEGA_L'])
+        aHf2 = params['SCALE'] * Hz * F2_omega(params['SCALE'], params['OMEGA_M'], params['OMEGA_L'])
+        log.info(f"1st vel. prefac(z={params['REDSHIFT']}) = {aHf1:.6f}")
+        log.info(f"2nd vel. prefac(z={params['REDSHIFT']}) = {aHf2:.6f}")
 
-    log.info('Calculating the displacement and velocity field...')
-    if params['NMESH'] == 0:
-        # If the number of mesh points is not specified, the script will
-        # generate NGRIDSAMPLES number of ICs with different resolutions.
-        # This is the standard method to generate a variable resolution
-        # IC for StePS simulations.
-        # 
-        # Then it calculates the displacement and velocity fields for
-        # each grid, which are then interpolated on top of each other to
-        # create the final IC.
-        nres_tab, mass_tab = create_nres_mass_map(
-            params['NGRIDSAMPLES'], ic_orig.mass_list, ic_orig.M_box, params['LBOX'])
+        # Construct the linear power spectrum and backscale it to `z`
+        if params['SPECTRUM'] == 'camb':
+            cosmo_camb = CAMBCosmology(
+                H0=params['H0'], ombh2=params['OMBH2'], omch2=params['OMCH2'],
+                omk=params.get('OMK', 0.0), mnu=params['MNU'], nnu=params['NNU'],
+                YHe=params['YHE'], TCMB=params['TCMB'], zrei=params['ZREI'],
+                w0=params['W0'], wa=params['WA'], nonlinear=False)
+            kh, pk, pk3 = cosmo_camb.get_spectrum(
+                z=0, As=params['AS'], ns=params['NS'], sigma8_init=params['SIGMA8'],
+                kmin=1/np.min(params['LBOX']), kmax=100, npoints=2048)
+            pk = pk[0]*D1**2  # Backscale P(k,z=0) with D1^2 to desired `z`
+        elif params['SPECTRUM'] == 'input':
+            # Should contain 2 rows or columns: log(k) and a scaled log(P^3(k))
+            kh_log, pk3_log = np.genfromtxt(params['INPUT_SPECTRUM'])
+            kh, pk3 = np.exp(kh_log), np.exp(pk3_log)
+            pk = pk3 / (kh**3/(2*np.pi**2))
+        # CAMB uses [U/h] units
+        #kh, pk, pk3 = kh/params['H'], pk/params['H']**3, pk3/params['H']**3
 
-        dis_field = np.zeros((params['NGRIDSAMPLES'], ic_orig.N_part, 3), dtype=params['DTYPE'])
-        vel_field = np.zeros((params['NGRIDSAMPLES'], ic_orig.N_part, 3), dtype=params['DTYPE'])
+        log.info('Calculating the displacement and velocity field...')
+        if params['NMESH'] == 0:
+            # If the number of mesh points is not specified, the script will
+            # generate NGRIDSAMPLES number of ICs with different resolutions.
+            # This is the standard method to generate a variable resolution
+            # IC for StePS simulations.
+            # 
+            # Then it calculates the displacement and velocity fields for
+            # each grid, which are then interpolated on top of each other to
+            # create the final IC.
+            nres_tab, mass_tab = create_nres_mass_map(
+                params['NGRIDSAMPLES'], ic_orig.mass_list, ic_orig.M_box, params['LBOX'])
 
-        for si, (res, mass) in enumerate(zip(nres_tab, mass_tab)):
-            log.info(f"Generating sample {si+1}/{params['NGRIDSAMPLES']}...")
-            log.info(f'Resolution: {res:.0f} voxels, Mass: {mass:.6f} 1e11 Msol/h')
-            nvox, dk = cubic_voxels(res, params['LBOX'])
+            dis_field = np.zeros((params['NGRIDSAMPLES'], ic_orig.N_part, 3), dtype=params['DTYPE'])
+            vel_field = np.zeros((params['NGRIDSAMPLES'], ic_orig.N_part, 3), dtype=params['DTYPE'])
+
+            for si, (res, mass) in enumerate(zip(nres_tab, mass_tab)):
+                log.info(f"Generating sample {si+1}/{params['NGRIDSAMPLES']}...")
+                log.info(f'Resolution: {res:.0f} voxels, Mass: {mass:.6f} 1e11 Msol/h')
+                nvox, dk = cubic_voxels(res, params['LBOX'])
+                # White noise field for complete reproducibility
+                field = white_noise(nvox=nvox, seed=params['SEED'])
+                with h5py.File(Path(params['IC_DIR'], 'ic_white_noise.hdf5'), 'w') as f:
+                    f.create_dataset('ic_white_noise', data=np.fft.irfftn(field))
+                delta_k = generate_delta_k(kh, pk, nvox, dk, field=field)
+
+                if params['LPTORDER'] == 1:
+                    # Use 1st order Lagrangian PT (Zel'dovich approximation)
+                    xpert, vpert = lpt1(
+                        ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk,
+                        g1=g1, aHf1=aHf1, counter=params['COUNTER'],
+                        compensate=params['COMPENSATE'], method=params['INTERPOLATION'])
+                    log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='1LPT')
+                elif params['LPTORDER'] == 2:
+                    # Use 2nd order Lagrangian PT
+                    xpert, vpert = lpt2(
+                        ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk,
+                        g1=g1, g2=g2, aHf1=aHf1, aHf2=aHf2, counter=params['COUNTER'],
+                        compensate=params['COMPENSATE'], method=params['INTERPOLATION'])
+                    log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='2LPT')
+
+                # Calculating the displacement field for every grid
+                dis_field[si, ...] = xpert - ic_orig.pos
+                vel_field[si, ...] = vpert - ic_orig.vel
+
+            log.info('Interpolating between the different resolutions...')
+            for i in range(0, ic.N_part):  # TODO: vectorize this!
+                for k in range(0, 3):
+                    ic.pos[i, k] += np.interp(ic.mass[i], mass_tab, dis_field[:, i, k])
+                    ic.vel[i, k] += np.interp(ic.mass[i], mass_tab, vel_field[:, i, k])
+        else:
+            # If the number of mesh points is specified, the script will
+            # generate a single IC with a grid of the specified resolution.
+            # This is useful for testing purposes or for generating ICs with
+            # a specific resolution.
+            nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
             # White noise field for complete reproducibility
             field = white_noise(nvox=nvox, seed=params['SEED'])
             with h5py.File(Path(params['IC_DIR'], 'ic_white_noise.hdf5'), 'w') as f:
@@ -169,52 +223,16 @@ def main():
                     g1=g1, g2=g2, aHf1=aHf1, aHf2=aHf2, counter=params['COUNTER'],
                     compensate=params['COMPENSATE'], method=params['INTERPOLATION'])
                 log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='2LPT')
+            ic.pos = xpert
+            ic.vel = vpert
 
-            # Calculating the displacement field for every grid
-            dis_field[si, ...] = xpert - ic_orig.pos
-            vel_field[si, ...] = vpert - ic_orig.vel
+        # Prepare the IC for final output
+        ic.vel /= params['H']  # Convert to [km/s] in all cases
+        ic.vel /= np.sqrt(params['SCALE'])  # Gadget/StePS convention
+        ic.periodic_shift(params)
 
-        log.info('Interpolating between the different resolutions...')
-        for i in range(0, ic.N_part):  # TODO: vectorize this!
-            for k in range(0, 3):
-                ic.pos[i, k] += np.interp(ic.mass[i], mass_tab, dis_field[:, i, k])
-                ic.vel[i, k] += np.interp(ic.mass[i], mass_tab, vel_field[:, i, k])
-    else:
-        # If the number of mesh points is specified, the script will
-        # generate a single IC with a grid of the specified resolution.
-        # This is useful for testing purposes or for generating ICs with
-        # a specific resolution.
-        nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
-        # White noise field for complete reproducibility
-        field = white_noise(nvox=nvox, seed=params['SEED'])
-        with h5py.File(Path(params['IC_DIR'], 'ic_white_noise.hdf5'), 'w') as f:
-            f.create_dataset('ic_white_noise', data=np.fft.irfftn(field))
-        delta_k = generate_delta_k(kh, pk, nvox, dk, field=field)
-
-        if params['LPTORDER'] == 1:
-            # Use 1st order Lagrangian PT (Zel'dovich approximation)
-            xpert, vpert = lpt1(
-                ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk,
-                g1=g1, aHf1=aHf1, counter=params['COUNTER'],
-                compensate=params['COMPENSATE'], method=params['INTERPOLATION'])
-            log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='1LPT')
-        elif params['LPTORDER'] == 2:
-            # Use 2nd order Lagrangian PT
-            xpert, vpert = lpt2(
-                ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk,
-                g1=g1, g2=g2, aHf1=aHf1, aHf2=aHf2, counter=params['COUNTER'],
-                compensate=params['COMPENSATE'], method=params['INTERPOLATION'])
-            log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='2LPT')
-        ic.pos = xpert
-        ic.vel = vpert
-
-    # Prepare the IC for final output
-    ic.vel /= params['H']  # Convert to [km/s] in all cases
-    ic.vel /= np.sqrt(params['SCALE'])  # Gadget/StePS convention
-    ic.periodic_shift(params)
-
-    if params['TYPE'] == 'glass':
-        ic.from_internal_units(params)
+        if params['TYPE'] == 'glass':
+            ic.from_internal_units(params)
 
     if not params['HINDEPENDENT']:
         log.info('Converting the IC to H0 dependent units...')
@@ -225,11 +243,16 @@ def main():
         params['R_3D'] /= params['H']
         params['D_4D'] /= params['H']
 
-    if not params['COMOVING']:
+    if not params['COMOVING'] and params['LPTORDER'] > 0:
         log.info('Converting the IC to proper coordinates...')
         ic.pos *= params['SCALE']
         ic.vel *= np.sqrt(params['SCALE'])
         ic.vel += ic.pos * Hz
+    elif not params['COMOVING'] and params['LPTORDER'] == 0:
+        log.warning(
+            'COMOVING=false has no effect for LPTORDER=0 (glass-making mode). '
+            'Output is written in comoving coordinates.'
+        )
 
     # Save the IC to a file
     header = {

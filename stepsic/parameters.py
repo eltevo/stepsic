@@ -172,21 +172,21 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('LBOX', ptype=PType.ARRAY, label="Box size [X, Y, Z]", h_scaled=True, h_display=True),
     Param('PERIODIC', ptype=PType.ARRAY, label="Periodicity [X, Y, Z]", array_dtype=bool),
     Param('REDSHIFT',                  label="Target redshift", fmt=".2f"),
-    Param('LPTORDER', ptype=PType.INT, label="LPT order"),
+    Param('LPTORDER', ptype=PType.INT, label="LPT order", choices=(0, 1, 2, 3)),
     Param('COI', ptype=PType.ARRAY, label="Center of Interest [X, Y, Z]", h_scaled=True, h_display=True),
 
     # -- IC type and generation ----------------------------------------
     Param('TYPE', ptype=PType.STRING, label="IC type", choices=('grid', 'random', 'shells', 'glass')),
     Param('NMESH', ptype=PType.INT, label="Mesh size", unit="voxels"),
-    Param('NGRIDSAMPLES', ptype=PType.INT, label="Grid samples"),
+    Param('NGRIDSAMPLES', ptype=PType.INT, label="Grid samples", condition=lambda P: P.get('TYPE') == 'glass'),
     Param('NSHELL', ptype=PType.INT, label="Particles per shell", condition=lambda P: P.get('TYPE') == 'shells'),
     Param('NPART', ptype=PType.INT, label="N particles (random)", condition=lambda P: P.get('TYPE') == 'random'),
     Param('INTERPOLATION', ptype=PType.STRING, label="Interpolation", choices=('ngp', 'cic', 'tsc')),
-    Param('COMPENSATE', ptype=PType.BOOL, label="Compensation kernel"),
-    Param('SPHEREMODE', ptype=PType.BOOL, label="Sphere mode"),
+    Param('COMPENSATE', ptype=PType.BOOL, label="Compensation kernel", condition=lambda P: P.get('LPTORDER') > 0),
+    Param('SPHEREMODE', ptype=PType.BOOL, label="Sphere mode", condition=lambda P: P.get('LPTORDER') > 0),
     Param('COMOVING', ptype=PType.BOOL, label="Comoving IC"),
-    Param('COUNTER', ptype=PType.BOOL, label="Counter phase"),
-    Param('PHASE_SHIFT', label="Phase shift",  fmt=".2f", unit="degrees"),
+    Param('COUNTER', ptype=PType.BOOL, label="Counter phase", condition=lambda P: P.get('LPTORDER') > 0),
+    Param('PHASE_SHIFT', label="Phase shift",  fmt=".2f", unit="degrees", condition=lambda P: P.get('LPTORDER') > 0),
     Param('HINDEPENDENT', ptype=PType.BOOL, label="H-independent units"),
     Param('SEED', ptype=PType.INT, label="Random seed"),
 
@@ -202,8 +202,8 @@ IC_PARAMS: tuple[Param, ...] = (
     # -- Stereographic projection --------------------------------------
     Param('R_3D', label="Euclidean sim. radius", h_scaled=True, h_display=True, h_precision=4),
     Param('D_4D', label="Compact. sim. diameter", h_scaled=True, h_display=True, h_precision=4),
-    Param('BIN_MODE', ptype=PType.STRING, label="Binning mode", choices=('omega', 'volume')),
-    Param('NRBINS', ptype=PType.INT, label="Radial bins"),
+    Param('BIN_MODE', ptype=PType.STRING, label="Binning mode", choices=('omega', 'volume'), condition=lambda P: P.get('TYPE') == 'shells'),
+    Param('NRBINS', ptype=PType.INT, label="Radial bins", condition=lambda P: P.get('TYPE') == 'shells'),
 
     # -- Rotation ------------------------------------------------------
     Param('ROTATE', label="Rotation", fmt=".4f", unit="rad/Gyr"),
@@ -216,7 +216,7 @@ IC_PARAMS: tuple[Param, ...] = (
     # -- Power spectrum ------------------------------------------------
     Param('SPECTRUM', ptype=PType.STRING, label="Spectrum type", choices=('input', 'camb')),
     Param('NONLINEAR', ptype=PType.BOOL, label="Use nonlinear spectrum", condition=lambda P: P.get('SPECTRUM') == 'camb'),
-    Param('HALOFIT', ptype=PType.STRING, label="Halofit version", condition=lambda P: P.get('SPECTRUM') == 'camb' and P.get('NONLINEAR', True)),
+    Param('HALOFIT', ptype=PType.STRING, label="Halofit version", condition=lambda P: P.get('SPECTRUM') == 'camb' and P.get('NONLINEAR', False)),
     Param('INPUT_SPECTRUM', ptype=PType.PATH, label="Input spectrum file", condition=lambda P: P.get('SPECTRUM') == 'input'),
     Param('INPUT_SPECTRUM_UNIT_L_IN_CM', label=None, condition=lambda P: P.get('SPECTRUM') == 'input'),
 

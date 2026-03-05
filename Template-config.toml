@@ -73,11 +73,12 @@ TYPE = "glass"
 
 # ** Cubical geometry **************************************************
 NMESH = 64             # Grid cells per shortest dimension. Other dimensions will be scaled accordingly. Set to 0 for adaptive multiscale IC generation.
-NPART = 32768          # Total particle count for TYPE = "random".
+NPART = 32768          # Total particle count for TYPE = "random". !! Only advised to use with LPTORDER = 0 in pre-glass generation mode. !!
 
 # ** Shells (cylindrical / spherical only) *****************************
 #  Generates N_total = NSHELL * NRBINS particles, distributed in
 #  concentric shells whose radii follow the stereographic binning.
+#  !! Only advised to use with LPTORDER = 0 in pre-glass generation mode. !!
 NSHELL = 12288         # Particles per radial shell.
 
 # ** Glass input (cubical or stereographic) ****************************
@@ -89,6 +90,11 @@ INPUT_GLASS = "./examples/input_glass.hdf5"   # Path to the input glass file.
 # ** Adaptive multiscale (glass + NMESH=0) *****************************
 NGRIDSAMPLES = 7       # Number of resolution levels for multiscale IC.
 
+# ** General options ***************************************************
+COMOVING = true        # If `true`, the IC will be generated in comoving coordinates, otherwise in physical coordinates. This is useful for cosmological simulations where the expansion of the universe is taken into account.
+HINDEPENDENT = true    # If `true`, the IC will be generated in units of [U/h] instead of [U]. By default, the code calculates everything in [U/h] units. If set to `false`, then the code also expects the input glass to be in units of [U] instead of [U/h].
+SEED = 137             # Random seed to initialize the Numpy RNG with. This will be used in particle generation and in the sampling of Gaussian displacements.
+
 # ** Rotating IC (experimental) ****************************************
 ROTATE = 0.0           # Add an angular velocity to the IC in rad / Gyr.
 
@@ -96,7 +102,7 @@ ROTATE = 0.0           # Add an angular velocity to the IC in rad / Gyr.
 # -- 3. Perturbation theory --------------------------------------------
 
 REDSHIFT = 63          # Target redshift
-LPTORDER = 2           # Order of the LPT. Options: 1 (Zel'dovich), 2 (2LPT), 3 (3LPT).
+LPTORDER = 2           # Order of the LPT. Options: 0 (no perturbation, glass-making mode), 1 (Zel'dovich), 2 (2LPT), 3 (3LPT).
 INTERPOLATION = "tsc"  # Grid-to-particle interpolation to calculate displacements and velocities. Options: "ngp", "cic", "tsc".
 COMPENSATE = true      # If `true`, the IC will be generated with a compensation kernel to pre-sharpen the field before interpolation. This is useful for reducing the smoothing effect of interpolation when using low-resolution meshes or high-order interpolation methods, especially in the case of glass IC where particles do not coincide with grid points. For regular lattices where particles coincide with grid points, this should be False.
 SPHEREMODE = false     # If `true`, the IC will be generated in a spherical shell in k-space, otherwise it will be generated in a cubical box in k-space.
