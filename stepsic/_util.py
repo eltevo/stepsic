@@ -61,8 +61,6 @@ def _resolution_tag(params: dict, *, n_part: int | None = None) -> str:
     elif ic_type == 'shell':
         parts.append(f'Nsh{params["NSHELL"]}')
         parts.append(f'Nr{params["NRBINS"]}')
-        if nmesh > 0:
-            parts.append(f'Nm{nmesh}')
 
     return '_'.join(parts)
 

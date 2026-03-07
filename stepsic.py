@@ -61,7 +61,7 @@ def main():
             ic_orig.pos *= params['H']
             ic_orig.mass *= params['H']
         ic_orig.rescale_snapshot_size(params)
-    elif params['TYPE'] == 'shells':
+    elif params['TYPE'] == 'shell':
         # Shell-based particle generation for StePS geometries
         pos, mass = create_shell_particles(params)
         ic_orig = CosmoData(

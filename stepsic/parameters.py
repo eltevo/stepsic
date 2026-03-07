@@ -38,13 +38,13 @@ class PType(Enum):
 
     Each variant maps to a specific validation and casting rule.
     '''
-    SCALAR = "scalar"          # Cast to dtype (default: float64)
-    INT = "int"                # Cast to int
-    BOOL = "bool"              # Must be bool
-    STRING = "string"          # Stripped and lowered
-    ARRAY = "array"            # Broadcast to shape-(length,) with given dtype
-    PATH = "path"              # Must be a valid filesystem path
-    PATH_MKDIR = "path_mkdir"  # Path that will be created if missing
+    SCALAR = 'scalar'          # Cast to dtype (default: float64)
+    INT = 'int'                # Cast to int
+    BOOL = 'bool'              # Must be bool
+    STRING = 'string'          # Stripped and lowered
+    ARRAY = 'array'            # Broadcast to shape-(length,) with given dtype
+    PATH = 'path'              # Must be a valid filesystem path
+    PATH_MKDIR = 'path_mkdir'  # Path that will be created if missing
 
 
 @dataclass(frozen=True, **({"slots": True} if sys.version_info >= (3, 10) else {}))
@@ -202,10 +202,10 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('COI', ptype=PType.ARRAY, label="Center of Interest [X, Y, Z]", h_scaled=True, h_display=True),
 
     # -- IC type and generation ----------------------------------------
-    Param('TYPE', ptype=PType.STRING, label="IC type", choices=('grid', 'random', 'shells', 'glass')),
+    Param('TYPE', ptype=PType.STRING, label="IC type", choices=('grid', 'random', 'shell', 'glass')),
     Param('NMESH', ptype=PType.INT, label="Mesh size", unit="voxels"),
     Param('NPART', ptype=PType.INT, label="N particles (random)", condition=lambda P: P.get('TYPE') == 'random'),
-    Param('NSHELL', ptype=PType.INT, label="Particles per shell", condition=lambda P: P.get('TYPE') == 'shells'),
+    Param('NSHELL', ptype=PType.INT, label="Particles per shell", condition=lambda P: P.get('TYPE') == 'shell'),
     Param('NGRIDSAMPLES', ptype=PType.INT, label="Grid samples", condition=lambda P: P.get('TYPE') == 'glass'),
     Param('INTERPOLATION', ptype=PType.STRING, label="Interpolation", choices=('ngp', 'cic', 'tsc'), condition=lambda P: P.get('LPTORDER') > 0),
     Param('COMPENSATE', ptype=PType.BOOL, label="Compensation kernel", condition=lambda P: P.get('LPTORDER') > 0),
@@ -228,8 +228,8 @@ IC_PARAMS: tuple[Param, ...] = (
     # -- Stereographic projection --------------------------------------
     Param('R_3D', label="Euclidean sim. radius", h_scaled=True, h_display=True, h_precision=4),
     Param('D_4D', label="Compact. sim. diameter", h_scaled=True, h_display=True, h_precision=4),
-    Param('BIN_MODE', ptype=PType.STRING, label="Binning mode", choices=('omega', 'volume'), condition=lambda P: P.get('TYPE') == 'shells'),
-    Param('NRBINS', ptype=PType.INT, label="Radial bins", condition=lambda P: P.get('TYPE') == 'shells'),
+    Param('BIN_MODE', ptype=PType.STRING, label="Binning mode", choices=('omega', 'volume'), condition=lambda P: P.get('TYPE') == 'shell'),
+    Param('NRBINS', ptype=PType.INT, label="Radial bins", condition=lambda P: P.get('TYPE') == 'shell'),
 
     # -- Rotation ------------------------------------------------------
     Param('ROTATE', label="Rotation", fmt=".4f", unit="rad/Gyr"),
@@ -271,9 +271,9 @@ IC_DERIVED: tuple[Param, ...] = (
 IC_CONSTRAINTS: tuple[Constraint, ...] = (
     # TYPE / GEOMETRY compatibility
     Constraint(
-        check=lambda P: P.get('TYPE') != 'shells' or P.get('GEOMETRY') != 'cubical',
+        check=lambda P: P.get('TYPE') != 'shell' or P.get('GEOMETRY') != 'cubical',
         message=lambda P: (
-            "TYPE='shells' is not valid for cubical geometry. "
+            "TYPE='shell' is not valid for cubical geometry. "
             "Use TYPE='grid' or TYPE='random' instead."
         ),
     ),
@@ -282,7 +282,7 @@ IC_CONSTRAINTS: tuple[Constraint, ...] = (
         message=lambda P: (
             f"TYPE='grid' is only valid for cubical geometry, "
             f"got GEOMETRY='{P['GEOMETRY']}'. "
-            f"Use TYPE='shells' for cylindrical/spherical geometries."
+            f"Use TYPE='shell' for cylindrical/spherical geometries."
         ),
     ),
     Constraint(
@@ -290,7 +290,7 @@ IC_CONSTRAINTS: tuple[Constraint, ...] = (
         message=lambda P: (
             f"TYPE='random' is only valid for cubical geometry, "
             f"got GEOMETRY='{P['GEOMETRY']}'. "
-            f"Use TYPE='shells' for cylindrical/spherical geometries."
+            f"Use TYPE='shell' for cylindrical/spherical geometries."
         ),
     ),
 

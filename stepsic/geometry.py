@@ -424,7 +424,7 @@ def create_binner(params: dict) -> SphericalBinner | CylindricalBinner:
     elif geometry == 'cubical':
         raise ValueError(
             "Cubical geometry does not use radial binning. "
-            "Use TYPE='grid' or TYPE='random' instead of TYPE='shells'."
+            "Use TYPE='grid' or TYPE='random' instead of TYPE='shell'."
         )
     else:  # parameters.py already checks this, but you can never be too careful
         raise ValueError(f"Unknown GEOMETRY '{geometry}'.")
@@ -751,7 +751,7 @@ def create_shell_particles(params: dict) -> tuple[NDArray, NDArray]:
     Constructs the appropriate binner from the parameter dictionary
     and generates particles matching the StePS stereographic geometry.
 
-    This function should be called when ``TYPE = 'shells'`` is selected
+    This function should be called when ``TYPE = 'shell'`` is selected
     in the configuration.
 
     Parameters
@@ -777,7 +777,7 @@ def create_shell_particles(params: dict) -> tuple[NDArray, NDArray]:
     geometry = params['GEOMETRY']
     if geometry == 'cubical':
         raise ValueError(
-            "TYPE='shells' is not valid for cubical geometry. "
+            "TYPE='shell' is not valid for cubical geometry. "
             "Use TYPE='grid' or TYPE='random' instead."
         )
 

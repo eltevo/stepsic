@@ -19,8 +19,8 @@
 #  GEOMETRY determines how the simulation volume is shaped. Options:
 #
 #    "cubical"        Standard periodic box.    TYPE = "grid", "random" or "glass".
-#    "cylindrical"    StePS S^1 x R^2.          TYPE = "glass" or "shells".
-#    "spherical"      StePS R^3.                TYPE = "glass" or "shells".
+#    "cylindrical"    StePS S^1 x R^2.          TYPE = "glass" or "shell".
+#    "spherical"      StePS R^3.                TYPE = "glass" or "shell".
 
 GEOMETRY = "cubical"
 
@@ -68,7 +68,7 @@ COI = [ 0, 0, 0 ]
 #
 #    "grid"      Regular lattice.             Cubical geometry only.
 #    "random"    Poisson sampling.            Cubical geometry only.
-#    "shells"    Concentric shell filling.    Cylindrical / spherical geometry only.
+#    "shell"    Concentric shell filling.    Cylindrical / spherical geometry only.
 #    "glass"     Load a pre-built glass.      Any geometry.
 
 TYPE = "glass"
@@ -77,13 +77,13 @@ TYPE = "glass"
 NMESH = 64             # Grid cells per shortest dimension. Other dimensions will be scaled accordingly. Set to 0 for adaptive multiscale IC generation.
 NPART = 32768          # Total particle count for TYPE = "random". !! Only advised to use with LPTORDER = 0 in pre-glass generation mode. !!
 
-# ** Shells (cylindrical / spherical only) *****************************
+# ** Cylindrical / spherical geometry **********************************
 #  Generates N_total = NSHELL * NRBINS particles, distributed in
 #  concentric shells whose radii follow the stereographic binning.
 #  !! Only advised to use with LPTORDER = 0 in pre-glass generation mode. !!
 NSHELL = 12288         # Particles per radial shell.
 
-# ** Glass input (cubical or stereographic) ****************************
+# ** Glass input (any geometry) ****************************************
 #  If TYPE = "glass", the initial particle distribution will be loaded
 #  from a pre-built glass file. This file should contain the particle
 #  positions in the same geometry as defined by the `GEOMETRY` parameter.
