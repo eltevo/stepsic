@@ -54,41 +54,25 @@ def main():
     if params['TYPE'] == 'glass':
         ic_orig = CosmoData.load_snapshot(Path(params['INPUT_GLASS']))
         ic_orig.to_internal_units(params)
-        if not params['HINDEPENDENT'] and params['GEOMETRY'] == 'spherical':
-            #Since a periodic glass is always scaled to the defined periodic box size, we only need to do this for spherical geometry
+        if not params['HINDEPENDENT'] and params['GEOMETRY'] != 'cubical':
+            # Since a periodic glass is always scaled to the defined periodic
+            # box size, we only need to do this for non-cubical geometries
             log.info('Converting the IC to H0 independent units...')
             ic_orig.pos *= params['H']
             ic_orig.mass *= params['H']
         ic_orig.rescale_snapshot_size(params)
     elif params['TYPE'] == 'shells':
         # Shell-based particle generation for StePS geometries
-        if params['GEOMETRY'] == 'cubical':
-            raise ValueError(
-                "TYPE='shells' is not valid for cubical geometry. "
-                "Use TYPE='grid' or TYPE='random' instead."
-            )
         pos, mass = create_shell_particles(params)
         ic_orig = CosmoData(
             pos=pos.astype(params['DTYPE']),
             mass=mass.astype(params['DTYPE']),
         )
     elif params['TYPE'] == 'grid':
-        if params['GEOMETRY'] != 'cubical':
-            raise ValueError(
-                f"TYPE='grid' is only valid for cubical geometry, "
-                f"got GEOMETRY='{params['GEOMETRY']}'. "
-                f"Use TYPE='shells' for cylindrical/spherical geometries."
-            )
         nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
         pos, _ = create_grid(nvox, dk)
         ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
     elif params['TYPE'] == 'random':
-        if params['GEOMETRY'] != 'cubical':
-            raise ValueError(
-                f"TYPE='random' is only valid for cubical geometry, "
-                f"got GEOMETRY='{params['GEOMETRY']}'. "
-                f"Use TYPE='shells' for cylindrical/spherical geometries."
-            )
         pos = create_particles(
             npart=params['NPART'], Lbox=params['LBOX'], seed=params['SEED'])
         ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
@@ -248,11 +232,6 @@ def main():
         ic.pos *= params['SCALE']
         ic.vel *= np.sqrt(params['SCALE'])
         ic.vel += ic.pos * Hz
-    elif not params['COMOVING'] and params['LPTORDER'] == 0:
-        log.warning(
-            'COMOVING=false has no effect for LPTORDER=0 (glass-making mode). '
-            'Output is written in comoving coordinates.'
-        )
 
     # Save the IC to a file
     header = {

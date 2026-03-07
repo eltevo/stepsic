@@ -25,12 +25,13 @@
 GEOMETRY = "cubical"
 
 # ** Cubical geometry **************************************************
-#  Box dimensions in [Mpc]. LBOX defines all three side lengths. You can
-#  use a scalar to define a cubical box, or an array of `[ Lx, Ly, Lz ]`
-#  for a rectangular cuboid.
+#  Box dimensions. LBOX defines all three side lengths. You can use a
+#  scalar to define a cubical box, or an array of `[ Lx, Ly, Lz ]` for a
+#  rectangular cuboid.
+#  If HINDEPENDENT = false, numbers here are in [Mpc], otherwise [Mpc/h].
 LBOX = [ 1000, 1000, 1000 ]
 #  Periodic boundary conditions in the form of `[ Px, Py, Pz ]`. In
-# "cubical" gemoetry any of the three dimensions can be periodic. Use
+# "cubical" geometry any of the three dimensions can be periodic. Use
 # `true` or `1` for periodic, `false` or `0` for non-periodic. You can
 # also use a single value to set periodicity for all dimensions at once.
 PERIODIC = [ 1, 1, 1 ]
@@ -57,7 +58,8 @@ NRBINS = 224           # Number of radial bins in the stereographic projection.
 # ** Center of Interest ************************************************
 #  The point around which the IC is centered. For cubical geometry this
 #  shifts the box origin; for StePS geometries it sets the observer position.
-COI = [ 0, 0, 0 ]      # Center of Interest [Mpc]
+#  If HINDEPENDENT = false, numbers here are in [Mpc], otherwise [Mpc/h].
+COI = [ 0, 0, 0 ] 
 
 
 # -- 2. Particle generation --------------------------------------------

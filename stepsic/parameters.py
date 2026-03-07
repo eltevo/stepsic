@@ -107,6 +107,32 @@ class Param:
     formatter: Callable[[Any, dict], str] | None = None
 
 
+@dataclass(frozen=True, **({"slots": True} if sys.version_info >= (3, 10) else {}))
+class Constraint:
+    r'''
+    A cross-parameter validation rule.
+
+    A ``Constraint`` enforces compatibility between two or more already
+    validated parameters.
+
+    Parameters
+    ----------
+    check : Callable[[dict], bool]
+        Predicate that returns ``True`` when the constraint is
+        satisfied.  Receives the full parameter dict.
+    message : Callable[[dict], str]
+        Callable that produces the error message when the constraint
+        is violated.  Receives the full parameter dict so it can
+        interpolate actual values into the message.
+    level : str
+        - ``'error'`` (default) raises ``ValueError``
+        - ``'warning'`` broadcasts a log warning and continues.
+    '''
+    check: Callable[[dict], bool]
+    message: Callable[[dict], str]
+    level: str = "error"
+
+
 # Parameter table - cosmological parameters
 COSMO_PARAMS: tuple[Param, ...] = (
     Param('H0',      label='H0',       fmt=".3f", group='cosmo', unit='km s^-1 Mpc^-1'),
@@ -172,16 +198,16 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('LBOX', ptype=PType.ARRAY, label="Box size [X, Y, Z]", h_scaled=True, h_display=True),
     Param('PERIODIC', ptype=PType.ARRAY, label="Periodicity [X, Y, Z]", array_dtype=bool),
     Param('REDSHIFT',                  label="Target redshift", fmt=".2f"),
-    Param('LPTORDER', ptype=PType.INT, label="LPT order", choices=(0, 1, 2, 3)),
+    Param('LPTORDER', ptype=PType.INT, label="LPT order", choices=(0, 1, 2)),
     Param('COI', ptype=PType.ARRAY, label="Center of Interest [X, Y, Z]", h_scaled=True, h_display=True),
 
     # -- IC type and generation ----------------------------------------
     Param('TYPE', ptype=PType.STRING, label="IC type", choices=('grid', 'random', 'shells', 'glass')),
     Param('NMESH', ptype=PType.INT, label="Mesh size", unit="voxels"),
-    Param('NGRIDSAMPLES', ptype=PType.INT, label="Grid samples", condition=lambda P: P.get('TYPE') == 'glass'),
-    Param('NSHELL', ptype=PType.INT, label="Particles per shell", condition=lambda P: P.get('TYPE') == 'shells'),
     Param('NPART', ptype=PType.INT, label="N particles (random)", condition=lambda P: P.get('TYPE') == 'random'),
-    Param('INTERPOLATION', ptype=PType.STRING, label="Interpolation", choices=('ngp', 'cic', 'tsc')),
+    Param('NSHELL', ptype=PType.INT, label="Particles per shell", condition=lambda P: P.get('TYPE') == 'shells'),
+    Param('NGRIDSAMPLES', ptype=PType.INT, label="Grid samples", condition=lambda P: P.get('TYPE') == 'glass'),
+    Param('INTERPOLATION', ptype=PType.STRING, label="Interpolation", choices=('ngp', 'cic', 'tsc'), condition=lambda P: P.get('LPTORDER') > 0),
     Param('COMPENSATE', ptype=PType.BOOL, label="Compensation kernel", condition=lambda P: P.get('LPTORDER') > 0),
     Param('SPHEREMODE', ptype=PType.BOOL, label="Sphere mode", condition=lambda P: P.get('LPTORDER') > 0),
     Param('COMOVING', ptype=PType.BOOL, label="Comoving IC"),
@@ -231,6 +257,98 @@ IC_DERIVED: tuple[Param, ...] = (
 )
 
 
+# Cross-parameter constraints
+#
+# Each entry enforces a compatibility rule between two or more parameters.
+# The ``check`` predicate must return True when the constraint is met.
+# The ``message`` callable produces a human-readable error/warning when
+# the constraint is violated.
+#
+# Convention for error messages in this dictionary:
+#   "{PARAM}='{value}' is [not valid for | only valid for] {condition}.
+#    Use {suggestion} instead."
+
+IC_CONSTRAINTS: tuple[Constraint, ...] = (
+    # TYPE / GEOMETRY compatibility
+    Constraint(
+        check=lambda P: P.get('TYPE') != 'shells' or P.get('GEOMETRY') != 'cubical',
+        message=lambda P: (
+            "TYPE='shells' is not valid for cubical geometry. "
+            "Use TYPE='grid' or TYPE='random' instead."
+        ),
+    ),
+    Constraint(
+        check=lambda P: P.get('TYPE') != 'grid' or P.get('GEOMETRY') == 'cubical',
+        message=lambda P: (
+            f"TYPE='grid' is only valid for cubical geometry, "
+            f"got GEOMETRY='{P['GEOMETRY']}'. "
+            f"Use TYPE='shells' for cylindrical/spherical geometries."
+        ),
+    ),
+    Constraint(
+        check=lambda P: P.get('TYPE') != 'random' or P.get('GEOMETRY') == 'cubical',
+        message=lambda P: (
+            f"TYPE='random' is only valid for cubical geometry, "
+            f"got GEOMETRY='{P['GEOMETRY']}'. "
+            f"Use TYPE='shells' for cylindrical/spherical geometries."
+        ),
+    ),
+
+    # NMESH=0 requires glass for variable-resolution mode currently
+    Constraint(
+        check=lambda P: P.get('NMESH', 1) != 0 or P.get('TYPE') == 'glass',
+        message=lambda P: (
+            f"NMESH=0 (variable-resolution mode) requires TYPE='glass'. "
+            f"Got TYPE='{P['TYPE']}'."
+        ),
+    ),
+
+    # Sanity checks
+    Constraint(
+        check=lambda P: P.get('REDSHIFT', 0) >= 0,
+        message=lambda P: (
+            f"REDSHIFT={P['REDSHIFT']:.2f} is negative. "
+            f"Redshift must be >= 0."
+        ),
+    ),
+
+    # Non-fatal warnings
+    Constraint(
+        check=lambda P: P.get('COMOVING', True) or P.get('LPTORDER', 1) > 0,
+        message=lambda P: (
+            "COMOVING=false has no effect for LPTORDER=0 (glass-making mode). "
+            "Output will be written in comoving coordinates."
+        ),
+        level="warning",
+    ),
+)
+
+
+def _validate_constraints(
+    constraints: Sequence[Constraint], P: dict,
+) -> None:
+    '''
+    Run all cross-parameter constraints against the parameter dict.
+
+    Parameters
+    ----------
+    constraints : sequence of Constraint
+        The constraint rules to check.
+    P : dict
+        The full parameter dictionary.
+
+    Raises
+    ------
+    ValueError
+        On the first ``level='error'`` constraint that fails.
+    '''
+    for c in constraints:
+        if not c.check(P):
+            if c.level == "error":
+                raise ValueError(c.message(P))
+            log.warning(c.message(P))
+
+
 def _fmt_arr(x: object, *, precision: int = 2) -> str:
     '''Pretty fixed-width formatting for scalars or small arrays.'''
     return np.array2string(np.asarray(x), precision=precision, floatmode='fixed')
@@ -244,8 +362,8 @@ def _fmt_with_h(
 
     When ``HINDEPENDENT`` is True the value is already in ``unit``
     (typically Mpc/h) and is printed as-is.  When False the internal
-    value is in ``unit`` (Mpc) but was multiplied by *h*, so both the
-    physical and *h*-scaled representations are shown.
+    value is in ``unit`` (Mpc) but was multiplied by ``h``, so both the
+    physical and ``h``-scaled representations are shown.
     '''
     if hindependent:
         return f'{_fmt_arr(value, precision=precision)} {unit}'
@@ -514,5 +632,6 @@ class CosmoParameters:
 
         # stepsic parameters
         _validate_group(IC_PARAMS, self.P)
+        _validate_constraints(IC_CONSTRAINTS, self.P)
         _compute_derived_ic(self.P)
         _display_params('IC Parameters', (*IC_PARAMS, *IC_DERIVED), self.P)
