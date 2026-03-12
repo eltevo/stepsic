@@ -33,7 +33,7 @@ from stepsic.field import \
     create_grid, create_particles, create_nres_mass_map
 from stepsic.geometry import create_shell_particles
 from stepsic.lpt import lpt1, lpt2, log_lpt
-from stepsic._util import create_filename
+from stepsic._util import ensure_run_dir
 
 import logging
 log = logging.getLogger(__name__)
@@ -46,7 +46,10 @@ def main():
 
     # Reading in input parameter file
     if len(sys.argv) != 2:
-        raise ValueError(f"Error: missing toml file!\nUsage: ./{stepsic.__programname__} <input toml file>\nExiting.")
+        raise ValueError(
+            f"Error: missing toml file!\nUsage: "
+            f"./{stepsic.__programname__} <input toml file>\nExiting."
+        )
     params = CosmoParameters(path=Path(sys.argv[1])).get_parameters()
 
     # Construct the initial particle load
@@ -69,7 +72,7 @@ def main():
             mass=mass.astype(params['DTYPE']),
         )
     elif params['TYPE'] == 'grid':
-        nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
+        nvox, dk = cubic_voxels(params['NGRID'], params['LBOX'])
         pos, _ = create_grid(nvox, dk)
         ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
     elif params['TYPE'] == 'random':
@@ -133,28 +136,26 @@ def main():
 
         log.info('Calculating the displacement and velocity field...')
         if params['NMESH'] == 0:
-            # If the number of mesh points is not specified, the script will
-            # generate NGRIDSAMPLES number of ICs with different resolutions.
-            # This is the standard method to generate a variable resolution
-            # IC for StePS simulations.
+            # If the number of mesh points is not specified, the script
+            # will generate NMESHSAMPLES number of ICs with different
+            # resolutions. This is the standard method to generate a
+            # variable resolution IC for StePS simulations.
             # 
             # Then it calculates the displacement and velocity fields for
             # each grid, which are then interpolated on top of each other to
             # create the final IC.
             nres_tab, mass_tab = create_nres_mass_map(
-                params['NGRIDSAMPLES'], ic_orig.mass_list, ic_orig.M_box, params['LBOX'])
+                params['NMESHSAMPLES'], ic_orig.mass_list, ic_orig.M_box, params['LBOX'])
 
-            dis_field = np.zeros((params['NGRIDSAMPLES'], ic_orig.N_part, 3), dtype=params['DTYPE'])
-            vel_field = np.zeros((params['NGRIDSAMPLES'], ic_orig.N_part, 3), dtype=params['DTYPE'])
+            dis_field = np.zeros((params['NMESHSAMPLES'], ic_orig.N_part, 3), dtype=params['DTYPE'])
+            vel_field = np.zeros((params['NMESHSAMPLES'], ic_orig.N_part, 3), dtype=params['DTYPE'])
 
             for si, (res, mass) in enumerate(zip(nres_tab, mass_tab)):
-                log.info(f"Generating sample {si+1}/{params['NGRIDSAMPLES']}...")
+                log.info(f"Generating sample {si+1}/{params['NMESHSAMPLES']}...")
                 log.info(f'Resolution: {res:.0f} voxels, Mass: {mass:.6f} 1e11 Msol/h')
                 nvox, dk = cubic_voxels(res, params['LBOX'])
                 # White noise field for complete reproducibility
                 field = white_noise(nvox=nvox, seed=params['SEED'])
-                with h5py.File(Path(params['IC_DIR'], 'ic_white_noise.hdf5'), 'w') as f:
-                    f.create_dataset('ic_white_noise', data=np.fft.irfftn(field))
                 delta_k = generate_delta_k(kh, pk, nvox, dk, field=field)
 
                 if params['LPTORDER'] == 1:
@@ -189,8 +190,6 @@ def main():
             nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
             # White noise field for complete reproducibility
             field = white_noise(nvox=nvox, seed=params['SEED'])
-            with h5py.File(Path(params['IC_DIR'], 'ic_white_noise.hdf5'), 'w') as f:
-                f.create_dataset('ic_white_noise', data=np.fft.irfftn(field))
             delta_k = generate_delta_k(kh, pk, nvox, dk, field=field)
 
             if params['LPTORDER'] == 1:
@@ -233,19 +232,23 @@ def main():
         ic.vel *= np.sqrt(params['SCALE'])
         ic.vel += ic.pos * Hz
 
-    # Save the IC to a file
+    # Save the generated files
+    run_dir = ensure_run_dir(params)
     header = {
-        'BoxSize': np.max(params['LBOX']),
+        'BoxSize': params['LBOX'][2],
         'Redshift': params['REDSHIFT'],
         'Omega0': params['OMEGA_M'],
         'OmegaLambda': params['OMEGA_L'],
         'HubbleParam': params['H'],
         'dtype': params['DTYPE'],
-        'BoxSize': params['LBOX'][2],
-        'SimulationRadius': params['R_3D']
+        'SimulationRadius': params['R_3D'],
     }
-    path = Path(params['IC_DIR'], create_filename(params))
-    ic.save_snapshot(path=path, fmt=params['IC_FORMAT'], **header)
+    ic.save_snapshot(path=run_dir / 'ic.hdf5', fmt=params['IC_FORMAT'], **header)
+    if params['LPTORDER'] > 0:
+        with h5py.File(run_dir / 'ic_white_noise.hdf5', 'w') as f:
+            f.create_dataset('ic_white_noise', data=np.fft.irfftn(field))
+        with h5py.File(run_dir / 'ic_delta_k.hdf5', 'w') as f:
+            f.create_dataset('ic_delta_k', data=delta_k)
 
     log.info(f'The IC building took {(time.time() - start):.4f} s.')
 

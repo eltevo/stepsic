@@ -16,24 +16,27 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 
-def _resolution_tag(params: dict, *, n_part: int | None = None) -> str:
+import logging
+log = logging.getLogger(__name__)
+
+
+def _resolution_tag(params: dict) -> str:
     '''
-    Build a compact resolution descriptor for the filename.
+    Build a compact resolution descriptor for the directory name.
 
     The tag depends on the IC generation mode:
 
-    - ``grid``:      ``Nm{NMESH}`` — mesh drives particle count
-    - ``random``:    ``Np{NPART}`` — explicit particle count
-    - ``glass``:     ``Nm{NMESH}`` or ``Ng{NGRIDSAMPLES}`` for multiscale
-    - ``shell``:     ``Nsh{NSHELL}_Nr{NRBINS}`` — shell structure
+    - ``grid``:  ``Ng{NGRID}`` — mesh drives particle count
+    - ``random``:  ``Np{NPART}`` — explicit particle count
+    - ``glass``:  ``Nm{NMESH}`` or ``Ng{NMESHSAMPLES}`` for multiscale
+    - ``shell``:  ``Nsh{NSHELL}_Nr{NRBINS}`` — shell structure
 
     Parameters
     ----------
     params : dict
         Full parameter dictionary.
-    n_part : int or None
-        If provided (e.g. from a loaded glass), appended as ``Np{n_part}``.
 
     Returns
     -------
@@ -41,63 +44,89 @@ def _resolution_tag(params: dict, *, n_part: int | None = None) -> str:
         Resolution tag without leading underscore.
     '''
     ic_type = params['TYPE']
-    nmesh = params.get('NMESH', 0)
     parts: list[str] = []
 
     if ic_type == 'grid':
-        parts.append(f'Nm{nmesh}')
+        parts.append(f'Ng{params["NGRID"]}')
 
     elif ic_type == 'random':
         parts.append(f'Np{params["NPART"]}')
 
     elif ic_type == 'glass':
-        if nmesh > 0:
-            parts.append(f'Nm{nmesh}')
-        else:
-            if n_part is not None:
-                parts.append(f'Np{n_part}')
-            parts.append(f'Ng{params["NGRIDSAMPLES"]}')
+        pass
 
     elif ic_type == 'shell':
         parts.append(f'Nsh{params["NSHELL"]}')
         parts.append(f'Nr{params["NRBINS"]}')
 
+    # Add FFT grid size or multigrid sample count at the end
+    if params["NMESH"] > 0:
+        parts.append(f'Nm{params["NMESH"]}')
+    else:
+        parts.append(f'Ng{params["NMESHSAMPLES"]}')
+
     return '_'.join(parts)
 
 
-def create_filename(params: dict, *, n_part: int | None = None) -> str:
+def _run_dirname(params: dict) -> str:
     '''
-    Construct a filename for the output IC based on its parameters.
+    Construct a run-specific directory name from simulation parameters.
 
-    The filename encodes geometry, resolution, redshift, and numerical
-    method in a way that uniquely identifies the run at a glance.
+    Encodes geometry, resolution, redshift, and numerical method so
+    that the directory name uniquely identifies the run at a glance.
 
     Parameters
     ----------
     params : dict
         Dictionary containing the ``stepsic`` simulation parameters.
-    n_part : int or None
-        Actual particle count from the loaded snapshot. If provided,
-        included in the resolution tag for glass/shell ICs.
 
     Returns
     -------
     str
-        The generated filename (without extension).
+        The generated directory name (no path separators).
     '''
     parts = [params['IC_PREFIX']]
 
+    parts.append(params['GEOMETRY'])
     if params['LPTORDER'] == 0:
         parts.append('preglass')
 
-    parts.append('Lx{}_Ly{}_Lz{}'.format(*map(int, params['LBOX'])))
-    parts.append(f'R3D{params["R_3D"]:.0f}_D4D{params["D_4D"]:.0f}')
+    if params['GEOMETRY'] == 'cubical':
+        parts.append('Lx{}_Ly{}_Lz{}'.format(*map(int, params['LBOX'])))
+    elif params['GEOMETRY'] in ['spherical', 'cylindrical']:
+        parts.append(f'R3D{params["R_3D"]:.0f}_D4D{params["D_4D"]:.0f}')
+        parts.append(f'Lz{params["LBOX"][2]:.0f}')
 
-    parts.append(_resolution_tag(params, n_part=n_part))
+    parts.append(_resolution_tag(params))
 
     if params['LPTORDER'] > 0:
         parts.append(f'z{params["REDSHIFT"]:.0f}')
         parts.append(f'LPT{params["LPTORDER"]}')
-        parts.append(f'INT{params["INTERPOLATION"]}')
+        parts.append(f'{params["INTERPOLATION"]}')
 
     return '_'.join(parts)
+
+
+def ensure_run_dir(params: dict) -> Path:
+    '''
+    Build, create, and return the full output directory for this IC run.
+
+    Constructs the path ``{IC_DIR}/{run_name}/`` where ``run_name`` is
+    derived from the simulation parameters via :func:`_run_dirname`,
+    then creates the entire tree if it does not already exist.
+
+    Parameters
+    ----------
+    params : dict
+        Full stepsic parameter dictionary.  Must contain at least
+        ``IC_DIR`` and all keys required by :func:`_run_dirname`.
+
+    Returns
+    -------
+    pathlib.Path
+        The resolved run directory (guaranteed to exist on return).
+    '''
+    run_dir = Path(params['IC_DIR']) / _run_dirname(params)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log.info(f'Output directory: {run_dir}')
+    return run_dir

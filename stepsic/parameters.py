@@ -1,18 +1,18 @@
-#*******************************************************************************#
-#  stepsic - An initial condition generator for                                 #
-#           STEreographically Projected cosmological Simulations                #
-#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                             #
-#                                                                               #
-#    This program is free software; you can redistribute it and/or modify       #
-#    it under the terms of the GNU General Public License as published by       #
-#    the Free Software Foundation; either version 2 of the License, or          #
-#    (at your option) any later version.                                        #
-#                                                                               #
-#    This program is distributed in the hope that it will be useful,            #
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of             #
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the              #
-#    GNU General Public License for more details.                               #
-#*******************************************************************************#
+#*****************************************************************************#
+#  stepsic - An initial condition generator for                               #
+#           STEreographically Projected cosmological Simulations              #
+#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                           #
+#                                                                             #
+#    This program is free software; you can redistribute it and/or modify     #
+#    it under the terms of the GNU General Public License as published by     #
+#    the Free Software Foundation; either version 2 of the License, or        #
+#    (at your option) any later version.                                      #
+#                                                                             #
+#    This program is distributed in the hope that it will be useful,          #
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of           #
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the            #
+#    GNU General Public License for more details.                             #
+#*****************************************************************************#
 
 from __future__ import annotations
 import importlib.resources
@@ -203,10 +203,11 @@ IC_PARAMS: tuple[Param, ...] = (
 
     # -- IC type and generation ----------------------------------------
     Param('TYPE', ptype=PType.STRING, label="IC type", choices=('grid', 'random', 'shell', 'glass')),
-    Param('NMESH', ptype=PType.INT, label="Mesh size", unit="voxels"),
+    Param('NMESH', ptype=PType.INT, label="FFT mesh size", unit="voxels"),
+    Param('NGRID', ptype=PType.INT, label="Grid size", unit="voxels"),
     Param('NPART', ptype=PType.INT, label="N particles (random)", condition=lambda P: P.get('TYPE') == 'random'),
     Param('NSHELL', ptype=PType.INT, label="Particles per shell", condition=lambda P: P.get('TYPE') == 'shell'),
-    Param('NGRIDSAMPLES', ptype=PType.INT, label="Grid samples", condition=lambda P: P.get('TYPE') == 'glass'),
+    Param('NMESHSAMPLES', ptype=PType.INT, label="Grid samples", condition=lambda P: P.get('TYPE') == 'glass'),
     Param('INTERPOLATION', ptype=PType.STRING, label="Interpolation", choices=('ngp', 'cic', 'tsc'), condition=lambda P: P.get('LPTORDER') > 0),
     Param('COMPENSATE', ptype=PType.BOOL, label="Compensation kernel", condition=lambda P: P.get('LPTORDER') > 0),
     Param('SPHEREMODE', ptype=PType.BOOL, label="Sphere mode", condition=lambda P: P.get('LPTORDER') > 0),
@@ -259,23 +260,20 @@ IC_DERIVED: tuple[Param, ...] = (
 
 # Cross-parameter constraints
 #
-# Each entry enforces a compatibility rule between two or more parameters.
-# The ``check`` predicate must return True when the constraint is met.
-# The ``message`` callable produces a human-readable error/warning when
-# the constraint is violated.
-#
-# Convention for error messages in this dictionary:
-#   "{PARAM}='{value}' is [not valid for | only valid for] {condition}.
-#    Use {suggestion} instead."
+#  Each entry enforces a compatibility rule between two or more parameters.
+#  The ``check`` predicate must return True when the constraint is met.
+#  The ``message`` callable produces a human-readable error/warning when
+#  the constraint is violated.
 
 IC_CONSTRAINTS: tuple[Constraint, ...] = (
-    # TYPE / GEOMETRY compatibility
+    # -- TYPE / GEOMETRY compatibility ---------------------------------
     Constraint(
         check=lambda P: P.get('TYPE') != 'shell' or P.get('GEOMETRY') != 'cubical',
         message=lambda P: (
             "TYPE='shell' is not valid for cubical geometry. "
             "Use TYPE='grid' or TYPE='random' instead."
         ),
+        level='error',
     ),
     Constraint(
         check=lambda P: P.get('TYPE') != 'grid' or P.get('GEOMETRY') == 'cubical',
@@ -284,6 +282,7 @@ IC_CONSTRAINTS: tuple[Constraint, ...] = (
             f"got GEOMETRY='{P['GEOMETRY']}'. "
             f"Use TYPE='shell' for cylindrical/spherical geometries."
         ),
+        level='error',
     ),
     Constraint(
         check=lambda P: P.get('TYPE') != 'random' or P.get('GEOMETRY') == 'cubical',
@@ -292,27 +291,38 @@ IC_CONSTRAINTS: tuple[Constraint, ...] = (
             f"got GEOMETRY='{P['GEOMETRY']}'. "
             f"Use TYPE='shell' for cylindrical/spherical geometries."
         ),
+        level='error',
     ),
 
-    # NMESH=0 requires glass for variable-resolution mode currently
-    Constraint(
+    # -- NMESH / TYPE compatibility ------------------------------------
+    Constraint(  # Include shells mode too if ever implement glass generation
         check=lambda P: P.get('NMESH', 1) != 0 or P.get('TYPE') == 'glass',
         message=lambda P: (
             f"NMESH=0 (variable-resolution mode) requires TYPE='glass'. "
             f"Got TYPE='{P['TYPE']}'."
         ),
+        level='error',
     ),
 
-    # Sanity checks
+    # -- Sanity checks -------------------------------------------------
     Constraint(
         check=lambda P: P.get('REDSHIFT', 0) >= 0,
         message=lambda P: (
             f"REDSHIFT={P['REDSHIFT']:.2f} is negative. "
             f"Redshift must be >= 0."
         ),
+        level='error',
+    ),
+    Constraint(
+        check=lambda P: P.get('NMESH') >= P.get('NGRID'),
+        message=lambda P: (
+            f"NMESH ({P['NMESH']}) < NGRID ({P['NGRID']}). "
+            f"The FFT grid should be >= the particle grid to avoid aliasing."
+        ),
+        level="warning",
     ),
 
-    # Non-fatal warnings
+    # -- Non-fatal warnings --------------------------------------------
     Constraint(
         check=lambda P: P.get('COMOVING', True) or P.get('LPTORDER', 1) > 0,
         message=lambda P: (
