@@ -16,17 +16,22 @@
 
 from __future__ import annotations
 
-from stepsic._typing import PathInput
-
 import re
-import h5py
-import numpy as np
 from pathlib import Path
 
+import h5py
+import numpy as np
+
 from stepsic.__init__ import (
-    __programname__, __version__, __year__,
-    __authors__, __header__, __githash__, __gitbranch__
+    __authors__,
+    __gitbranch__,
+    __githash__,
+    __header__,
+    __programname__,
+    __version__,
+    __year__,
 )
+from stepsic._typing import PathInput
 
 # Gadget IO library for reading Gadget snapshots
 # Download from https://www.github.com/masterdesky/glio
@@ -37,6 +42,7 @@ except ImportError as _err:
     # _GLIO_IMPORT_ERROR = _err
 
 import logging
+
 log = logging.getLogger(__name__)
 
 

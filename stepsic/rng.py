@@ -16,9 +16,9 @@
 
 from __future__ import annotations
 
-from stepsic._typing import Seed
-
 import numpy as np
+
+from stepsic._typing import Seed
 
 
 class RNG:

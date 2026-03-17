@@ -16,12 +16,12 @@
 
 from __future__ import annotations
 
-import numpy as np
+import logging
 
 import camb
+import numpy as np
 from colossus.cosmology import cosmology
 
-import logging
 log = logging.getLogger(__name__)
 
 

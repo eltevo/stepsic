@@ -18,26 +18,37 @@
 
 from __future__ import annotations
 
-import sys
 import copy
+import logging
+import sys
 import time
-import h5py
-import numpy as np
 from pathlib import Path
 
-import stepsic
-from stepsic.parameters import CosmoParameters
-from stepsic.data import CosmoData
-from stepsic.cosmology import \
-    hubble_a, F_omega, F2_omega, CAMBCosmology, ColossusCosmology
-from stepsic.field import \
-    cubic_voxels, white_noise, generate_delta_k, \
-    create_grid, create_particles, create_nres_mass_map
-from stepsic.geometry import create_shell_particles
-from stepsic.lpt import lpt1, lpt2, log_lpt
-from stepsic._util import ensure_run_dir
+import h5py
+import numpy as np
 
-import logging
+import stepsic
+from stepsic._util import ensure_run_dir
+from stepsic.cosmology import (
+    CAMBCosmology,
+    ColossusCosmology,
+    F2_omega,
+    F_omega,
+    hubble_a,
+)
+from stepsic.data import CosmoData
+from stepsic.field import (
+    create_grid,
+    create_nres_mass_map,
+    create_particles,
+    cubic_voxels,
+    generate_delta_k,
+    white_noise,
+)
+from stepsic.geometry import create_shell_particles
+from stepsic.lpt import log_lpt, lpt1, lpt2
+from stepsic.parameters import CosmoParameters
+
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 

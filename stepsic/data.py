@@ -17,14 +17,15 @@
 from __future__ import annotations
 
 import copy
-import numpy as np
+import logging
 from pathlib import Path
 
-from stepsic.io import CosmoIO
-from stepsic.field import wrap
-from stepsic.units import UNIT_L, UNIT_V, UNIT_M
+import numpy as np
 
-import logging
+from stepsic.field import wrap
+from stepsic.io import CosmoIO
+from stepsic.units import UNIT_L, UNIT_M, UNIT_V
+
 log = logging.getLogger(__name__)
 
 

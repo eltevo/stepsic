@@ -15,19 +15,19 @@
 #*****************************************************************************#
 
 from __future__ import annotations
-import importlib.resources
 
+import importlib.resources
+import logging
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
 import numpy as np
 import toml
 
-import logging
-
 from stepsic.units import UNIT_V
+
 log = logging.getLogger(__name__)
 
 

@@ -15,6 +15,8 @@
 #*****************************************************************************#
 
 from __future__ import annotations
+
+import logging
 from abc import ABC, abstractmethod
 from typing import Union
 
@@ -24,7 +26,6 @@ from scipy.optimize import root
 
 from stepsic.rng import RNG
 
-import logging
 log = logging.getLogger(__name__)
 
 

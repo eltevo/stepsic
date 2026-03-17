@@ -16,8 +16,8 @@
 
 from __future__ import annotations
 
-import numpy as np
 import astropy.units as u
+import numpy as np
 from astropy.units import cds
 
 # Gravitational constant in cm^3 g^-1 s^-2

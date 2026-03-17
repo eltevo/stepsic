@@ -16,11 +16,11 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Dict, Tuple, Type
 
 import numpy as np
-
-from typing import Tuple, Dict, Type
 from numpy.typing import NDArray
+
 from stepsic._typing import *
 
 

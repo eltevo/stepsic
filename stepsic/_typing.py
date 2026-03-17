@@ -19,9 +19,9 @@ from __future__ import annotations
 from os import PathLike
 from pathlib import Path
 from typing import Literal, TypeAlias
-from numpy.typing import NDArray
 
 import numpy as np
+from numpy.typing import NDArray
 
 Seed: TypeAlias = int | np.integer | None
 PathInput: TypeAlias = str | PathLike[str]

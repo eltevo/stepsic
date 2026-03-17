@@ -15,15 +15,16 @@
 #*******************************************************************************#
 
 from __future__ import annotations
+
+import logging
 from typing import Tuple
-from stepsic._typing import RealField, ComplexField, IntVec3
 
 import numpy as np
 
+from stepsic._typing import ComplexField, IntVec3, RealField
 from stepsic.field import fourier_grid
-from stepsic.interpolation import interpolate_field, compensation_kernel
+from stepsic.interpolation import compensation_kernel, interpolate_field
 
-import logging
 log = logging.getLogger(__name__)
 
 

@@ -16,13 +16,14 @@
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
-from tabulate import tabulate
 from scipy.interpolate import CubicSpline
+from tabulate import tabulate
 
 from stepsic.rng import RNG
 
-import logging
 log = logging.getLogger(__name__)
 
 

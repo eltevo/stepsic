@@ -2,8 +2,9 @@
 StePS initial-condition generator package.
 '''
 
-from textwrap import dedent
 import subprocess
+from textwrap import dedent
+
 
 def get_git_revision_hash() -> str:
     try:

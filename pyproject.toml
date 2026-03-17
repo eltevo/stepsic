@@ -55,3 +55,7 @@ Homepage = "https://github.com/eltevo/stepsic"
 Documentation = "https://eltevo.github.io/projects/stepsic"
 Repository = "https://github.com/eltevo/stepsic"
 "Bug Tracker" = "https://github.com/eltevo/stepsic/issues"
+
+[tool.isort]
+profile = "black"
+known_first_party = ["stepsic"]
