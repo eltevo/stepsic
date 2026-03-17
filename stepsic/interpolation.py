@@ -1,27 +1,27 @@
-#*******************************************************************************#
-#  stepsic - An initial condition generator for                                 #
-#           STEreographically Projected cosmological Simulations                #
-#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                             #
-#                                                                               #
-#    This program is free software; you can redistribute it and/or modify       #
-#    it under the terms of the GNU General Public License as published by       #
-#    the Free Software Foundation; either version 2 of the License, or          #
-#    (at your option) any later version.                                        #
-#                                                                               #
-#    This program is distributed in the hope that it will be useful,            #
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of             #
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the              #
-#    GNU General Public License for more details.                               #
-#*******************************************************************************#
+#*****************************************************************************#
+#  stepsic - An initial condition generator for                               #
+#           STEreographically Projected cosmological Simulations              #
+#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                           #
+#                                                                             #
+#    This program is free software; you can redistribute it and/or modify     #
+#    it under the terms of the GNU General Public License as published by     #
+#    the Free Software Foundation; either version 2 of the License, or        #
+#    (at your option) any later version.                                      #
+#                                                                             #
+#    This program is distributed in the hope that it will be useful,          #
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of           #
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the            #
+#    GNU General Public License for more details.                             #
+#*****************************************************************************#
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Tuple, Type, Union, Optional
 
 import numpy as np
-from numpy.typing import NDArray
 
-from scipy.interpolate import RegularGridInterpolator
+from typing import Tuple, Dict, Type
+from numpy.typing import NDArray
+from stepsic._typing import *
 
 
 @dataclass(frozen=True)
@@ -41,17 +41,17 @@ class GridGeometry:
         origin + (i + vox_offset) * cell_size.
         - vox_offset = 0.0: node-centered (grid points at cell corners)
         - vox_offset = 0.5: voxel-centered (grid points at voxel centers)
-    origin : array of shape (3,) or None
+    origin : float, array of shape (3,) or None
         Physical coordinate of the box corner (where index 0 maps to).
-        Default is (0, 0, 0). For a centered grid, use -boxsize/2.
+        Default is 0.0. For a centered grid, use -boxsize/2.
     periodic : array of shape (3,) of bool
         Periodicity in each dimension.
     '''
-    nvox: Union[Tuple[int, int, int], NDArray[np.integer]]
-    boxsize: Union[Tuple[float, float, float], NDArray[np.floating]]
+    nvox: IntVec3
+    boxsize: FloatVec3
     vox_offset: float
-    origin: Optional[Union[Tuple[float, float, float], NDArray[np.floating]]] = None
-    periodic: Union[bool, Tuple[float, float, float], NDArray[np.bool_]] = False
+    origin: FloatVec3
+    periodic: BoolVec3
 
     def __post_init__(self) -> None:
         '''Normalize inputs to 1D arrays of length 3.'''
@@ -68,12 +68,12 @@ class GridGeometry:
             object.__setattr__(self, 'origin', origin)
 
     @property
-    def cell_size(self) -> NDArray[np.floating]:
+    def cell_size(self) -> RealField:
         return self.boxsize / self.nvox
 
-    def pos_to_grid(self, pos: NDArray[np.floating]) -> NDArray[np.floating]:
+    def pos_to_grid(self, x: RealField) -> RealField:
         '''Convert physical positions to fractional grid coordinates.'''
-        x = pos - self.origin  # shift to box-local coordinates [0, boxsize)
+        x = x - self.origin  # shift to box-local coordinates [0, boxsize)
         box = self.boxsize
         per = self.periodic
         bshape = (1,) * (x.ndim - 1) + (3,)
@@ -117,7 +117,7 @@ class InterpolationKernel(ABC):
         pass
 
     @abstractmethod
-    def weights(self, dx: NDArray[np.floating]) -> Tuple[NDArray[np.floating], ...]:
+    def weights(self, dx: RealField) -> Tuple[RealField, ...]:
         '''Compute interpolation weights for fractional position dx in [0, 1).'''
         pass
 
@@ -144,7 +144,7 @@ class NGPKernel(InterpolationKernel):
     def base_offset(self) -> int:
         return 0
 
-    def weights(self, dx: NDArray[np.floating]) -> Tuple[NDArray[np.floating], NDArray[np.floating]]:
+    def weights(self, dx: RealField) -> Tuple[RealField, ...]:
         w1 = (dx >= 0.5).astype(dx.dtype)
         w0 = 1.0 - w1
         return (w0, w1)
@@ -161,7 +161,7 @@ class CICKernel(InterpolationKernel):
     def base_offset(self) -> int:
         return 0
 
-    def weights(self, dx: NDArray[np.floating]) -> Tuple[NDArray[np.floating], NDArray[np.floating]]:
+    def weights(self, dx: RealField) -> Tuple[RealField, ...]:
         return (1.0 - dx, dx)
 
 
@@ -176,7 +176,7 @@ class TSCKernel(InterpolationKernel):
     def base_offset(self) -> int:
         return -1
 
-    def weights(self, dx: NDArray[np.floating]) -> Tuple[NDArray[np.floating], ...]:
+    def weights(self, dx: RealField) -> Tuple[RealField, ...]:
         w0 = 0.5 * (1.0 - dx)**2
         w1 = 0.75 - (dx - 0.5)**2
         w2 = 0.5 * dx**2
@@ -191,11 +191,11 @@ KERNELS: Dict[str, Type[InterpolationKernel]] = {
 
 
 def compensation_kernel(
-    kvec: NDArray[np.floating],
-    nvox: Union[Tuple[int, int, int], NDArray[np.integer]],
-    boxsize: Union[Tuple[float, float, float], NDArray[np.floating]],
-    method: Union[str, InterpolationKernel] = 'cic',
-) -> NDArray[np.floating]:
+    kvec: RealField,
+    nvox: IntVec3,
+    boxsize: FloatVec3,
+    method: str | InterpolationKernel = 'cic',
+) -> RealField:
     r'''
     Compute the deconvolution kernel that compensates for the smoothing
     introduced by a particle-mesh interpolation scheme.
@@ -204,13 +204,13 @@ def compensation_kernel(
     acts as a low-pass filter in Fourier space with transfer function
     :math:`\tilde{W}(\mathbf{k}) = \prod_i \mathrm{sinc}^{p+1}(\pi k_i / 2 k_{\mathrm{Ny},i})`.
     To recover unsmoothed field values after interpolation, the Fourier
-    modes must be multiplied by :math:`\tilde{W}^{-1}` **before** the
+    modes must be multiplied by :math:`\tilde{W}^{-1}` before the
     inverse FFT.
 
     Parameters
     ----------
-    kvec : ndarray of shape (3, nx, ny, nz_half)
-        Wavevector components from ``fourier_grid`` (Hermitian layout).
+    kvec : ndarray of shape (3, nx, ny, nz)
+        Wavevector components from ``fourier_grid``.
     nvox : tuple of int or array of shape (3,)
         Number of grid cells in each dimension.
     boxsize : tuple of float or array of shape (3,)
@@ -220,7 +220,7 @@ def compensation_kernel(
 
     Returns
     -------
-    ndarray, real, same shape as ``kvec[0]``
+    ndarray of shape ``kvec[0]``
         Multiplicative correction factor :math:`W^{-1}(\mathbf{k})`.
 
     Notes
@@ -237,7 +237,7 @@ def compensation_kernel(
     where :math:`k_{\mathrm{Ny},i} = \pi N_i / L_i` and :math:`p` is
     the interpolation order (``kernel.support - 1``).
 
-    This should be applied to Fourier-space fields **before** ``irfftn``
+    This should be applied to Fourier-space fields before ``irfftn``
     when interpolating onto particles that do not coincide with grid
     nodes (e.g., glass initial conditions or arbitrary distributions).
     For particles on a regular lattice matching the grid, the correction
@@ -245,8 +245,8 @@ def compensation_kernel(
 
     References
     ----------
-    Hockney & Eastwood (1988), §5-3; Jing (2005), eq. 20;
-    monofonIC implementation in ``grid_interpolate.hh``.
+    *   Hockney & Eastwood (1988), §5-3; Jing (2005), eq. 20
+    *   monofonIC implementation in ``grid_interpolate.hh``
     '''
     if isinstance(method, str):
         kernel = KERNELS[method.lower()]()
@@ -282,6 +282,8 @@ class FieldInterpolator:
     '''
     Interpolates a 3D field to particle positions using separable kernels.
 
+    This is the adjoint of :class:`FieldDepositor`.
+
     Parameters
     ----------
     kernel : str or InterpolationKernel
@@ -304,7 +306,7 @@ class FieldInterpolator:
 
     def __init__(
         self, 
-        kernel: Union[str, InterpolationKernel],
+        kernel: str | InterpolationKernel,
         geometry: GridGeometry,
     ):
         if isinstance(kernel, str):
@@ -314,52 +316,52 @@ class FieldInterpolator:
 
     def __call__(
             self,
-            field: NDArray[np.floating],
-            pos: NDArray[np.floating]
-        ) -> NDArray[np.floating]:
+            field: RealField,
+            x: RealField
+        ) -> RealField:
         '''
         Evaluate the gridded vector ``field`` at arbitrary positions.
 
         Parameters
         ----------
         field : ndarray
-            Shape of (ncomp, nx, ny, nz) for vector.
-        pos : ndarray of shape (N, 3)
-            Physical positions.
+            Grid values, shape ``(ncomp, Nx, Ny, Nz)`` or ``(Nx, Ny, Nz)``.
+        x : ndarray of shape (N, 3)
+            Particle positions in physical coordinates.
 
         Returns
         -------
         ndarray
-            Interpolated field values at the input positions, shape (N, ncomp).
+            Interpolated field values at the input positions, shape ``(N, ncomp)``.
         '''
         # Convert positions to fractional grid coordinates
-        grid = self.geometry.pos_to_grid(pos)
-        grid_int = np.floor(grid).astype(np.int32, copy=False)
-        grid_frc = grid - grid_int
-
-        # Compute weights along each axis; shape (support, N)
+        g = self.geometry.pos_to_grid(x)  # (N, 3)
+        g_int = np.floor(g).astype(np.int32, copy=False)
+        g_frc = g - g_int
+ 
+        # Compute 1-D weights along each axis; shape (support, N)
         wx, wy, wz = (
-            np.vstack(self.kernel.weights(grid_frc[:, i])) for i in range(3)
+            np.vstack(self.kernel.weights(g_frc[:, i])) for i in range(3)
         )
 
         # Promote result type to float to avoid integer truncation; shape (N, ncomp)
         res_dtype = np.result_type(field.dtype, np.float64)
-        result = np.zeros((pos.shape[0], field.shape[0]), dtype=res_dtype)
+        result = np.zeros((x.shape[0], field.shape[0]), dtype=res_dtype)
 
         # Loop over all combinations of kernel offsets
         nvox = self.geometry.nvox
         periodic = self.geometry.periodic
 
         for dx in range(self.kernel.support):
-            ix = grid_int[:, 0] + self.kernel.base_offset + dx
+            ix = g_int[:, 0] + self.kernel.base_offset + dx
             ix = ix % nvox[0] if periodic[0] else np.clip(ix, 0, nvox[0]-1)
 
             for dy in range(self.kernel.support):
-                iy = grid_int[:, 1] + self.kernel.base_offset + dy
+                iy = g_int[:, 1] + self.kernel.base_offset + dy
                 iy = iy % nvox[1] if periodic[1] else np.clip(iy, 0, nvox[1]-1)
 
                 for dz in range(self.kernel.support):
-                    iz = grid_int[:, 2] + self.kernel.base_offset + dz
+                    iz = g_int[:, 2] + self.kernel.base_offset + dz
                     iz = iz % nvox[2] if periodic[2] else np.clip(iz, 0, nvox[2]-1)
 
                     w = wx[dx] * wy[dy] * wz[dz]    # shape (N,)
@@ -367,44 +369,150 @@ class FieldInterpolator:
                     result += w[:, np.newaxis] * fvals
 
         return result.squeeze()
+    
+
+class FieldDepositor:
+    r'''
+    Deposit particle-carried quantities onto a regular 3D grid using
+    separable mass-assignment kernels.
+ 
+    This is the adjoint of :class:`FieldInterpolator`.
+ 
+    Parameters
+    ----------
+    kernel : str or InterpolationKernel
+        Mass-assignment kernel: ``'ngp'``, ``'cic'``, ``'tsc'``, or
+        a custom kernel instance.
+    geometry : GridGeometry
+        Grid geometry specification.
+ 
+    Examples
+    --------
+    Deposit unit-weight particles onto a 64³ periodic grid:
+ 
+    >>> geom = GridGeometry(
+    ...     boxsize=np.array([100.0, 100.0, 100.0]),
+    ...     nvox=(64, 64, 64),
+    ...     vox_offset=0.5,
+    ...     origin=np.zeros(3),
+    ...     periodic=True,
+    ... )
+    >>> dep = FieldDepositor('cic', geom)
+    >>> density = dep(x, values=None)  # number-count field
+    '''
+ 
+    def __init__(
+        self,
+        kernel: str | InterpolationKernel,
+        geometry: GridGeometry,
+    ):
+        if isinstance(kernel, str):
+            kernel = KERNELS[kernel.lower()]()
+        self.kernel = kernel
+        self.geometry = geometry
+ 
+    def __call__(
+        self,
+        x: RealField,
+        values: RealField | None = None,
+    ) -> RealField:
+        r'''
+        Scatter particle values onto the grid.
+ 
+        Parameters
+        ----------
+        x : ndarray of shape (N, 3)
+            Particle positions in physical coordinates.
+        values : ndarray of shape (N,) or (N, ncomp), or None
+            Quantity to deposit at each particle position.  If ``None``,
+            unit weights are used.
+ 
+        Returns
+        -------
+        grid : ndarray of shape (nx, ny, nz) or (ncomp, nx, ny, nz)
+            The deposited field.  If ``values`` is 1-D or ``None``, the
+            output is a scalar grid ``(nx, ny, nz)``.  If ``values`` has
+            ``ncomp > 1`` columns, the output has a leading component
+            axis matching :class:`FieldInterpolator`'s field layout.
+        '''
+        N = x.shape[0]
+        nvox = self.geometry.nvox
+ 
+        # Handle scalar vs. vector deposit
+        if values is None:
+            values = np.ones((N, 1), dtype=np.float64)
+        else:
+            values = np.asarray(values, dtype=np.float64)
+            if values.ndim == 1:
+                values = values[:, np.newaxis]  # (N,) -> (N, 1)
+        ncomp = values.shape[1]
+ 
+        grid = np.zeros((ncomp, *nvox), dtype=np.float64)
+ 
+        # Convert positions to fractional grid coordinates
+        g = self.geometry.pos_to_grid(x)  # (N, 3)
+        g_int = np.floor(g).astype(np.int32, copy=False)
+        g_frc = g - g_int
+ 
+        # Compute 1-D weights along each axis; shape (support, N)
+        wx, wy, wz = (
+            np.vstack(self.kernel.weights(g_frc[:, i])) for i in range(3)
+        )
+ 
+        # Scatter contributions onto the grid
+        periodic = self.geometry.periodic
+        for dx in range(self.kernel.support):
+            ix = g_int[:, 0] + self.kernel.base_offset + dx
+            ix = ix % nvox[0] if periodic[0] else np.clip(ix, 0, nvox[0] - 1)
+ 
+            for dy in range(self.kernel.support):
+                iy = g_int[:, 1] + self.kernel.base_offset + dy
+                iy = iy % nvox[1] if periodic[1] else np.clip(iy, 0, nvox[1] - 1)
+ 
+                for dz in range(self.kernel.support):
+                    iz = g_int[:, 2] + self.kernel.base_offset + dz
+                    iz = iz % nvox[2] if periodic[2] else np.clip(iz, 0, nvox[2] - 1)
+ 
+                    w = wx[dx] * wy[dy] * wz[dz]  # (N,)
+                    for c in range(ncomp):
+                        np.add.at(grid[c], (ix, iy, iz), w * values[:, c])
+ 
+        return grid.squeeze()
 
 
 def interpolate_field(
-    pos: NDArray[np.floating],
-    field: NDArray[np.floating],
-    boxsize: Union[Tuple[float, float, float], NDArray[np.floating]],
-    periodic: Union[bool, Tuple[float, float, float], NDArray[np.bool_]] = True,
+    x: RealField,
+    field: RealField,
+    boxsize: FloatVec3,
+    periodic: BoolVec3 = True,
     method: str = 'cic',
     vox_offset: float = 0.0,
-    origin: Optional[Union[Tuple[float, float, float], NDArray[np.floating]]] = None,
-) -> NDArray[np.floating]:
+    origin: FloatVec3 | None = None,
+) -> RealField:
     '''
     Interpolate a 3D field at particle positions.
 
-    Drop-in replacement for existing code. For repeated interpolations
-    on the same grid, prefer creating a FieldInterpolator directly.
-
     Parameters
     ----------
-    pos : array of shape (N, 3)
+    x : ndarray of shape (N, 3)
         Particle positions in physical coordinates.
-    field : array of shape (ncomp, nx, ny, nz)
+    field : ndarray of shape (ncomp, nx, ny, nz)
         Values of a vector field on the grid. Use ``ncomp=1`` for scalar fields.
-    boxsize : array of shape (3,)
+    boxsize : ndarray of shape (3,)
         Physical size of the periodic box.
-    periodic : bool or array of shape (3,) of bool
+    periodic : bool or ndarray of shape (3,) of bool
         Periodicity in each dimension (default: all True).
     method : str
         Interpolation method: 'ngp', 'cic', or 'tsc' (default: 'cic').
     vox_offset : float
         Grid offset: 0.5 for voxel-centered, 0.0 for node-centered (default: 0.0).
-    origin : array of shape (3,) or None
+    origin : ndarray of shape (3,) or None
         Physical coordinate of the box corner. Default is (0, 0, 0).
         For a centered grid, use -boxsize/2.
 
     Returns
     -------
-    values : array of shape (N, ncomp)
+    values : ndarray of shape (N, ncomp)
         Interpolated field values.
     '''
     geometry = GridGeometry(
@@ -414,42 +522,56 @@ def interpolate_field(
         origin=origin,
         periodic=periodic,
     )
-    interp = FieldInterpolator(method, geometry)
-    return interp(field, pos)
+    interpolator = FieldInterpolator(method, geometry)
+    return interpolator(field, x)
 
 
-def interpolate_field_deprecated(x, field, dk, method='linear'):
+def deposit_field(
+    x: RealField,
+    nvox: IntVec3,
+    boxsize: FloatVec3,
+    values: RealField | None = None,
+    periodic: BoolVec3 = True,
+    method: str = 'cic',
+    vox_offset: float = 0.5,
+    origin: FloatVec3 | None = None,
+) -> RealField:
     r'''
-    Interpolate a grid-based field onto particle positions using periodic
-    boundaries.
-
+    Deposit particle quantities onto a regular 3D grid.
+ 
     Parameters
     ----------
     x : ndarray of shape (N, 3)
-        Particle positions in physical [Mpc].
-    field : ndarray
-        The grid-based field (e.g. a displacement field) defined on a
-        regular grid.
-    dk : float
-        The uniform step size in each dimension, calculated as the length
-        of the shortest dimension divided by the number of voxels in
-        that dimension.
+        Particle positions in physical coordinates.
+    nvox : tuple of int or ndarray of shape (3,)
+        Number of grid cells ``(Nx, Ny, Nz)``.
+    boxsize : ndarray of shape (3,)
+        Physical size of the periodic box.
+    values : ndarray of shape (N,) or (N, ncomp), or None
+        Quantity to deposit.  If ``None``, unit weights are used
+        (number-count field).
+    periodic : bool or ndarray of shape (3,) of bool
+        Periodicity in each dimension (default: all True).
     method : str
-        The interpolation method to use. This can be 'linear', 'nearest',
-        or 'cubic'. The default is 'linear'.
-
+        Mass-assignment kernel: ``'ngp'``, ``'cic'``, or ``'tsc'``
+        (default ``'cic'``).
+    vox_offset : float
+        Grid offset: 0.5 for voxel-centred, 0.0 for node-centred
+        (default 0.5).
+    origin : float, ndarray of shape (3,) or None
+        Physical coordinate of the box corner.  Default is ``None``.
+ 
     Returns
     -------
-    interp_values : ndarray of shape (N,)
-        Field values interpolated at the particle positions.
+    grid : ndarray of shape (nx, ny, nz) or (ncomp, nx, ny, nz)
+        The deposited field.
     '''
-    nvox = field.shape
-    mesh = tuple(np.arange(-(n-1)*dk/2, n*dk/2, dk) for n in nvox)
-    interpolator = RegularGridInterpolator(
-        points=mesh,
-        values=field,
-        method=method,
-        bounds_error=False,
-        fill_value=None  # Extrapolate using periodic wrapping if needed
+    geometry = GridGeometry(
+        boxsize=boxsize,
+        nvox=nvox,
+        vox_offset=vox_offset,
+        origin=origin,
+        periodic=periodic,
     )
-    return interpolator(x)
+    depositor = FieldDepositor(method, geometry)
+    return depositor(x, values)
