@@ -179,7 +179,7 @@ def fourier_grid(nvox, dk, hermitian=False):
     return kvec, kmod
 
 
-def white_noise(nvox, seed=None):
+def white_noise(nvox, counter=False, seed=None):
     r'''
     Return a complex Gaussian array :math:`W(k)` on the ``rfftn()`` grid
     `(Nx, Ny, Nz//2+1)`, obeying Hermitian constraints that guarantee
@@ -195,6 +195,11 @@ def white_noise(nvox, seed=None):
         The uniform step size in each dimension, calculated as the length
         of the shortest dimension divided by the number of voxels in
         that dimension.
+    counter : bool
+        If True, applies a global sign flip to the Fourier-space density
+        field (equivalent to a :math:`\pi` phase shift). This is useful
+        for running "counter-phased" simulations to reduce sample
+        variance. See more in Angulo-Pontzen (2016).
     seed : int or None, optional
         Random seed for reproducibility. If `None`, uses the default RNG.
 
@@ -206,10 +211,22 @@ def white_noise(nvox, seed=None):
     rng = RNG(seed=seed)
     w_k = np.fft.rfftn(rng.normal(size=nvox, seed=seed))
     w_k[0, 0, 0] = 0.0  # set DC=0 (mean density) as we only need fluctuations
+
+    if counter:
+        # Flips phase and sets amplitude to 1 for every mode.
+        # This eliminates Rayleigh scatter in |W(k)|, so paired
+        # simulations cancel cosmic variance at the field level.
+        amp = np.abs(w_k)
+        w_k[amp > 0.0] /= amp[amp > 0.0]  # Prevent division by zero
+        w_k *= np.sqrt(np.prod(nvox))  # Normalize to unit variance in real space
+        w_k *= np.exp(1j * np.pi)
+
     return w_k
 
 
-def generate_delta_k(kh, pk, nvox, dk, *, field=None, seed=None):
+def generate_delta_k(
+        kh, pk, nvox, dk,
+        *, field=None, seed=None, fixed=False, paired=False):
     r'''
     Generates the Fourier modes of an arbitrary input field from a
     given power spectrum.
@@ -232,6 +249,13 @@ def generate_delta_k(kh, pk, nvox, dk, *, field=None, seed=None):
         :math:`\mathbf{x}` are the comoving coordinates.
     seed : int
         The seed for the random number generator.
+    fixed : bool
+        If `True`, replace the random Rayleigh-distributed amplitudes of
+        the density modes by the target amplitudes implied by the power
+        spectrum, preserving only the phases.
+    paired : bool
+        If `True`, generates a paired field by applying a global sign
+        flip to the Fourier-space density field.
 
     Returns
     -------
@@ -240,7 +264,7 @@ def generate_delta_k(kh, pk, nvox, dk, *, field=None, seed=None):
         the Fourier modes of the overdensity field.
     '''
     _, kmod = fourier_grid(nvox, dk, hermitian=True)
-    
+
     # interpolate the power spectrum in log-log space
     spline = CubicSpline(np.log(kh), np.log(pk), extrapolate=True)
     pk_grid = np.zeros_like(kmod, dtype=float)
@@ -250,10 +274,25 @@ def generate_delta_k(kh, pk, nvox, dk, *, field=None, seed=None):
         pk_grid[mask] = np.exp(spline(ktarget_log))
 
     if field is None:
-        field = white_noise(size=nvox, seed=seed)
+        field = white_noise(nvox=nvox, seed=seed)
 
     # Sirko 2005; Bagla & Padmanabhan 1997; Klypin & Holtzman 1997
-    return field * np.sqrt(pk_grid / dk**3)
+    target_A = np.sqrt(pk_grid / dk**3)
+    if fixed:
+        # Angulo & Pontzen 2016
+        amp = np.abs(field)
+        phase = np.zeros_like(field)
+        phase[amp > 0.0] = field[amp > 0.0] / amp[amp > 0.0]
+        delta_k = phase * (np.sqrt(np.prod(nvox)) * target_A)
+    else:
+        delta_k = field * target_A
+
+    delta_k[0, 0, 0] = 0.0
+
+    if paired:
+        delta_k = -delta_k
+
+    return delta_k
 
 
 def create_nres_mass_map(n_grid_samples, mass_list, M_box, Lbox):

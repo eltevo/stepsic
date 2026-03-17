@@ -16,14 +16,19 @@
 
 import numpy as np
 
+from typing import Tuple
+from stepsic._typing import RealField, ComplexField, IntVec3
+
 from stepsic.field import fourier_grid
-from stepsic.interpolation import interpolate_field, interpolate_field_deprecated, compensation_kernel
+from stepsic.interpolation import interpolate_field, compensation_kernel
 
 import logging
 log = logging.getLogger(__name__)
 
 
-def log_lpt(x, xpert, vpert, *, title=None) -> None:
+def log_lpt(
+    x: RealField, xpert: RealField, vpert: RealField, *, title: str = None
+) -> None:
     '''TODO'''
     xabs, vabs = np.abs(xpert - x), np.abs(vpert)
     xmax, xavg = np.max(xabs, axis=0), np.mean(xabs, axis=0)
@@ -36,7 +41,16 @@ def log_lpt(x, xpert, vpert, *, title=None) -> None:
     return
 
 
-def lpt1(x, delta_k, nvox, dk, g1, aHf1, counter=False, compensate=False, method='cic'):
+def lpt1(
+    x: RealField,
+    delta_k: ComplexField,
+    nvox: IntVec3,
+    dk: float,
+    g1: float,
+    aHf1: float,
+    compensate: bool = False,
+    method: str = 'cic'
+) -> Tuple[RealField, RealField]:
     r'''
     Apply first-order Lagrangian Perturbation Theory (LPT), i.e., the
     Zel'dovich approximation, to generate perturbed particle positions
@@ -66,12 +80,12 @@ def lpt1(x, delta_k, nvox, dk, g1, aHf1, counter=False, compensate=False, method
     Parameters
     ----------
     x : ndarray of shape (N, 3)
-        Initial unperturbed particle positions in physical [Mpc/h].
+        Initial unperturbed particle positions in physical units.
     delta_k : ndarray
-        A 3D complex-valued array of shape (Nx, Ny, Nz//2+1) representing
+        A 3D complex-valued array of shape ``(Nx, Ny, Nz//2+1)`` representing
         the Fourier modes of the overdensity field.
     nvox : tuple of int
-        The number of voxels in each dimension of the grid (Nx, Ny, Nz).
+        The number of voxels in each dimension of the grid ``(Nx, Ny, Nz)``.
     dk : float
         The uniform step size in each dimension, calculated as the length
         of the shortest dimension divided by the number of voxels in
@@ -83,11 +97,6 @@ def lpt1(x, delta_k, nvox, dk, g1, aHf1, counter=False, compensate=False, method
         A prefactor for the velocity calculation, typically related to the
         time derivative of the growth factor (e.g. :math:`\dot{D}_1` or
         :math:`H(a)f(a)` where :math:`f` is the growth rate).
-    counter : bool
-        If True, applies a global sign flip to the Fourier-space density
-        field (equivalent to a :math:`\pi` phase shift). This is useful
-        for running "counter-phased" simulations to reduce sample
-        variance. See more in Angulo-Pontzen (2017).
     compensate : bool
         If True, applies a deconvolution kernel in Fourier space before
         the inverse FFT to compensate for the smoothing introduced by
@@ -153,7 +162,6 @@ def lpt1(x, delta_k, nvox, dk, g1, aHf1, counter=False, compensate=False, method
           ``D1``, and the velocity prefactor ``aHf1``.
     '''
     kvec, kmod = fourier_grid(nvox, dk, hermitian=True)
-    delta_k = delta_k * np.exp(1j * np.pi) if counter else delta_k
     mask = kmod > 0.0  # Avoid division by zero at k = 0
     phi_k = np.zeros_like(kmod, dtype=complex)
     phi_k[mask] = -delta_k[mask] / kmod[mask]**2  # Gravitational potential in Fourier space
@@ -165,7 +173,7 @@ def lpt1(x, delta_k, nvox, dk, g1, aHf1, counter=False, compensate=False, method
         psi1_k *= W_inv[np.newaxis, ...]
     disp_field = np.fft.irfftn(psi1_k, s=nvox, axes=(-3, -2, -1))
     disp_field_interp = interpolate_field(
-        pos=x, field=disp_field, boxsize=boxsize,
+        x=x, field=disp_field, boxsize=boxsize,
         origin=-boxsize / 2, method=method, vox_offset=0.5,
         periodic=True).astype(np.float32)
     xpert = x + g1 * disp_field_interp  # Bernardeau et al. 2002, eq. 98
@@ -173,7 +181,18 @@ def lpt1(x, delta_k, nvox, dk, g1, aHf1, counter=False, compensate=False, method
     return xpert, vpert
 
 
-def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False, compensate=False, method='cic'):
+def lpt2(
+    x: RealField,
+    delta_k: ComplexField,
+    nvox: IntVec3,
+    dk: float,
+    g1: float,
+    g2: float,
+    aHf1: float,
+    aHf2: float,
+    compensate: bool = False,
+    method: str = 'cic',
+) -> tuple[RealField, RealField]:
     r'''
     Apply second-order Lagrangian Perturbation Theory (2LPT) to generate
     perturbed particle positions and velocities.
@@ -270,11 +289,6 @@ def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False, compensate=Fal
         :math:`H(a)f(a)` where :math:`f` is the growth rate).
     aHf2 : float
         A prefactor for the second-order velocity term.
-    counter : bool
-        If True, applies a global sign flip to the Fourier-space density
-        field (equivalent to a :math:`\pi` phase shift). This is useful
-        for running "counter-phased" simulations to reduce sample
-        variance.
 
     Returns
     -------
@@ -312,7 +326,6 @@ def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False, compensate=Fal
           interpolated first- and second-order contributions.
     '''
     kvec, kmod = fourier_grid(nvox, dk, hermitian=True)
-    delta_k = delta_k * np.exp(1j * np.pi) if counter else delta_k
     mask = kmod > 0.0  # Avoid division by zero at k = 0
     boxsize = np.asarray(nvox) * dk
 
@@ -320,9 +333,7 @@ def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False, compensate=Fal
     if compensate:
         W_inv = compensation_kernel(kvec, nvox, boxsize, method=method)
 
-    # ------------------------------
-    # 1. First-order displacement (Psi^(1))
-    # ------------------------------
+    # -- 1. First-order displacement (Psi^(1)) --------------------------------
     phi1_k = np.zeros_like(kmod, dtype=complex)
     phi1_k[mask] = -delta_k[mask] / kmod[mask]**2  # Gravitational potential in Fourier space
     psi1_k = -1j * phi1_k[np.newaxis, ...] * kvec  # Displacement field in Fourier space
@@ -333,11 +344,9 @@ def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False, compensate=Fal
         psi1_k_comp = psi1_k
     disp_field1 = np.fft.irfftn(psi1_k_comp, s=nvox, axes=(-3, -2, -1))
 
-    # ------------------------------
-    # 2. Compute derivatives of Psi^(1) for the second-order source
-    # ------------------------------
+    # -- 2. Compute derivatives of Psi^(1) for the second-order source --------
     # NOTE: The derivatives for the 2LPT source term use the
-    # *uncompensated* psi1_k. The compensation corrects for
+    # uncompensated psi1_k. The compensation corrects for
     # interpolation artifacts, but the source term S(x) is computed
     # on the grid (no interpolation involved), so it must use the
     # physically correct (uncompensated) displacement field.
@@ -355,9 +364,7 @@ def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False, compensate=Fal
     S = dPxx * dPyy + dPxx * dPzz + dPyy * dPzz - (dPxy**2 + dPxz**2 + dPyz**2)
     S_k = np.fft.rfftn(S)
 
-    # ------------------------------
-    # 3. Second-order displacement (Psi^(2))
-    # ------------------------------
+    # -- 3. Second-order displacement (Psi^(2)) -------------------------------
     # Solve the Poisson equation in Fourier space, now for the source term S(k)
     #
     #     phi2(k) = -S(k) / |k|^2
@@ -371,17 +378,15 @@ def lpt2(x, delta_k, nvox, dk, g1, g2, aHf1, aHf2, counter=False, compensate=Fal
         psi2_k *= W_inv[np.newaxis, ...]
     disp_field2 = np.fft.irfftn(psi2_k, s=nvox, axes=(-3, -2, -1))
 
-    # ------------------------------
-    # 4. Interpolate and update particle positions and velocities
-    # ------------------------------
+    # -- 4. Interpolate and update particle positions and velocities ----------
     # For each spatial axis, interpolate the displacement fields (both
     # first- and second-order) from the grid to the particle positions.
     disp_field1_interp = interpolate_field(
-        pos=x, field=disp_field1, boxsize=boxsize,
+        x=x, field=disp_field1, boxsize=boxsize,
         origin=-boxsize / 2, method=method, vox_offset=0.5,
         periodic=True).astype(np.float32)
     disp_field2_interp = interpolate_field(
-        pos=x, field=disp_field2, boxsize=boxsize,
+        x=x, field=disp_field2, boxsize=boxsize,
         origin=-boxsize / 2, method=method, vox_offset=0.5,
         periodic=True).astype(np.float32)
 
