@@ -1,7 +1,7 @@
 #*****************************************************************************#
 #  stepsic - An initial condition generator for                               #
 #           STEreographically Projected cosmological Simulations              #
-#    Copyright (C) 2017-2026 Gabor Racz, Balazs Pal                           #
+#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                           #
 #                                                                             #
 #    This program is free software; you can redistribute it and/or modify     #
 #    it under the terms of the GNU General Public License as published by     #

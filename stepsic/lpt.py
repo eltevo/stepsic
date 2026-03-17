@@ -14,10 +14,11 @@
 #    GNU General Public License for more details.                               #
 #*******************************************************************************#
 
-import numpy as np
-
+from __future__ import annotations
 from typing import Tuple
 from stepsic._typing import RealField, ComplexField, IntVec3
+
+import numpy as np
 
 from stepsic.field import fourier_grid
 from stepsic.interpolation import interpolate_field, compensation_kernel

@@ -1,18 +1,20 @@
-#*******************************************************************************#
-#  stepsic - An initial condition generator for                                 #
-#           STEreographically Projected cosmological Simulations                #
-#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                             #
-#                                                                               #
-#    This program is free software; you can redistribute it and/or modify       #
-#    it under the terms of the GNU General Public License as published by       #
-#    the Free Software Foundation; either version 2 of the License, or          #
-#    (at your option) any later version.                                        #
-#                                                                               #
-#    This program is distributed in the hope that it will be useful,            #
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of             #
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the              #
-#    GNU General Public License for more details.                               #
-#*******************************************************************************#
+#*****************************************************************************#
+#  stepsic - An initial condition generator for                               #
+#           STEreographically Projected cosmological Simulations              #
+#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                           #
+#                                                                             #
+#    This program is free software; you can redistribute it and/or modify     #
+#    it under the terms of the GNU General Public License as published by     #
+#    the Free Software Foundation; either version 2 of the License, or        #
+#    (at your option) any later version.                                      #
+#                                                                             #
+#    This program is distributed in the hope that it will be useful,          #
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of           #
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the            #
+#    GNU General Public License for more details.                             #
+#*****************************************************************************#
+
+from __future__ import annotations
 
 import numpy as np
 
@@ -216,7 +218,7 @@ class CAMBCosmology:
         nnu : float
             Total effective number of massive and massless neutrinos.
         YHe : float
-            Fraction of baryonic mass in helium. Set to `None` to be
+            Fraction of baryonic mass in helium. Set to ``None`` to be
             calculated internally for BBN consistency.
         TCMB : float
             CMB temperature in Kelvin.
@@ -227,7 +229,7 @@ class CAMBCosmology:
         wa : float
             Dark energy equation of state parameter evolution.
         nonlinear : bool
-            If True, include non-linear corrections using Halofit.
+            If ``True``, include non-linear corrections using Halofit.
         halofit_version : str
             Version of the Halofit model to use for non-linear corrections.
             Check ``camb.nonlinear.Halofit`` for available models.

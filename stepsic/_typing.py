@@ -16,25 +16,25 @@
 
 from __future__ import annotations
 
-from typing import TypeAlias, Literal
-
-import numpy as np
+from os import PathLike
+from pathlib import Path
+from typing import Literal, TypeAlias
 from numpy.typing import NDArray
 
-Seed: TypeAlias = int | None
+import numpy as np
 
-# Anything broadcastable to a length-3 int array; e.g. grid shapes
-IntVec3: TypeAlias = int | tuple[int, int, int] | NDArray[np.integer]
+Seed: TypeAlias = int | np.integer | None
+PathInput: TypeAlias = str | PathLike[str]
 
-# Anything broadcastable to a length-3 float array; e.g. boxsize
-FloatVec3: TypeAlias = float | tuple[float, float, float] | NDArray[np.floating]
+# Broadcastable to length-3 inputs
+IntVec3: TypeAlias = int | tuple[int, int, int] | list[int] | NDArray[np.integer]
+FloatVec3: TypeAlias = float | tuple[float, float, float] | list[float] | NDArray[np.floating]
+BoolVec3: TypeAlias = bool | tuple[bool, bool, bool] | list[bool] | NDArray[np.bool_]
 
-# Anything broadcastable to a length-3 bool array; e.g. periodicity flag
-BoolVec3: TypeAlias = bool | tuple[bool, bool, bool] | NDArray[np.bool_]
+RealGrid: TypeAlias = NDArray[np.floating]
+ComplexGrid: TypeAlias = NDArray[np.complexfloating]
 
-# Field / particle arrays (shape documented in docstrings)
-RealField: TypeAlias = NDArray[np.floating]
-ComplexField: TypeAlias = NDArray[np.complexfloating]
-
-# Interpolation/deposit method
 MASMethod: TypeAlias = Literal['ngp', 'cic', 'tsc']
+GeometryName: TypeAlias = Literal['cubical', 'cylindrical', 'spherical']
+SpectrumKind: TypeAlias = Literal['camb', 'input']
+ICType: TypeAlias = Literal['grid', 'random', 'shell', 'glass']

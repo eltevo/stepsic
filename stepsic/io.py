@@ -1,27 +1,32 @@
-#*******************************************************************************#
-#  stepsic - An initial condition generator for                                 #
-#           STEreographically Projected cosmological Simulations                #
-#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                             #
-#                                                                               #
-#    This program is free software; you can redistribute it and/or modify       #
-#    it under the terms of the GNU General Public License as published by       #
-#    the Free Software Foundation; either version 2 of the License, or          #
-#    (at your option) any later version.                                        #
-#                                                                               #
-#    This program is distributed in the hope that it will be useful,            #
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of             #
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the              #
-#    GNU General Public License for more details.                               #
-#*******************************************************************************#
+#*****************************************************************************#
+#  stepsic - An initial condition generator for                               #
+#           STEreographically Projected cosmological Simulations              #
+#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                           #
+#                                                                             #
+#    This program is free software; you can redistribute it and/or modify     #
+#    it under the terms of the GNU General Public License as published by     #
+#    the Free Software Foundation; either version 2 of the License, or        #
+#    (at your option) any later version.                                      #
+#                                                                             #
+#    This program is distributed in the hope that it will be useful,          #
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of           #
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the            #
+#    GNU General Public License for more details.                             #
+#*****************************************************************************#
 
 from __future__ import annotations
-from typing import List, Dict, Any
+
+from stepsic._typing import PathInput
 
 import re
 import h5py
 import numpy as np
 from pathlib import Path
-from stepsic.__init__ import __programname__, __version__, __year__, __authors__, __header__, __githash__, __gitbranch__
+
+from stepsic.__init__ import (
+    __programname__, __version__, __year__,
+    __authors__, __header__, __githash__, __gitbranch__
+)
 
 # Gadget IO library for reading Gadget snapshots
 # Download from https://www.github.com/masterdesky/glio
@@ -145,6 +150,7 @@ class CosmoIO:
             boxsize = None
         return boxsize
     
+    @staticmethod
     def get_simulation_radius(path: Path):
         '''
         Retrieves the simulation radius from the snapshot file.
@@ -242,7 +248,7 @@ class CosmoIO:
 
         Returns
         -------
-        files : List[pathlib.Path]
+        files : list of pathlib.Path
             A sorted list of Path objects for all files in the snapshot.
             Returns an empty list if the filepath does not match a valid
             pattern.
@@ -304,7 +310,7 @@ class CosmoIO:
         raise UnsupportedFormatError('Only HDF5 files are supported.')
 
     @staticmethod
-    def _load_ascii(files: List[Path], **kwargs):
+    def _load_ascii(files: PathInput, **kwargs):
         '''Load a cosmological snapshot from an ASCII file.'''
         dtype = kwargs.get('dtype', np.float32)
         particleIDs, coordinates, velocities, masses = [], [], [], []
@@ -336,7 +342,7 @@ class CosmoIO:
         return particleIDs, coordinates, velocities, masses
 
     @staticmethod
-    def _load_hdf5(files: List[Path], *args, **kwargs):
+    def _load_hdf5(files: PathInput, *args, **kwargs):
         '''Load a cosmological snapshot from an HDF5 file.'''
         log.info(f'Reading the input HDF5 files ...')
         part_type = kwargs.get('part_type', 1)
@@ -366,7 +372,7 @@ class CosmoIO:
                 arguments[ai] = None
             else:
                 arguments[ai] = np.concatenate(arguments[ai], dtype=dtypes[ai])
-        return arguments.values()
+        return tuple(arguments.values())
     
     @staticmethod
     def _save_ascii(path: Path, data: "CosmoData", **kwargs):

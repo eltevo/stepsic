@@ -14,6 +14,8 @@
 #    GNU General Public License for more details.                             #
 #*****************************************************************************#
 
+from __future__ import annotations
+
 import numpy as np
 from tabulate import tabulate
 from scipy.interpolate import CubicSpline
@@ -92,7 +94,7 @@ def create_particles(npart: int, Lbox, seed=None):
         Particle positions in the simulation box.
     '''
     rng = RNG(seed=seed)
-    return rng.uniform(size=(npart, 3), seed=seed) * np.array(Lbox)
+    return rng.uniform(size=(npart, 3), seed=None) * np.array(Lbox)
 
 
 def cubic_voxels(nmesh, Lbox):
@@ -179,7 +181,7 @@ def fourier_grid(nvox, dk, hermitian=False):
     return kvec, kmod
 
 
-def white_noise(nvox, counter=False, seed=None):
+def white_noise(nvox, seed=None):
     r'''
     Return a complex Gaussian array :math:`W(k)` on the ``rfftn()`` grid
     `(Nx, Ny, Nz//2+1)`, obeying Hermitian constraints that guarantee
@@ -195,11 +197,6 @@ def white_noise(nvox, counter=False, seed=None):
         The uniform step size in each dimension, calculated as the length
         of the shortest dimension divided by the number of voxels in
         that dimension.
-    counter : bool
-        If True, applies a global sign flip to the Fourier-space density
-        field (equivalent to a :math:`\pi` phase shift). This is useful
-        for running "counter-phased" simulations to reduce sample
-        variance. See more in Angulo-Pontzen (2016).
     seed : int or None, optional
         Random seed for reproducibility. If `None`, uses the default RNG.
 
@@ -211,16 +208,6 @@ def white_noise(nvox, counter=False, seed=None):
     rng = RNG(seed=seed)
     w_k = np.fft.rfftn(rng.normal(size=nvox, seed=seed))
     w_k[0, 0, 0] = 0.0  # set DC=0 (mean density) as we only need fluctuations
-
-    if counter:
-        # Flips phase and sets amplitude to 1 for every mode.
-        # This eliminates Rayleigh scatter in |W(k)|, so paired
-        # simulations cancel cosmic variance at the field level.
-        amp = np.abs(w_k)
-        w_k[amp > 0.0] /= amp[amp > 0.0]  # Prevent division by zero
-        w_k *= np.sqrt(np.prod(nvox))  # Normalize to unit variance in real space
-        w_k *= np.exp(1j * np.pi)
-
     return w_k
 
 
@@ -279,6 +266,7 @@ def generate_delta_k(
     # Sirko 2005; Bagla & Padmanabhan 1997; Klypin & Holtzman 1997
     target_A = np.sqrt(pk_grid / dk**3)
     if fixed:
+        # Flips phase and sets amplitude to 1 for every mode.
         # Angulo & Pontzen 2016
         amp = np.abs(field)
         phase = np.zeros_like(field)
@@ -287,7 +275,7 @@ def generate_delta_k(
     else:
         delta_k = field * target_A
 
-    delta_k[0, 0, 0] = 0.0
+    delta_k[0, 0, 0] = 0.0  # set DC=0 (mean density) as we only need fluctuations
 
     if paired:
         delta_k = -delta_k

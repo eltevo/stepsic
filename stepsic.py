@@ -16,6 +16,8 @@
 #    GNU General Public License for more details.                             #
 #*****************************************************************************#
 
+from __future__ import annotations
+
 import sys
 import copy
 import time
