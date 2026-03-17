@@ -162,15 +162,15 @@ def main():
                     # Use 1st order Lagrangian PT (Zel'dovich approximation)
                     xpert, vpert = lpt1(
                         ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk,
-                        g1=g1, aHf1=aHf1, counter=params['COUNTER'],
-                        compensate=params['COMPENSATE'], method=params['INTERPOLATION'])
+                        g1=g1, aHf1=aHf1,
+                        method=params['INTERPOLATION'], compensate=params['COMPENSATE'])
                     log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='1LPT')
                 elif params['LPTORDER'] == 2:
                     # Use 2nd order Lagrangian PT
                     xpert, vpert = lpt2(
                         ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk,
-                        g1=g1, g2=g2, aHf1=aHf1, aHf2=aHf2, counter=params['COUNTER'],
-                        compensate=params['COMPENSATE'], method=params['INTERPOLATION'])
+                        g1=g1, g2=g2, aHf1=aHf1, aHf2=aHf2,
+                        method=params['INTERPOLATION'], compensate=params['COMPENSATE'])
                     log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='2LPT')
 
                 # Calculating the displacement field for every grid
@@ -192,19 +192,18 @@ def main():
             field = white_noise(nvox=nvox, seed=params['SEED'])
             delta_k = generate_delta_k(kh, pk, nvox, dk, field=field)
 
+            lpt_kwargs = dict(
+                delta_k=delta_k, nvox=nvox, dk=dk, g1=g1, aHf1=aHf1,
+                method=params['INTERPOLATION'], compensate=params['COMPENSATE']
+            )
             if params['LPTORDER'] == 1:
                 # Use 1st order Lagrangian PT (Zel'dovich approximation)
-                xpert, vpert = lpt1(
-                    ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk,
-                    g1=g1, aHf1=aHf1, counter=params['COUNTER'],
-                    compensate=params['COMPENSATE'], method=params['INTERPOLATION'])
+                xpert, vpert = lpt1(x=ic_orig.pos, **lpt_kwargs)
                 log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='1LPT')
             elif params['LPTORDER'] == 2:
                 # Use 2nd order Lagrangian PT
-                xpert, vpert = lpt2(
-                    ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk,
-                    g1=g1, g2=g2, aHf1=aHf1, aHf2=aHf2, counter=params['COUNTER'],
-                    compensate=params['COMPENSATE'], method=params['INTERPOLATION'])
+                lpt_kwargs.update(dict(g2=g2, aHf2=aHf2))
+                xpert, vpert = lpt2(x=ic_orig.pos, **lpt_kwargs)
                 log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='2LPT')
             ic.pos = xpert
             ic.vel = vpert
