@@ -108,7 +108,7 @@ REDSHIFT = 63          # Target redshift
 INTERPOLATION = "tsc"  # Grid-to-particle interpolation to calculate displacements and velocities. Options: "ngp", "cic", "tsc".
 COMPENSATE = true      # If `true`, the IC will be generated with a compensation kernel to pre-sharpen the field before interpolation. This is useful for reducing the smoothing effect of interpolation when using low-resolution meshes or high-order interpolation methods, especially in the case of glass IC where particles do not coincide with grid points. For regular lattices where particles coincide with grid points, this should be False.
 SPHEREMODE = false     # If `true`, the IC will be generated in a spherical shell in k-space, otherwise it will be generated in a cubical box in k-space.
-COUNTER = false        # If `true`, the IC will be generated with a phase flip in Fourier space.
+PAIRED = false         # If `true`, two ICs will be generated with opposite phases in the Fourier space. This is useful for reducing the cosmic variance by pairing normal and antipodal simulations.
 PHASE_SHIFT = 0.0      # Phase shift to apply to the IC. This is useful for generating IC with a specific phase shift in the Fourier space, primarily to reduce the cosmic variance by pairing normal and antipodal simulations.
 
 # ** Adaptive multiscale (glass + NMESH=0) *****************************

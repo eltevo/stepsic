@@ -17,7 +17,6 @@
 from __future__ import annotations
 import importlib.resources
 
-import sys  # only used for dataset "slots" argument compatibility
 from enum import Enum
 from pathlib import Path
 from dataclasses import dataclass
@@ -47,7 +46,7 @@ class PType(Enum):
     PATH_MKDIR = 'path_mkdir'  # Path that will be created if missing
 
 
-@dataclass(frozen=True, **({"slots": True} if sys.version_info >= (3, 10) else {}))
+@dataclass(frozen=True, slots=True)
 class Param:
     r'''
     Declarative descriptor for a single configuration parameter.
@@ -107,7 +106,7 @@ class Param:
     formatter: Callable[[Any, dict], str] | None = None
 
 
-@dataclass(frozen=True, **({"slots": True} if sys.version_info >= (3, 10) else {}))
+@dataclass(frozen=True, slots=True)
 class Constraint:
     r'''
     A cross-parameter validation rule.
@@ -212,7 +211,7 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('COMPENSATE', ptype=PType.BOOL, label="Compensation kernel", condition=lambda P: P.get('LPTORDER') > 0),
     Param('SPHEREMODE', ptype=PType.BOOL, label="Sphere mode", condition=lambda P: P.get('LPTORDER') > 0),
     Param('COMOVING', ptype=PType.BOOL, label="Comoving IC"),
-    Param('COUNTER', ptype=PType.BOOL, label="Counter phase", condition=lambda P: P.get('LPTORDER') > 0),
+    Param('PAIRED', ptype=PType.BOOL, label="Paired-fixed IC", condition=lambda P: P.get('LPTORDER') > 0),
     Param('PHASE_SHIFT', label="Phase shift",  fmt=".2f", unit="degrees", condition=lambda P: P.get('LPTORDER') > 0),
     Param('HINDEPENDENT', ptype=PType.BOOL, label="H-independent units"),
     Param('SEED', ptype=PType.INT, label="Random seed"),
@@ -359,77 +358,6 @@ def _validate_constraints(
             log.warning(c.message(P))
 
 
-def _fmt_arr(x: object, *, precision: int = 2) -> str:
-    '''Pretty fixed-width formatting for scalars or small arrays.'''
-    return np.array2string(np.asarray(x), precision=precision, floatmode='fixed')
-
-
-def _fmt_with_h(
-    value: object, h: float, unit: str, *, hindependent: bool, precision: int = 2,
-) -> str:
-    r'''
-    Format a value with optional dual h-dependent / h-independent view.
-
-    When ``HINDEPENDENT`` is True the value is already in ``unit``
-    (typically Mpc/h) and is printed as-is.  When False the internal
-    value is in ``unit`` (Mpc) but was multiplied by ``h``, so both the
-    physical and ``h``-scaled representations are shown.
-    '''
-    if hindependent:
-        return f'{_fmt_arr(value, precision=precision)} {unit}'
-    left = _fmt_arr(np.asarray(value) / h, precision=precision)
-    right = _fmt_arr(value, precision=precision)
-    return f"{left} {unit} = {right} {unit}/h"
-
-
-def _format_value(param: Param, value: Any, P: dict) -> str:
-    '''
-    Produce a display string for a single parameter, respecting
-    all formatting rules encoded in the ``Param`` descriptor.
-    '''
-    # Custom override
-    if param.formatter is not None:
-        return param.formatter(value, P)
-
-    # Dual h-display
-    if param.h_display:
-        h = float(P['H'])
-        unit = 'Mpc/h' if P['HINDEPENDENT'] else 'Mpc'
-        return _fmt_with_h(
-            value, h, unit,
-            hindependent=P['HINDEPENDENT'],
-            precision=param.h_precision,
-        )
-
-    # Bool / string / path
-    if param.ptype in (PType.BOOL, PType.STRING, PType.PATH, PType.PATH_MKDIR):
-        return str(value)
-
-    # Array types
-    if param.ptype is PType.ARRAY:
-        s = _fmt_arr(value)
-        return f'{s} {param.unit}'.strip()
-
-    # Scalar with format spec
-    if param.fmt is not None:
-        s = f'{value:{param.fmt}}'
-    elif param.ptype is PType.INT:
-        s = f'{value:d}'
-    else:
-        s = str(value)
-    return f'{s} {param.unit}'.strip()
-
-
-def _render_kv_block(title: str, rows: list[tuple[str, str]]) -> str:
-    '''Render a titled key/value block with aligned colon columns.'''
-    if not rows:
-        return title
-    width = max(len(k) for k, _ in rows)
-    lines = [title, '-' * len(title)]
-    lines += [f'{k:<{width}}:  {v}' for k, v in rows]
-    return '\n'.join(lines)
-
-
 def _validate_and_cast(param: Param, P: dict) -> None:
     '''
     Validate and cast a single parameter in-place inside ``P``.
@@ -536,6 +464,77 @@ def _compute_derived_ic(P: dict) -> None:
     P["DTYPE"] = np.float64 if P["USE_DOUBLE"] else np.float32
 
 
+def _fmt_arr(x: object, *, precision: int = 2) -> str:
+    '''Pretty fixed-width formatting for scalars or small arrays.'''
+    return np.array2string(np.asarray(x), precision=precision, floatmode='fixed')
+
+
+def _fmt_with_h(
+    value: object, h: float, unit: str, *, hindependent: bool, precision: int = 2,
+) -> str:
+    r'''
+    Format a value with optional dual h-dependent / h-independent view.
+
+    When ``HINDEPENDENT`` is True the value is already in ``unit``
+    (typically Mpc/h) and is printed as-is.  When False the internal
+    value is in ``unit`` (Mpc) but was multiplied by ``h``, so both the
+    physical and ``h``-scaled representations are shown.
+    '''
+    if hindependent:
+        return f'{_fmt_arr(value, precision=precision)} {unit}'
+    left = _fmt_arr(np.asarray(value) / h, precision=precision)
+    right = _fmt_arr(value, precision=precision)
+    return f"{left} {unit} = {right} {unit}/h"
+
+
+def _format_value(param: Param, value: Any, P: dict) -> str:
+    '''
+    Produce a display string for a single parameter, respecting
+    all formatting rules encoded in the ``Param`` descriptor.
+    '''
+    # Custom override
+    if param.formatter is not None:
+        return param.formatter(value, P)
+
+    # Dual h-display
+    if param.h_display:
+        h = float(P['H'])
+        unit = 'Mpc/h' if P['HINDEPENDENT'] else 'Mpc'
+        return _fmt_with_h(
+            value, h, unit,
+            hindependent=P['HINDEPENDENT'],
+            precision=param.h_precision,
+        )
+
+    # Bool / string / path
+    if param.ptype in (PType.BOOL, PType.STRING, PType.PATH, PType.PATH_MKDIR):
+        return str(value)
+
+    # Array types
+    if param.ptype is PType.ARRAY:
+        s = _fmt_arr(value)
+        return f'{s} {param.unit}'.strip()
+
+    # Scalar with format spec
+    if param.fmt is not None:
+        s = f'{value:{param.fmt}}'
+    elif param.ptype is PType.INT:
+        s = f'{value:d}'
+    else:
+        s = str(value)
+    return f'{s} {param.unit}'.strip()
+
+
+def _render_kv_block(title: str, rows: list[tuple[str, str]]) -> str:
+    '''Render a titled key/value block with aligned colon columns.'''
+    if not rows:
+        return title
+    width = max(len(k) for k, _ in rows)
+    lines = [title, '-' * len(title)]
+    lines += [f'{k:<{width}}:  {v}' for k, v in rows]
+    return '\n'.join(lines)
+
+
 def _display_params(title: str, params: Sequence[Param], P: dict) -> None:
     '''
     Format and log a group of parameters as an aligned key/value block.
@@ -561,6 +560,7 @@ def _display_params(title: str, params: Sequence[Param], P: dict) -> None:
         rows.append((p.label, _format_value(p, P[p.key], P)))
     if rows:
         log.info('\n' + _render_kv_block(title, rows))
+
 
 class CosmoParameters:
     '''
