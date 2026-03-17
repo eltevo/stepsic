@@ -24,7 +24,7 @@ def get_git_branch() -> str:
     except Exception:
         return "unknown"
 
-__version__ = '2.0.0'
+__version__ = '2.0.0beta'
 __year__ = '2017-2026'
 __authors__ = ['Balazs Pal', 'Gabor Racz']
 __programname__ = "stepsic.py"
