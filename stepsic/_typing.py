@@ -31,8 +31,8 @@ IntVec3: TypeAlias = int | tuple[int, int, int] | list[int] | NDArray[np.integer
 FloatVec3: TypeAlias = float | tuple[float, float, float] | list[float] | NDArray[np.floating]
 BoolVec3: TypeAlias = bool | tuple[bool, bool, bool] | list[bool] | NDArray[np.bool_]
 
-RealGrid: TypeAlias = NDArray[np.floating]
-ComplexGrid: TypeAlias = NDArray[np.complexfloating]
+RealField: TypeAlias = NDArray[np.floating]
+ComplexField: TypeAlias = NDArray[np.complexfloating]
 
 MASMethod: TypeAlias = Literal['ngp', 'cic', 'tsc']
 GeometryName: TypeAlias = Literal['cubical', 'cylindrical', 'spherical']
