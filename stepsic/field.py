@@ -15,6 +15,7 @@
 #*****************************************************************************#
 
 from __future__ import annotations
+from stepsic._typing import ComplexField, FloatVec3, RealField, Seed
 
 import logging
 
@@ -27,16 +28,16 @@ from stepsic.rng import RNG
 log = logging.getLogger(__name__)
 
 
-def wrap(x, Lbox):
+def wrap(x: RealField, boxsize: FloatVec3) -> RealField:
     '''
     Wraps the coordinates in ``x`` to be within the periodic box defined
-    by ``Lbox`` to the inverval :math:`(0, L]`
+    by ``boxsize`` to the inverval :math:`(0, L]`
 
     Parameters
     ----------
     x : ndarray of shape (N, M)
         The coordinates to wrap.
-    Lbox : ndarray of shape (M,)
+    boxsize : ndarray of shape (M,)
         The size of the periodic box in each dimension.
 
     Returns
@@ -44,10 +45,10 @@ def wrap(x, Lbox):
     wrapped : ndarray
         The wrapped coordinates.
     '''
-    return np.mod(x+Lbox/2, Lbox)
+    return np.mod(x+boxsize/2, boxsize)
 
 
-def create_grid(nvox, dk):
+def create_grid(nvox: FloatVec3, dk: float) -> tuple[RealField, RealField]:
     '''
     Create a regular grid for the simulation box.
 
@@ -75,7 +76,7 @@ def create_grid(nvox, dk):
     return particles, np.array((xx, yy, zz))
 
 
-def create_particles(npart: int, Lbox, seed=None):
+def create_particles(npart: int, boxsize: FloatVec3, seed: Seed = None) -> RealField:
     r'''
     Create a set of particles uniformly distributed in a cubic box.
 
@@ -83,7 +84,7 @@ def create_particles(npart: int, Lbox, seed=None):
     ----------
     npart : int
         The number of particles to create.
-    Lbox : float or list of float
+    boxsize : float or list of float
         Box dimensions in [Mpc]. Can be a scalar for a cubical box or
         an array in the form of `(Lx, Ly, Lz)` for a rectangular cuboid.
     seed : int, optional
@@ -95,10 +96,10 @@ def create_particles(npart: int, Lbox, seed=None):
         Particle positions in the simulation box.
     '''
     rng = RNG(seed=seed)
-    return rng.uniform(size=(npart, 3), seed=None) * np.array(Lbox)
+    return rng.uniform(size=(npart, 3), seed=None) * np.array(boxsize)
 
 
-def cubic_voxels(nmesh, Lbox):
+def cubic_voxels(nmesh: int, boxsize: FloatVec3) -> tuple[FloatVec3, float]:
     '''
     Defines a rectangular cuboid mesh with the specified number of
     voxels in each dimensions, ensuring that the voxels are cubic.
@@ -110,34 +111,69 @@ def cubic_voxels(nmesh, Lbox):
     ----------
     nmesh : int
         Number of voxels in the shortest dimension.
-    Lbox : float or tuple of float
+    boxsize : float or tuple of float
         Box dimensions in [Mpc]. Can be a scalar for a cubical box or
         an array in the form of `(Lx, Ly, Lz)` for a rectangular cuboid.
 
     Returns
     -------
-    nvox : tuple of int
+    nvox : ndarray of shape (3,)
         The number of voxels in each dimension of the grid `(Nx, Ny, Nz)`.
     dk : float
         The uniform step size in each dimension, calculated as the length
         of the shortest dimension divided by the number of voxels in
         that dimension.
     '''
-    nvox = np.ceil(Lbox / (np.min(Lbox) / nmesh)).astype(int)
+    nvox = np.ceil(boxsize / (np.min(boxsize) / nmesh)).astype(int)
     nvox = (nvox + nvox % 2).astype(int)  # Ensure even number of voxels
-    dk = np.min(Lbox) / np.min(nvox)
+    dk = np.min(boxsize) / np.min(nvox)
     #log.info('mesh: Nx={}, Ny={}, Nz={}; step size: {}'.format(*nvox, dk))
     return nvox, dk
 
 
-def fourier_grid(nvox, dk, hermitian=False):
+def anisotropic_voxels(nmesh: int, boxsize: FloatVec3) -> tuple[FloatVec3, float]:
+    '''
+    Construct a mesh with isotropic physical cell size, anchored to the
+    shortest axis (z by convention).
+
+    Parameters
+    ----------
+    nmesh : int
+        Number of voxels in the shortest dimension.
+    boxsize : float or tuple of float
+        Box dimensions in [Mpc]. Can be a scalar for a cubical box or
+        an array in the form of `(Lx, Ly, Lz)` for a rectangular cuboid.
+
+    Returns
+    -------
+    nvox : ndarray of shape (3,)
+        The number of voxels in each dimension of the grid `(Nx, Ny, Nz)`.
+    dk : float
+        
+    '''
+    dk = np.min(boxsize) / nmesh
+    nvox = np.rint(boxsize / dk).astype(int)
+    # enforce exact consistency (avoid drift)
+    if not np.allclose(nvox * dk, boxsize, rtol=0, atol=1e-10):
+        raise ValueError(
+            "Boxsize not compatible with isotropic cell size.\n"
+            f"boxsize={boxsize}, dk={dk}, nvox={nvox}"
+        )
+    return nvox, dk
+
+
+def fourier_grid(
+        nvox: FloatVec3,
+        dk: float,
+        hermitian: bool = False
+) -> tuple[RealField, RealField]:
     r'''
     Construct a 3D Fourier space grid.
 
     This function generates a three-dimensional array of wavevector
     components (``kvec``) and computes the corresponding magnitude
     (``kmod``) for a cubic grid with ``nmesh`` points per side within
-    a box of size ``Lbox``.
+    a box of size ``boxsize``.
 
     The grid is then constructed using the FFT frequencies:
     - For the first two dimensions, the full set of FFT frequencies is
@@ -182,7 +218,7 @@ def fourier_grid(nvox, dk, hermitian=False):
     return kvec, kmod
 
 
-def white_noise(nvox, seed=None):
+def white_noise(nvox: FloatVec3, seed: Seed = None) -> RealField:
     r'''
     Return a complex Gaussian array :math:`W(k)` on the ``rfftn()`` grid
     `(Nx, Ny, Nz//2+1)`, obeying Hermitian constraints that guarantee
@@ -213,8 +249,16 @@ def white_noise(nvox, seed=None):
 
 
 def generate_delta_k(
-        kh, pk, nvox, dk,
-        *, field=None, seed=None, fixed=False, paired=False):
+        kh,
+        pk,
+        nvox: FloatVec3,
+        dk: float,
+        *,
+        field: RealField = None,
+        seed: Seed = None,
+        fixed: bool = False,
+        paired: bool = False
+) -> ComplexField:
     r'''
     Generates the Fourier modes of an arbitrary input field from a
     given power spectrum.
@@ -284,7 +328,12 @@ def generate_delta_k(
     return delta_k
 
 
-def create_nres_mass_map(n_grid_samples, mass_list, M_box, Lbox):
+def create_nres_mass_map(
+        n_grid_samples: int,
+        mass_list: RealField,
+        M_box: float,
+        boxsize: FloatVec3
+) -> tuple[RealField, RealField]:
     '''
     Creates a lookup table for the number of voxels per mass bin
     for a variable resolution grid in a regular StePS simulation.
@@ -297,7 +346,7 @@ def create_nres_mass_map(n_grid_samples, mass_list, M_box, Lbox):
         Array containing the sorted unique particle masses.
     M_box : float
         Total mass in the simulation box (in 1e11 Msol).
-    Lbox : ndarray
+    boxsize : ndarray
         Box dimensions in [Mpc]. Can be a scalar for a cubical box or
         an array in the form of `(Lx, Ly, Lz)` for a rectangular cuboid.
 
@@ -308,7 +357,7 @@ def create_nres_mass_map(n_grid_samples, mass_list, M_box, Lbox):
     mass_tab : ndarray of shape (n_grid_samples,)
         Array containing the mass values corresponding to each grid.
     '''
-    nres_list = np.min(Lbox) // np.cbrt(np.prod(Lbox) * mass_list / M_box)
+    nres_list = np.min(boxsize) // np.cbrt(np.prod(boxsize) * mass_list / M_box)
     idx = np.linspace(
         0, mass_list.size - 1, n_grid_samples, endpoint=True, dtype=int)
     
@@ -319,7 +368,7 @@ def create_nres_mass_map(n_grid_samples, mass_list, M_box, Lbox):
     log.info('The generated resolution-mass map:') #The full nresx x nresy x nresz grid resolution is printed here
     nvox = np.zeros((n_grid_samples, 3), dtype=int)
     for i in range(n_grid_samples):
-        nvox[i], dk = cubic_voxels(nres_tab[i], Lbox)
+        nvox[i], dk = cubic_voxels(nres_tab[i], boxsize)
     print(tabulate([*zip(nvox[:,0], nvox[:,1], nvox[:,2], mass_tab)],
                    headers=['Resolution_x', 'Resolution_y', 'Resolution_z', 'Mass [1e11 Msol/h]'],
                    floatfmt=('.0f', '.0f', '.0f', '.6f')))
