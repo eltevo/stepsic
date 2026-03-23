@@ -116,7 +116,7 @@ class SphericalBinner(ABC):
         :math:`f(2\pi) = 2\pi`.  This solver handles the full range
         needed by constant-volume binning, where the doubled-angle form
         :math:`2\omega - \sin(2\omega)` can reach :math:`2\pi` when the
-        simulation radius is large relative to :math:`D_S`.
+        simulation radius is large relative to :math:`R_{4D}`.
 
         Uses ``scipy.optimize.root`` with an initial guess of
         :math:`x_0 = y + \sin(y)` (first-order Kepler-equation trick).
@@ -167,14 +167,14 @@ class SphericalLinear(SphericalBinner):
     bin is:
 
     .. math::
-        r_i = D_S \, \tan(i \, \Delta\omega)
+        r_i = R_{4D} \, \tan(i \, \Delta\omega)
 
-    where :math:`D_S = D_{4D}/2` is the radius of the compactification
+    where :math:`R_{4D} = D_{4D}/2` is the radius of the compactification
     sphere.
 
     Parameters
     ----------
-    d_s : float
+    r_4d : float
         Radius of the compactification sphere (:math:`D_{4D}/2`).
     n_bins : int
         Number of radial bins.
@@ -183,15 +183,15 @@ class SphericalLinear(SphericalBinner):
         uniform angular step.
     '''
 
-    def __init__(self, d_s: float, n_bins: int, last_cell_size: float):
-        self.d_s = d_s
+    def __init__(self, r_4d: float, n_bins: int, last_cell_size: float):
+        self.r_4d = r_4d
         self.n_bins = n_bins
         self.last_cell_size = last_cell_size
         self.d_omega = np.pi / (2 * (self.n_bins + self.last_cell_size))
 
     def r_limit(self, i: int) -> float:
         omega = i * self.d_omega
-        return self.d_s * np.tan(omega)
+        return self.r_4d * np.tan(omega)
 
     def r_centroid(self, i: int) -> float:
         return self.centroid(self.r_limit(i), self.r_limit(i + 1))
@@ -208,18 +208,18 @@ class SphericalConstantVolume(SphericalBinner):
 
     Parameters
     ----------
-    d_s : float
+    r_4d : float
         Radius of the compactification sphere (:math:`D_{4D}/2`).
     n_bins : int
         Number of radial bins.
-    R_sim : float
+    r_3d : float
         Maximum simulation radius in the non-compact space.
     '''
 
-    def __init__(self, d_s: float, n_bins: int, R_sim: float):
-        self.d_s = d_s
+    def __init__(self, r_4d: float, n_bins: int, r_3d: float):
+        self.r_4d = r_4d
         self.n_bins = n_bins
-        self.omega_max = 2 * np.arctan(R_sim / d_s)
+        self.omega_max = 2 * np.arctan(r_3d / r_4d)
         self.unit_bin = (
             2 * self.omega_max - np.sin(2 * self.omega_max)
         ) / n_bins
@@ -229,7 +229,7 @@ class SphericalConstantVolume(SphericalBinner):
         # f(x) = x − sin(x) we obtain 2ω; divide by 2 to get ω.
         result = self.invert_x_minus_sin_x(i * self.unit_bin)
         omega = float(np.squeeze(result)) / 2
-        return self.d_s * np.tan(omega)
+        return self.r_4d * np.tan(omega)
 
     def r_centroid(self, i: int) -> float:
         return self.centroid(self.r_limit(i), self.r_limit(i + 1))
@@ -302,7 +302,7 @@ class CylindricalLinear(CylindricalBinner):
     The radial limit of the *i*-th bin is:
 
     .. math::
-        r_i = D_S \, \tan(i \, \Delta\omega)
+        r_i = R_{4D} \, \tan(i \, \Delta\omega)
 
     Notes
     -----
@@ -311,7 +311,7 @@ class CylindricalLinear(CylindricalBinner):
 
     Parameters
     ----------
-    d_s : float
+    r_4d : float
         Radius of the compactification sphere (:math:`D_{4D}/2`).
     n_bins : int
         Number of radial bins.
@@ -320,15 +320,15 @@ class CylindricalLinear(CylindricalBinner):
         uniform angular step.
     '''
 
-    def __init__(self, d_s: float, n_bins: int, last_cell_size: float):
-        self.d_s = d_s
+    def __init__(self, r_4d: float, n_bins: int, last_cell_size: float):
+        self.r_4d = r_4d
         self.n_bins = n_bins
         self.last_cell_size = last_cell_size
         self.d_omega = np.pi / (2 * (self.n_bins + self.last_cell_size))
 
     def r_limit(self, i: int) -> float:
         omega = i * self.d_omega
-        return self.d_s * np.tan(omega)
+        return self.r_4d * np.tan(omega)
 
     def r_centroid(self, i: int) -> float:
         return self.centroid(self.r_limit(i), self.r_limit(i + 1))
@@ -349,18 +349,18 @@ class CylindricalConstantVolume(CylindricalBinner):
 
     Parameters
     ----------
-    d_s : float
+    r_4d : float
         Radius of the compactification sphere (:math:`D_{4D}/2`).
     n_bins : int
         Number of radial bins.
-    R_sim : float
+    r_3d : float
         Maximum simulation radius in the non-compact space.
     '''
 
-    def __init__(self, d_s: float, n_bins: int, R_sim: float):
-        self.d_s = d_s
+    def __init__(self, r_4d: float, n_bins: int, r_3d: float):
+        self.r_4d = r_4d
         self.n_bins = n_bins
-        self.omega_max = 2 * np.arctan(R_sim / d_s)
+        self.omega_max = 2 * np.arctan(r_3d / r_4d)
         self.unit_bin = (
             2 * self.omega_max - np.sin(2 * self.omega_max)
         ) / n_bins
@@ -368,7 +368,7 @@ class CylindricalConstantVolume(CylindricalBinner):
     def r_limit(self, i: int) -> float:
         result = SphericalBinner.invert_x_minus_sin_x(i * self.unit_bin)
         omega = float(np.squeeze(result)) / 2
-        return self.d_s * np.tan(omega)
+        return self.r_4d * np.tan(omega)
 
     def r_centroid(self, i: int) -> float:
         return self.centroid(self.r_limit(i), self.r_limit(i + 1))
@@ -396,29 +396,29 @@ def create_binner(params: dict) -> SphericalBinner | CylindricalBinner:
     '''
     geometry = params['GEOMETRY']
     bin_mode = params['BIN_MODE']
-    d_s = params['D_4D'] / 2.0
+    r_4d = params['D_4D'] / 2.0
     n_bins = params['NRBINS']
-    R_sim = params['R_3D']
+    r_3d = params['R_3D']
 
     if geometry == 'spherical':
         if bin_mode == 'omega':
             last_cell_size = (
-                n_bins * np.pi / (2 * np.arctan(R_sim / d_s)) - n_bins
+                n_bins * np.pi / (2 * np.arctan(r_3d / r_4d)) - n_bins
             )
-            return SphericalLinear(d_s, n_bins, last_cell_size)
+            return SphericalLinear(r_4d, n_bins, last_cell_size)
         elif bin_mode == 'volume':
-            return SphericalConstantVolume(d_s, n_bins, R_sim)
+            return SphericalConstantVolume(r_4d, n_bins, r_3d)
         else:
             raise ValueError(f"Unknown BIN_MODE '{bin_mode}' for spherical geometry.")
 
     elif geometry == 'cylindrical':
         if bin_mode == 'omega':
             last_cell_size = (
-                n_bins * np.pi / (2 * np.arctan(R_sim / d_s)) - n_bins
+                n_bins * np.pi / (2 * np.arctan(r_3d / r_4d)) - n_bins
             )
-            return CylindricalLinear(d_s, n_bins, last_cell_size)
+            return CylindricalLinear(r_4d, n_bins, last_cell_size)
         elif bin_mode == 'volume':
-            return CylindricalConstantVolume(d_s, n_bins, R_sim)
+            return CylindricalConstantVolume(r_4d, n_bins, r_3d)
         else:
             raise ValueError(f"Unknown BIN_MODE '{bin_mode}' for cylindrical geometry.")
 
