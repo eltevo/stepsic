@@ -128,26 +128,17 @@ class InterpolationKernel(ABC):
 
 
 class NGPKernel(InterpolationKernel):
-    '''
-    Implements Nearest Grid Point (NGP) interpolation in a hacky way.
-    Defines a 2-point kernel with a step weight function to select the
-    nearest grid point based on the fractional position. This is purely
-    for the convenience of using the same interpolation machinery for all
-    kernels, and I could not think of a better way, even with ChatGPT.
-    '''
-
+    '''Implements Nearest Grid Point (NGP) interpolation.'''
     @property
     def support(self) -> int:
-        return 2
+        return 1
 
     @property
     def base_offset(self) -> int:
         return 0
 
     def weights(self, dx: RealField) -> Tuple[RealField, ...]:
-        w1 = (dx >= 0.5).astype(dx.dtype)
-        w0 = 1.0 - w1
-        return (w0, w1)
+        return (np.ones_like(dx),)
 
 
 class CICKernel(InterpolationKernel):
