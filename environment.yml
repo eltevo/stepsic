@@ -13,6 +13,7 @@ dependencies:
   - camb
   - matplotlib
   - seaborn
+  - gsl  # potentially needed for nbodyit
   - pip
   - pip:
     - colossus
