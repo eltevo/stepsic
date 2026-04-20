@@ -24,7 +24,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 Seed: TypeAlias = int | np.integer | None
-PathInput: TypeAlias = str | PathLike[str]
+PathInput: TypeAlias = str | Path | PathLike[str]
 
 # Broadcastable to length-3 inputs
 IntVec3: TypeAlias = int | tuple[int, int, int] | list[int] | NDArray[np.integer]

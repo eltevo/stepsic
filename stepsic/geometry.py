@@ -162,15 +162,21 @@ class SphericalLinear(SphericalBinner):
     Equal angular-step binning in the non-compact :math:`\mathbb{R}^3`
     space.
 
-    The stereographic angle :math:`\omega` is divided into equal steps
-    of size :math:`\Delta\omega`, and the radial limit of the *i*-th
-    bin is:
+    Uses an internal half-angle parametrization
+    :math:`\alpha \equiv \omega/2`, where :math:`\omega` is the
+    hyperspherical arc angle from Racz (2018). The angular step is
+    :math:`\Delta\alpha`, and the radial limit of the *i*-th bin is:
 
     .. math::
-        r_i = R_{4D} \, \tan(i \, \Delta\omega)
+        r_i = R_{4D} \, \tan(i \, \Delta\alpha)
 
-    where :math:`R_{4D} = D_{4D}/2` is the radius of the compactification
-    sphere.
+    where :math:`R_{4D} = D_{4D}/2`.  This is equivalent to the paper
+    formula :math:`r = 2 R_{4D} \tan(\omega/2)` with
+    :math:`\alpha = \omega/2`.
+
+    Notes
+    -----
+    This matches the legacy ``Calculate_rlimits_i`` function in StePS_IC.
 
     Parameters
     ----------
@@ -206,10 +212,20 @@ class SphericalConstantVolume(SphericalBinner):
     space.  The bin boundaries are found by inverting the relation
     :math:`x - \sin(x) = y`.
 
+    The stereographic projection follows [CITE: Racz+ 2018, Eq. 4–5]:
+
+    .. math::
+        r = D_s \, \tan\!\left(\frac{\omega}{2}\right), \qquad
+        \omega = 2 \arctan\!\left(\frac{r}{D_s}\right),
+
+    where :math:`D_s = 2\,R_{4D}` is the diameter of the compactification
+    sphere and :math:`\omega \in [0, \pi)` is the hyperspherical arc
+    angle measured from the tangent point.
+
     Parameters
     ----------
     r_4d : float
-        Radius of the compactification sphere (:math:`D_{4D}/2`).
+        Radius of the compactification sphere (:math:`R_{4D} = D_{4D}/2`).
     n_bins : int
         Number of radial bins.
     r_3d : float
@@ -219,7 +235,7 @@ class SphericalConstantVolume(SphericalBinner):
     def __init__(self, r_4d: float, n_bins: int, r_3d: float):
         self.r_4d = r_4d
         self.n_bins = n_bins
-        self.omega_max = 2 * np.arctan(r_3d / r_4d)
+        self.omega_max = 2 * np.arctan(r_3d / (2 * r_4d))
         self.unit_bin = (
             2 * self.omega_max - np.sin(2 * self.omega_max)
         ) / n_bins
@@ -229,7 +245,7 @@ class SphericalConstantVolume(SphericalBinner):
         # f(x) = x − sin(x) we obtain 2ω; divide by 2 to get ω.
         result = self.invert_x_minus_sin_x(i * self.unit_bin)
         omega = float(np.squeeze(result)) / 2
-        return self.r_4d * np.tan(omega)
+        return 2.0 * self.r_4d * np.tan(omega / 2)
 
     def r_centroid(self, i: int) -> float:
         return self.centroid(self.r_limit(i), self.r_limit(i + 1))
@@ -297,12 +313,15 @@ class CylindricalLinear(CylindricalBinner):
     r'''
     Equal angular-step binning for a cylindrical simulation.
 
-    Uses the same stereographic :math:`\omega` parametrization as
+    Uses the same internal half-angle parametrization as
     :class:`SphericalLinear`, applied to the 2D non-compact plane.
     The radial limit of the *i*-th bin is:
 
     .. math::
-        r_i = R_{4D} \, \tan(i \, \Delta\omega)
+        r_i = R_{4D} \, \tan(i \, \Delta\alpha)
+
+    where :math:`\alpha = \omega/2` is the half-angle
+    (see :class:`SphericalLinear` for details).
 
     Notes
     -----
@@ -342,6 +361,14 @@ class CylindricalConstantVolume(CylindricalBinner):
     following the same :math:`x - \sin(x)` inversion as the spherical
     case but applied to 2D stereographic angles.
 
+    The stereographic projection follows Racz (2018), Eq. (4-5):
+
+    .. math::
+        r = D_s \, \tan\!\left(\frac{\omega}{2}\right), \qquad
+        \omega = 2 \arctan\!\left(\frac{r}{D_s}\right),
+
+    where :math:`D_s = 2\,R_{4D}`.
+
     Notes
     -----
     This matches the legacy ``Calculate_rlimits_i_2D_cvol`` function
@@ -360,7 +387,7 @@ class CylindricalConstantVolume(CylindricalBinner):
     def __init__(self, r_4d: float, n_bins: int, r_3d: float):
         self.r_4d = r_4d
         self.n_bins = n_bins
-        self.omega_max = 2 * np.arctan(r_3d / r_4d)
+        self.omega_max = 2 * np.arctan(r_3d / (2 * r_4d))
         self.unit_bin = (
             2 * self.omega_max - np.sin(2 * self.omega_max)
         ) / n_bins
@@ -368,7 +395,7 @@ class CylindricalConstantVolume(CylindricalBinner):
     def r_limit(self, i: int) -> float:
         result = SphericalBinner.invert_x_minus_sin_x(i * self.unit_bin)
         omega = float(np.squeeze(result)) / 2
-        return self.r_4d * np.tan(omega)
+        return 2.0 * self.r_4d * np.tan(omega / 2)
 
     def r_centroid(self, i: int) -> float:
         return self.centroid(self.r_limit(i), self.r_limit(i + 1))
@@ -402,6 +429,10 @@ def create_binner(params: dict) -> SphericalBinner | CylindricalBinner:
 
     if geometry == 'spherical':
         if bin_mode == 'omega':
+            # Linear binner uses internal half-angle alpha = arctan(r/r_4d),
+            # NOT the paper omega = 2*arctan(r/D_s). The half-angle at the
+            # simulation edge is alpha_max = arctan(r_3d / r_4d), and d_alpha
+            # is chosen so that (n_bins + last_cell_size) * d_alpha = pi/2.
             last_cell_size = (
                 n_bins * np.pi / (2 * np.arctan(r_3d / r_4d)) - n_bins
             )
@@ -413,6 +444,7 @@ def create_binner(params: dict) -> SphericalBinner | CylindricalBinner:
 
     elif geometry == 'cylindrical':
         if bin_mode == 'omega':
+            # Same half-angle convention as spherical linear; see above.
             last_cell_size = (
                 n_bins * np.pi / (2 * np.arctan(r_3d / r_4d)) - n_bins
             )

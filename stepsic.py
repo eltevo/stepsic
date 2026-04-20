@@ -70,12 +70,6 @@ def main():
     if params['TYPE'] == 'glass':
         ic_orig = CosmoData.load_snapshot(Path(params['INPUT_GLASS']))
         ic_orig.to_internal_units(params)
-        if not params['HINDEPENDENT'] and params['GEOMETRY'] != 'cubical':
-            # Since a periodic glass is always scaled to the defined periodic
-            # box size, we only need to do this for non-cubical geometries
-            log.info('Converting the IC to H0 independent units...')
-            ic_orig.pos *= params['H']
-            ic_orig.mass *= params['H']
         ic_orig.rescale_snapshot_size(params)
     elif params['TYPE'] == 'shell':
         # Shell-based particle generation for StePS geometries
@@ -90,7 +84,7 @@ def main():
         ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
     elif params['TYPE'] == 'random':
         pos = create_particles(
-            npart=params['NPART'], Lbox=params['LBOX'], seed=params['SEED'])
+            npart=params['NPART'], boxsize=params['LBOX'], seed=params['SEED'])
         ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
     ic_orig.rescale_snapshot_mass(params)
     ic_orig.center_snapshot(params)

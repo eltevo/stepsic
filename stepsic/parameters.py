@@ -96,7 +96,7 @@ class Param:
     fmt: str | None = None
     unit: str = ""
     group: str = "ic"
-    choices: tuple[str, ...] | None = None
+    choices: tuple[str, ...] | tuple[int, ...] | None = None
     array_length: int = 3
     array_dtype: type = np.float64
     h_scaled: bool = False
@@ -447,8 +447,7 @@ def _compute_derived_cosmo(P: dict) -> None:
     '''Compute derived cosmological quantities from base parameters.'''
     h = P['H0'] / 100.0
     P["H"] = h
-    P["RHO_CRIT"] = 3 * (P['H0'] / 100.0)**2 / (8*np.pi) / UNIT_V / UNIT_V
-    P["RHO_CRIT"] /= P['H']**2  # Since H0 is in km/s/Mpc instead of km/s/(Mpc/h)
+    P["RHO_CRIT"] = 3 * (100 / UNIT_V)**2 / (8*np.pi) # h^2 as we use [U/h] internally
     P["RHO_MEAN"] = P["OMEGA_M"] * P["RHO_CRIT"]
     P["OMMH2"] = P["OMEGA_M"] * h**2
     P["OMBH2"] = P["OMEGA_B"] * h**2
