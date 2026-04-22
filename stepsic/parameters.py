@@ -203,7 +203,7 @@ IC_PARAMS: tuple[Param, ...] = (
     # -- IC type and generation ----------------------------------------
     Param('TYPE', ptype=PType.STRING, label="IC type", choices=('grid', 'random', 'shell', 'glass')),
     Param('NMESH', ptype=PType.INT, label="FFT mesh size", unit="voxels"),
-    Param('NGRID', ptype=PType.INT, label="Grid size", unit="voxels"),
+    Param('NGRID', ptype=PType.INT, label="Grid size", unit="voxels", condition=lambda P: P.get('TYPE') == 'grid'),
     Param('NPART', ptype=PType.INT, label="N particles (random)", condition=lambda P: P.get('TYPE') == 'random'),
     Param('NSHELL', ptype=PType.INT, label="Particles per shell", condition=lambda P: P.get('TYPE') == 'shell'),
     Param('NMESHSAMPLES', ptype=PType.INT, label="Grid samples", condition=lambda P: P.get('TYPE') == 'glass'),
@@ -230,6 +230,8 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('D_4D', label="Compact. sim. diameter", h_scaled=True, h_display=True, h_precision=4),
     Param('BIN_MODE', ptype=PType.STRING, label="Binning mode", choices=('omega', 'volume'), condition=lambda P: P.get('TYPE') == 'shell'),
     Param('NRBINS', ptype=PType.INT, label="Radial bins", condition=lambda P: P.get('TYPE') == 'shell'),
+    Param('RCRIT', label="Constant-res. radius", h_scaled=True, h_display=True, h_precision=4,
+          condition=lambda P: P.get('TYPE') == 'shell' and P.get('BIN_MODE') == 'omega'),
 
     # -- Rotation ------------------------------------------------------
     Param('ROTATE', label="Rotation", fmt=".4f", unit="rad/Gyr"),
@@ -313,7 +315,7 @@ IC_CONSTRAINTS: tuple[Constraint, ...] = (
         level='error',
     ),
     Constraint(
-        check=lambda P: P.get('NMESH') >= P.get('NGRID'),
+        check=lambda P: P.get('NGRID') is None or P.get('NMESH') >= P.get('NGRID'),
         message=lambda P: (
             f"NMESH ({P['NMESH']}) < NGRID ({P['NGRID']}). "
             f"The FFT grid should be >= the particle grid to avoid aliasing."
@@ -322,6 +324,18 @@ IC_CONSTRAINTS: tuple[Constraint, ...] = (
     ),
 
     # -- Non-fatal warnings --------------------------------------------
+    Constraint(
+        check=lambda P: (
+            P.get('TYPE') != 'shell'
+            or P.get('BIN_MODE') != 'omega'
+            or P.get('RCRIT', 0) < P.get('R_3D', 1)
+        ),
+        message=lambda P: (
+            f"RCRIT ({P.get('RCRIT')}) must be smaller than R_3D ({P.get('R_3D')}). "
+            f"The constant-resolution region must fit inside the simulation volume."
+        ),
+        level='error',
+    ),
     Constraint(
         check=lambda P: P.get('COMOVING', True) or P.get('LPTORDER', 1) > 0,
         message=lambda P: (

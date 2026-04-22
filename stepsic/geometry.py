@@ -16,8 +16,11 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Union
 
 import numpy as np
@@ -165,7 +168,7 @@ class SphericalLinear(SphericalBinner):
     Uses an internal half-angle parametrization
     :math:`\alpha \equiv \omega/2`, where :math:`\omega` is the
     hyperspherical arc angle from Racz (2018). The angular step is
-    :math:`\Delta\alpha`, and the radial limit of the *i*-th bin is:
+    :math:`\Delta\alpha`, and the radial limit of the `i`-th bin is:
 
     .. math::
         r_i = R_{4D} \, \tan(i \, \Delta\alpha)
@@ -173,10 +176,6 @@ class SphericalLinear(SphericalBinner):
     where :math:`R_{4D} = D_{4D}/2`.  This is equivalent to the paper
     formula :math:`r = 2 R_{4D} \tan(\omega/2)` with
     :math:`\alpha = \omega/2`.
-
-    Notes
-    -----
-    This matches the legacy ``Calculate_rlimits_i`` function in StePS_IC.
 
     Parameters
     ----------
@@ -212,7 +211,7 @@ class SphericalConstantVolume(SphericalBinner):
     space.  The bin boundaries are found by inverting the relation
     :math:`x - \sin(x) = y`.
 
-    The stereographic projection follows [CITE: Racz+ 2018, Eq. 4–5]:
+    The stereographic projection follows:
 
     .. math::
         r = D_s \, \tan\!\left(\frac{\omega}{2}\right), \qquad
@@ -241,8 +240,8 @@ class SphericalConstantVolume(SphericalBinner):
         ) / n_bins
 
     def r_limit(self, i: int) -> float:
-        # unit_bin is in terms of 2ω − sin(2ω), so after inverting
-        # f(x) = x − sin(x) we obtain 2ω; divide by 2 to get ω.
+        # unit_bin is in terms of 2*omega − sin(2*omega), so after
+        # inverting f(x) = x − sin(x) we obtain 2*omega.
         result = self.invert_x_minus_sin_x(i * self.unit_bin)
         omega = float(np.squeeze(result)) / 2
         return 2.0 * self.r_4d * np.tan(omega / 2)
@@ -260,12 +259,12 @@ class CylindricalBinner(ABC):
 
     @abstractmethod
     def r_limit(self, i: int) -> float:
-        '''Return the outer edge of the *i*-th radial bin.'''
+        '''Return the outer edge of the `i`-th radial bin.'''
         ...
 
     @abstractmethod
     def r_centroid(self, i: int) -> float:
-        '''Return the mass-weighted centroid of the *i*-th bin.'''
+        '''Return the mass-weighted centroid of the `i`-th bin.'''
         ...
 
     def shell_volume(self, i: int, Lz: float) -> float:
@@ -315,18 +314,13 @@ class CylindricalLinear(CylindricalBinner):
 
     Uses the same internal half-angle parametrization as
     :class:`SphericalLinear`, applied to the 2D non-compact plane.
-    The radial limit of the *i*-th bin is:
+    The radial limit of the `i`-th bin is:
 
     .. math::
         r_i = R_{4D} \, \tan(i \, \Delta\alpha)
 
     where :math:`\alpha = \omega/2` is the half-angle
     (see :class:`SphericalLinear` for details).
-
-    Notes
-    -----
-    This matches the legacy ``Calculate_rlimits_i`` function used for
-    both spherical and cylindrical geometries in StePS_IC.
 
     Parameters
     ----------
@@ -368,11 +362,6 @@ class CylindricalConstantVolume(CylindricalBinner):
         \omega = 2 \arctan\!\left(\frac{r}{D_s}\right),
 
     where :math:`D_s = 2\,R_{4D}`.
-
-    Notes
-    -----
-    This matches the legacy ``Calculate_rlimits_i_2D_cvol`` function
-    in StePS_IC.
 
     Parameters
     ----------
@@ -465,11 +454,6 @@ def create_binner(params: dict) -> SphericalBinner | CylindricalBinner:
 def _random_unit_vectors_sphere(n: int, rng: RNG, seed: int | None = None) -> NDArray:
     r'''
     Generate ``n`` uniformly distributed unit vectors on the 2-sphere.
-
-    Notes
-    -----
-    Uses rejection sampling within the unit cube, matching the legacy
-    ``Generate_random_shell`` implementation in StePS_IC.
 
     Parameters
     ----------
@@ -601,177 +585,347 @@ def shell_masses(
     return masses
 
 
-def create_spherical_shells(
-    binner: SphericalBinner,
-    n_bins: int,
-    n_per_shell: int,
-    rho_mean: float,
-    seed: int | None = None,
-) -> tuple[NDArray, NDArray]:
+def _bin_index_for_radius(
+    binner: SphericalBinner | CylindricalBinner,
+    r: float,
+) -> int:
     r'''
-    Generate particles in concentric spherical shells for a spherical
-    (:math:`\mathbb{R}^3`) StePS simulation.
-
-    Each shell contains ``n_per_shell`` particles placed at random
-    angular positions on the sphere, with radial positions drawn
-    uniformly within the shell volume (i.e., uniform in :math:`r^3`
-    between shell edges).
+    Find the bin index containing radius ``r``.
 
     Parameters
     ----------
-    binner : SphericalBinner
-        The radial binning strategy defining shell edges.
-    n_bins : int
-        Number of radial bins.
-    n_per_shell : int
-        Number of particles per shell.
-    rho_mean : float
-        Mean matter density in internal units.
-    seed : int or None
-        Random seed for reproducibility.
+    binner : SphericalBinner or CylindricalBinner
+        The radial binning strategy.
+    r : float
+        Target radius in the non-compact space.
 
     Returns
     -------
-    pos : ndarray of shape (N_total, 3)
-        Particle positions in Cartesian coordinates [Mpc].
-    mass : ndarray of shape (N_total,)
-        Particle masses in internal mass units.
+    int
+        Zero-based bin index.
+    '''
+    i = 0
+    while binner.r_limit(i + 1) <= r:
+        i += 1
+    return i
 
-    Notes
-    -----
-    The radial placement within each shell uses the cube-root sampling
+
+@dataclass(frozen=True, slots=True)
+class _RcritZones:
+    r'''
+    Pre-computed two-zone layout for a constant-resolution inner volume.
+
+    Parameters
+    ----------
+    i_crit : int
+        First bin index that lies outside the constant-resolution
+        region.  Shells ``[0, i_crit)`` are replaced by the uniform
+        interior pool.
+    n_inside : int
+        Number of particles in the constant-resolution interior.
+    mass_inside : float
+        Per-particle mass inside the constant-resolution region.
+    n_outside : int
+        Number of particles in the multiresolution exterior shells.
+    masses_outside : ndarray of shape (n_bins - i_crit,)
+        Per-particle mass for each exterior shell.
+    '''
+    i_crit: int
+    n_inside: int
+    mass_inside: float
+    n_outside: int
+    masses_outside: NDArray[np.float64]
+
+
+def _compute_rcrit_zones(
+    binner: SphericalBinner | CylindricalBinner,
+    n_bins: int,
+    n_per_shell: int,
+    rho_mean: float,
+    r_crit: float,
+    Lz: float | None = None,
+) -> _RcritZones:
+    r'''
+    Plan the two-zone particle layout for a constant-resolution interior.
+
+    Given a critical radius, this function determines how many particles
+    go inside and outside, and what their masses are.
+
+    Parameters
+    ----------
+    binner : SphericalBinner or CylindricalBinner
+        The radial binning strategy.
+    n_bins : int
+        Total number of radial bins.
+    n_per_shell : int
+        Number of particles per exterior shell.
+    rho_mean : float
+        Mean matter density in internal units.
+    r_crit : float
+        Critical radius for the constant-resolution zone.
+    Lz : float or None
+        Height of the cylinder; required for cylindrical binners.
+
+    Returns
+    -------
+    _RcritZones
+        The pre-computed zone layout.
+
+    Raises
+    ------
+    ValueError
+        If ``r_crit`` falls outside the binning range.
+    '''
+    i_crit = _bin_index_for_radius(binner, r_crit)
+
+    if i_crit >= n_bins:
+        raise ValueError(
+            f"RCRIT={r_crit} exceeds the simulation volume "
+            f"(last bin edge: {binner.r_limit(n_bins):.4f}). "
+            f"Reduce RCRIT or increase R_3D."
+        )
+
+    # Reference mass: what a particle in shell i_crit would weigh
+    if isinstance(binner, SphericalBinner):
+        V_ref = binner.shell_volume(i_crit)
+    else:
+        V_ref = binner.shell_volume(i_crit, Lz)
+    mass_ref = rho_mean * V_ref / n_per_shell
+
+    # Interior volume bounded by the outer edge of the last interior bin
+    r_boundary = binner.r_limit(i_crit)
+    if isinstance(binner, SphericalBinner):
+        V_inside = 4.0 / 3.0 * np.pi * r_boundary**3
+    else:
+        V_inside = np.pi * r_boundary**2 * Lz
+
+    # Number of interior particles at the reference mass
+    n_inside = int(V_inside * rho_mean / mass_ref)
+    if n_inside < 1:
+        raise ValueError(
+            f"RCRIT={r_crit} is too small: the interior volume "
+            f"would contain fewer than 1 particle."
+        )
+
+    # Re-derive exact mass for self-consistency (integer rounding shifts it)
+    mass_inside = V_inside * rho_mean / n_inside
+
+    # Exterior masses: standard multiresolution shells from i_crit onwards
+    n_ext = n_bins - i_crit
+    masses_outside = shell_masses(
+        binner, n_bins, n_per_shell, rho_mean, Lz=Lz,
+    )[i_crit:]
+
+    n_outside = n_ext * n_per_shell
+
+    log.info(
+        f'RCRIT zone plan: i_crit={i_crit}, '
+        f'r_boundary={r_boundary:.4f} Mpc/h, '
+        f'N_inside={n_inside}, N_outside={n_outside}, '
+        f'N_total={n_inside + n_outside}'
+    )
+    log.info(
+        f'Interior mass resolution: {mass_inside*1e11:.6e} Msol'
+    )
+
+    return _RcritZones(
+        i_crit=i_crit,
+        n_inside=n_inside,
+        mass_inside=mass_inside,
+        n_outside=n_outside,
+        masses_outside=masses_outside,
+    )
+
+
+def _fill_spherical_shell(
+    r0: float,
+    r1: float,
+    n: int,
+    rng: RNG,
+) -> NDArray:
+    r'''
+    Place *n* particles uniformly in a spherical shell :math:`[r_0, r_1]`.
+
+    Uses cube-root sampling in :math:`r^3` to ensure uniform volume
+    density, with directions drawn from :meth:`_random_unit_vectors_sphere`.
 
     .. math::
         r = \left(u \cdot (r_1^3 - r_0^3) + r_0^3\right)^{1/3}
 
-    where :math:`u \sim \mathrm{Uniform}(0, 1)`, to ensure uniform
-    volume density.
-    
-    Notes
-    -----
-    This matches the legacy implementation in StePS_IC.
-    '''
-    rng = RNG(seed=seed)
-    N_total = n_bins * n_per_shell
-    pos = np.empty((N_total, 3), dtype=np.float64)
-    mass = np.empty(N_total, dtype=np.float64)
-
-    masses_per_bin = shell_masses(binner, n_bins, n_per_shell, rho_mean)
-    log.info(
-        f'Generating {N_total} particles in {n_bins} spherical shells '
-        f'({n_per_shell} per shell)...'
-    )
-    log.info(
-        f'Mass range: [{masses_per_bin[0]*1e11:.6e}, '
-        f'{masses_per_bin[-1]*1e11:.6e}] Msol'
-    )
-
-    for j in range(n_bins):
-        r0 = binner.r_limit(j)
-        r1 = binner.r_limit(j + 1)
-        start = j * n_per_shell
-        end = start + n_per_shell
-
-        # Random unit direction vectors on S^2
-        unit_vecs = _random_unit_vectors_sphere(n_per_shell, rng)
-
-        # Radial positions: uniform in volume; sample r^3 uniformly
-        u = rng.uniform(size=(n_per_shell,))
-        radii = np.cbrt(u * (r1**3 - r0**3) + r0**3)
-
-        pos[start:end] = radii[:, np.newaxis] * unit_vecs
-        mass[start:end] = masses_per_bin[j]
-
-    log.info(f'Total mass: {np.sum(mass)*1e11:.6e} Msol')
-    return pos, mass
-
-
-def create_cylindrical_shells(
-    binner: CylindricalBinner,
-    n_bins: int,
-    n_per_shell: int,
-    Lz: float,
-    rho_mean: float,
-    seed: int | None = None,
-) -> tuple[NDArray, NDArray]:
-    r'''
-    Generate particles in concentric cylindrical annuli for a
-    cylindrical (:math:`S^1 \times \mathbb{R}^2`) StePS simulation.
-
-    Each annulus contains ``n_per_shell`` particles placed at random
-    angular positions on the circle and uniform z-positions within
-    :math:`[0, L_z]`, with radial positions drawn uniformly within the
-    annulus area (i.e., uniform in :math:`r^2` between annulus edges).
-
     Parameters
     ----------
-    binner : CylindricalBinner
-        The radial binning strategy defining annulus edges.
-    n_bins : int
-        Number of radial bins.
-    n_per_shell : int
-        Number of particles per annulus.
-    Lz : float
-        Height of the cylinder (periodic z-direction) [Mpc].
-    rho_mean : float
-        Mean matter density in internal units.
-    seed : int or None
-        Random seed for reproducibility.
+    r0 : float
+        Inner shell edge.
+    r1 : float
+        Outer shell edge.
+    n : int
+        Number of particles.
+    rng : RNG
+        Random number generator instance.
 
     Returns
     -------
-    pos : ndarray of shape (N_total, 3)
-        Particle positions in Cartesian coordinates [Mpc].
-        The z-coordinate is in :math:`[0, L_z]`.
-    mass : ndarray of shape (N_total,)
-        Particle masses in internal mass units.
+    ndarray of shape (n, 3)
+        Cartesian particle positions.
+    '''
+    unit_vecs = _random_unit_vectors_sphere(n, rng)
+    u = rng.uniform(size=(n,))
+    radii = np.cbrt(u * (r1**3 - r0**3) + r0**3)
+    return radii[:, np.newaxis] * unit_vecs
 
-    Notes
-    -----
-    The radial placement within each annulus uses
+
+def _fill_cylindrical_annulus(
+    r0: float,
+    r1: float,
+    n: int,
+    rng: RNG,
+    *,
+    Lz: float,
+) -> NDArray:
+    r'''
+    Place *n* particles uniformly in a cylindrical annulus
+    :math:`[r_0, r_1] \times [0, L_z]`.
+
+    Uses square-root sampling in :math:`r^2` to ensure uniform area
+    density in the (x, y) plane, with z drawn uniformly in
+    :math:`[0, L_z]`.
 
     .. math::
         r = \sqrt{u \cdot (r_1^2 - r_0^2) + r_0^2}
 
-    where :math:`u \sim \mathrm{Uniform}(0, 1)`, to ensure uniform
-    area density in the (x, y) plane.
+    Parameters
+    ----------
+    r0 : float
+        Inner annulus edge.
+    r1 : float
+        Outer annulus edge.
+    n : int
+        Number of particles.
+    rng : RNG
+        Random number generator instance.
+    Lz : float
+        Height of the cylinder (periodic z-direction).
 
+    Returns
+    -------
+    ndarray of shape (n, 3)
+        Cartesian particle positions.
+    '''
+    pos = np.empty((n, 3), dtype=np.float64)
+    theta = rng.uniform(size=(n,)) * 2 * np.pi
+    u = rng.uniform(size=(n,))
+    radii = np.sqrt(u * (r1**2 - r0**2) + r0**2)
+    pos[:, 0] = radii * np.cos(theta)
+    pos[:, 1] = radii * np.sin(theta)
+    pos[:, 2] = rng.uniform(size=(n,)) * Lz
+    return pos
+
+
+def _create_shells(
+    binner: SphericalBinner | CylindricalBinner,
+    n_bins: int,
+    n_per_shell: int,
+    rho_mean: float,
+    fill_fn: Callable[[float, float, int, RNG], NDArray],
+    *,
+    seed: int | None = None,
+    r_crit: float | None = None,
+    Lz: float | None = None,
+    shell_label: str = 'shell',
+) -> tuple[NDArray, NDArray]:
+    r'''
+    Unified particle generation for concentric-shell geometries.
+
+    Parameters
+    ----------
+    binner : SphericalBinner or CylindricalBinner
+        The radial binning strategy defining shell/annulus edges.
+    n_bins : int
+        Number of radial bins.
+    n_per_shell : int
+        Number of particles per shell (exterior shells when ``r_crit``
+        is set, all shells otherwise).
+    rho_mean : float
+        Mean matter density in internal units.
+    fill_fn : callable
+        ``(r0, r1, n, rng) -> ndarray(n, 3)`` — places *n* particles
+        uniformly in the volume between radii *r0* and *r1*.
+    seed : int or None
+        Random seed for reproducibility.
+    r_crit : float or None
+        If set, defines the radius of the constant-resolution inner
+        volume.
+    Lz : float or None
+        Height of the cylinder; required for cylindrical binners
+        (threaded through to :func:`_compute_rcrit_zones` and
+        :func:`shell_masses`).
+    shell_label : str
+        Word to use in log messages (``'shell'`` or ``'annulus'``).
+
+    Returns
+    -------
+    pos : ndarray of shape (N_total, 3)
+        Particle positions in Cartesian coordinates.
+    mass : ndarray of shape (N_total,)
+        Particle masses in internal mass units.
     '''
     rng = RNG(seed=seed)
-    N_total = n_bins * n_per_shell
-    pos = np.empty((N_total, 3), dtype=np.float64)
-    mass = np.empty(N_total, dtype=np.float64)
 
-    masses_per_bin = shell_masses(
-        binner, n_bins, n_per_shell, rho_mean, Lz=Lz
-    )
-    log.info(
-        f'Generating {N_total} particles in {n_bins} cylindrical annuli '
-        f'({n_per_shell} per annulus, Lz={Lz:.2f} Mpc)...'
-    )
-    log.info(
-        f'Mass range: [{masses_per_bin[0]*1e11:.6e}, '
-        f'{masses_per_bin[-1]*1e11:.6e}] Msol'
-    )
+    if r_crit is not None:
+        zones = _compute_rcrit_zones(
+            binner, n_bins, n_per_shell, rho_mean, r_crit, Lz=Lz,
+        )
+        N_total = zones.n_inside + zones.n_outside
+        pos = np.empty((N_total, 3), dtype=np.float64)
+        mass = np.empty(N_total, dtype=np.float64)
 
-    for j in range(n_bins):
-        r0 = binner.r_limit(j)
-        r1 = binner.r_limit(j + 1)
-        start = j * n_per_shell
-        end = start + n_per_shell
+        log.info(
+            f'Generating {N_total} particles: {zones.n_inside} inside '
+            f'RCRIT + {zones.n_outside} in {n_bins - zones.i_crit} '
+            f'exterior {shell_label}s ({n_per_shell} per {shell_label})...'
+        )
 
-        # Random angular positions on the circle
-        theta = rng.uniform(size=(n_per_shell,)) * 2 * np.pi
+        # Interior: uniform fill inside r_boundary (shell with r0=0)
+        r_boundary = binner.r_limit(zones.i_crit)
+        pos[:zones.n_inside] = fill_fn(0.0, r_boundary, zones.n_inside, rng)
+        mass[:zones.n_inside] = zones.mass_inside
 
-        # Radial positions: uniform in area; sample r^2 uniformly
-        u = rng.uniform(size=(n_per_shell,))
-        radii = np.sqrt(u * (r1**2 - r0**2) + r0**2)
+        # Exterior: standard multiresolution shells
+        offset = zones.n_inside
+        for j_ext, j_bin in enumerate(range(zones.i_crit, n_bins)):
+            r0 = binner.r_limit(j_bin)
+            r1 = binner.r_limit(j_bin + 1)
+            start = offset + j_ext * n_per_shell
+            end = start + n_per_shell
 
-        pos[start:end, 0] = radii * np.cos(theta)
-        pos[start:end, 1] = radii * np.sin(theta)
-        pos[start:end, 2] = rng.uniform(size=(n_per_shell,)) * Lz
+            pos[start:end] = fill_fn(r0, r1, n_per_shell, rng)
+            mass[start:end] = zones.masses_outside[j_ext]
 
-        mass[start:end] = masses_per_bin[j]
+    else:
+        N_total = n_bins * n_per_shell
+        pos = np.empty((N_total, 3), dtype=np.float64)
+        mass = np.empty(N_total, dtype=np.float64)
+
+        masses_per_bin = shell_masses(
+            binner, n_bins, n_per_shell, rho_mean, Lz=Lz,
+        )
+        log.info(
+            f'Generating {N_total} particles in {n_bins} {shell_label}s '
+            f'({n_per_shell} per {shell_label})...'
+        )
+        log.info(
+            f'Mass range: [{masses_per_bin[0]*1e11:.6e}, '
+            f'{masses_per_bin[-1]*1e11:.6e}] Msol'
+        )
+
+        for j in range(n_bins):
+            r0 = binner.r_limit(j)
+            r1 = binner.r_limit(j + 1)
+            start = j * n_per_shell
+            end = start + n_per_shell
+
+            pos[start:end] = fill_fn(r0, r1, n_per_shell, rng)
+            mass[start:end] = masses_per_bin[j]
 
     log.info(f'Total mass: {np.sum(mass)*1e11:.6e} Msol')
     return pos, mass
@@ -784,6 +938,9 @@ def create_shell_particles(params: dict) -> tuple[NDArray, NDArray]:
     Constructs the appropriate binner from the parameter dictionary
     and generates particles matching the StePS stereographic geometry.
 
+    When ``RCRIT`` is present and ``BIN_MODE='omega'``, the inner volume
+    is filled with constant-mass particles.
+
     This function should be called when ``TYPE = 'shell'`` is selected
     in the configuration.
 
@@ -794,18 +951,19 @@ def create_shell_particles(params: dict) -> tuple[NDArray, NDArray]:
         ``'GEOMETRY'``, ``'BIN_MODE'``, ``'D_4D'``, ``'NRBINS'``,
         ``'R_3D'``, ``'NSHELL'``, ``'SEED'``, ``'H0'``, ``'RHO_MEAN'``,
         ``'OMEGA_M'``, ``'H'``, and ``'LBOX'`` (for cylindrical).
+        Optional: ``'RCRIT'`` (only for ``BIN_MODE='omega'``).
 
     Returns
     -------
     pos : ndarray of shape (N, 3)
-        Particle positions [Mpc].
+        Particle positions.
     mass : ndarray of shape (N,)
         Particle masses in internal mass units.
 
     Raises
     ------
     ValueError
-        If ``GEOMETRY`` is ``'cubical'`` (use grid/random instead).
+        If ``GEOMETRY`` is ``'cubical'``.
     '''
     geometry = params['GEOMETRY']
     if geometry == 'cubical':
@@ -820,17 +978,22 @@ def create_shell_particles(params: dict) -> tuple[NDArray, NDArray]:
     n_bins = params['NRBINS']
     n_per_shell = params['NSHELL']
     seed = params.get('SEED', None)
+    r_crit = params.get('RCRIT', None)
 
+    Lz = None
     if geometry == 'spherical':
-        pos, mass = create_spherical_shells(
-            binner, n_bins, n_per_shell, rho_mean, seed=seed,
-        )
+        fill_fn = _fill_spherical_shell
+        shell_label = 'spherical shell'
     elif geometry == 'cylindrical':
         Lz = np.min(params['LBOX'])
-        pos, mass = create_cylindrical_shells(
-            binner, n_bins, n_per_shell, Lz, rho_mean, seed=seed,
+        fill_fn = functools.partial(
+            _fill_cylindrical_annulus, Lz=Lz,
         )
+        shell_label = 'cylindrical annulus'
     else:
         raise ValueError(f"Unknown GEOMETRY '{geometry}'.")
 
-    return pos, mass
+    return _create_shells(
+        binner, n_bins, n_per_shell, rho_mean, fill_fn,
+        seed=seed, r_crit=r_crit, Lz=Lz, shell_label=shell_label,
+    )
