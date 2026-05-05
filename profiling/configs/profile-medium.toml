@@ -1,0 +1,51 @@
+# profile-medium.toml
+#
+# Purpose: Realistic profiling run for all three profilers.
+# Tools:    cProfile (cumtime/tottime), scalene (line-level), py-spy (flamegraph)
+# Grid:     128^3 particles on a 256^3 FFT mesh -> realistic FFT cost.
+
+# -- 1. Geometry -----------------------------------------------------------
+GEOMETRY    = "cubical"
+LBOX        = 500
+PERIODIC    = true
+COI         = [0, 0, 0]
+
+# Stereographic params (unused for cubical, but always validated)
+R_3D = 250
+D_4D = 75
+
+# -- 2. Particle generation ------------------------------------------------
+TYPE  = "grid"
+NGRID = 128
+SEED  = 137
+
+# -- 3. Perturbation theory ------------------------------------------------
+NMESH         = 256
+LPTORDER      = 2
+REDSHIFT      = 63
+INTERPOLATION = "cic"
+COMPENSATE    = false
+SPHEREMODE    = false
+PAIRED        = false
+PHASE_SHIFT   = 0.0
+
+# -- 4. Output -------------------------------------------------------------
+IC_DIR     = "profiles/output-medium"
+IC_PREFIX  = "profile-medium"
+IC_FORMAT  = "hdf5"
+USE_DOUBLE = false
+
+# -- 5. Cosmology ----------------------------------------------------------
+COSMOLOGY = "Planck2018EE+BAO+SN"
+SPECTRUM  = "camb"
+NONLINEAR = false
+
+# -- 6. Misc ---------------------------------------------------------------
+COMOVING     = true
+HINDEPENDENT = true
+ROTATE       = 0.0
+
+# -- 7. Units (StePS defaults) ---------------------------------------------
+UNIT_L_IN_CM     = 3.085678e24
+UNIT_M_IN_G      = 1.989e44
+UNIT_V_IN_KMPS   = 20.738652969844207

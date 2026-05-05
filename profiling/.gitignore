@@ -1,0 +1,7 @@
+*.txt
+*.svg
+*.json
+*.prof
+output-small/
+output-medium/
+!configs/*.toml
