@@ -4,17 +4,20 @@ channels:
   - defaults
 dependencies:
   - python=3.10
-  - toml
+  - pip
   - tabulate
-  - h5py
   - numpy
+  - matplotlib
   - scipy
+  - h5py
   - astropy
   - camb
-  - matplotlib
-  - seaborn
-  - gsl  # potentially needed for nbodyit
-  - pip
+  - toml  # dead library, remove when we move to Python 3.11+
+  # nbodykit dependencies
+  - gsl
+  - openmpi
+  - mpi4py
+  - compilers
   - pip:
-    - colossus
-    - nbodykit
+      - colossus
+      - nbodykit

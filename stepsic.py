@@ -25,6 +25,7 @@ import time
 from pathlib import Path
 
 import h5py
+import scipy
 import numpy as np
 
 import stepsic
@@ -252,7 +253,7 @@ def main():
     ic.save_snapshot(path=run_dir / 'ic.hdf5', fmt=params['IC_FORMAT'], **header)
     if params['LPTORDER'] > 0:
         with h5py.File(run_dir / 'ic_white_noise.hdf5', 'w') as f:
-            f.create_dataset('ic_white_noise', data=np.fft.irfftn(field))
+            f.create_dataset('ic_white_noise', data=scipy.fft.irfftn(field, workers=-1))
         with h5py.File(run_dir / 'ic_delta_k.hdf5', 'w') as f:
             f.create_dataset('ic_delta_k', data=delta_k)
 

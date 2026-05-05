@@ -19,6 +19,7 @@ from stepsic._typing import ComplexField, FloatVec3, RealField, Seed
 
 import logging
 
+import scipy
 import numpy as np
 from scipy.interpolate import CubicSpline
 from tabulate import tabulate
@@ -177,10 +178,10 @@ def fourier_grid(
 
     The grid is then constructed using the FFT frequencies:
     - For the first two dimensions, the full set of FFT frequencies is
-      computed using ``np.fft.fftfreq``.
+      computed using ``scipy.fft.fftfreq``.
     - For the third dimension, if the input field is real-valued (i.e.
       if Hermitian symmetry is assumed), the reduced set of frequencies
-      is computed using ``np.fft.rfftfreq``.
+      is computed using ``scipy.fft.rfftfreq``.
 
     Parameters
     ----------
@@ -207,12 +208,12 @@ def fourier_grid(
         The magnitude of the wavevector at each grid point, computed as
         :math:`\|\mathbf{k}\| = \sqrt{k_x^2 + k_y^2 + k_z^2}`.
     '''
-    kx = np.fft.fftfreq(nvox[0]) * 2 * np.pi / dk
-    ky = np.fft.fftfreq(nvox[1]) * 2 * np.pi / dk
+    kx = scipy.fft.fftfreq(nvox[0]) * 2 * np.pi / dk
+    ky = scipy.fft.fftfreq(nvox[1]) * 2 * np.pi / dk
     if hermitian:
-        kz = np.fft.rfftfreq(nvox[2]) * 2 * np.pi / dk
+        kz = scipy.fft.rfftfreq(nvox[2]) * 2 * np.pi / dk
     else:
-        kz = np.fft.fftfreq(nvox[2]) * 2 * np.pi / dk
+        kz = scipy.fft.fftfreq(nvox[2]) * 2 * np.pi / dk
     kvec = np.array(np.meshgrid(kx, ky, kz, indexing='ij'))
     kmod = np.linalg.norm(kvec, axis=0)
     return kvec, kmod
@@ -243,7 +244,7 @@ def white_noise(nvox: FloatVec3, seed: Seed = None) -> RealField:
         3D array of white noise values.
     '''
     rng = RNG(seed=seed)
-    w_k = np.fft.rfftn(rng.normal(size=nvox, seed=seed))
+    w_k = scipy.fft.rfftn(rng.normal(size=nvox, seed=seed), workers=-1)
     w_k[0, 0, 0] = 0.0  # set DC=0 (mean density) as we only need fluctuations
     return w_k
 

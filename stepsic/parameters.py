@@ -231,7 +231,7 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('BIN_MODE', ptype=PType.STRING, label="Binning mode", choices=('omega', 'volume'), condition=lambda P: P.get('TYPE') == 'shell'),
     Param('NRBINS', ptype=PType.INT, label="Radial bins", condition=lambda P: P.get('TYPE') == 'shell'),
     Param('RCRIT', label="Constant-res. radius", h_scaled=True, h_display=True, h_precision=4,
-          condition=lambda P: P.get('TYPE') == 'shell' and P.get('BIN_MODE') == 'omega'),
+          condition=lambda P: 'RCRIT' in P),
 
     # -- Rotation ------------------------------------------------------
     Param('ROTATE', label="Rotation", fmt=".4f", unit="rad/Gyr"),
