@@ -342,9 +342,14 @@ class CylindricalConstantVolume(CylindricalBinner):
     r'''
     Constant-volume binning for a cylindrical simulation.
 
-    Each annulus encloses the same area on the compact 2-sphere,
-    following the same :math:`x - \sin(x)` inversion as the spherical
-    case but applied to 2D stereographic angles.
+    Each annulus encloses the same area on the compact 2-sphere
+    :math:`S^2`.  The cap area between angles :math:`0` and
+    :math:`\omega` is :math:`2\pi(1 - \cos\omega)`, so equal-area bins
+    satisfy :math:`1 - \cos\omega_i = i \cdot \Delta`, with closed-form
+
+    .. math::
+        \tan^2(\omega/2) = \frac{1 - \cos\omega}{1 + \cos\omega}
+                         = \frac{u}{2 - u}, \qquad u = 1 - \cos\omega.
 
     The stereographic projection follows Racz (2018), Eq. (4-5):
 
@@ -368,14 +373,11 @@ class CylindricalConstantVolume(CylindricalBinner):
         self.r_4d = r_4d
         self.n_bins = n_bins
         self.omega_max = 2 * np.arctan(r_3d / (2 * r_4d))
-        self.unit_bin = (
-            2 * self.omega_max - np.sin(2 * self.omega_max)
-        ) / n_bins
+        self.unit_bin = (1 - np.cos(self.omega_max)) / n_bins
 
     def r_limit(self, i: int) -> float:
-        result = SphericalBinner.invert_x_minus_sin_x(i * self.unit_bin)
-        omega = float(np.squeeze(result)) / 2
-        return 2.0 * self.r_4d * np.tan(omega / 2)
+        u = i * self.unit_bin
+        return 2.0 * self.r_4d * np.sqrt(u / (2 - u))
 
     def r_centroid(self, i: int) -> float:
         return self.centroid(self.r_limit(i), self.r_limit(i + 1))
