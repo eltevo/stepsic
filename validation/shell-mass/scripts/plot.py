@@ -292,8 +292,8 @@ def plot_shell_mass(
     for ax, geom_tag, title in zip(
         axes,
         ('sph', 'cyl'),
-        (r'(a) Spherical ($\mathbb{R}^3$)',
-         r'(b) Cylindrical ($\mathbb{R}^2$)'),
+        (r'(a) Spherical',
+         r'(b) Cylindrical'),
     ):
         for mode in ('omega', 'volume'):
             d = results[geom_tag][mode]

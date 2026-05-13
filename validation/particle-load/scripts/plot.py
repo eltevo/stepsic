@@ -11,15 +11,18 @@ by stepsic with LPTORDER=0:
     (c) Spherical shells
     (d) Cylindrical shells
 
-Each panel renders a random subsample of particles in a 3D
-projection, revealing the spatial distribution and distinct
-boundary shapes of each particle load strategy.
+By default, each panel is rendered as a 3D scatter of a random
+subsample. Passing ``--plot-2d`` switches to 2D slice mode:
+particles within a thin slab perpendicular to the slice axis are
+projected onto the remaining two coordinates. For ``cubic_grid``,
+the slab is replaced by a single grid layer (the layer closest
+to the slice centre), regardless of the requested thickness.
 
 Usage
 -----
 ::
 
-    python validate-particle-load-plot.py \\
+    python plot.py \\
         --cubic-random output/particle-load/cubic_random/.../ic.hdf5 \\
         --cubic-grid   output/particle-load/cubic_grid/.../ic.hdf5 \\
         --spherical    output/particle-load/spherical/.../ic.hdf5 \\
@@ -52,8 +55,10 @@ log = logging.getLogger(__name__)
 ArrayF: TypeAlias = NDArray[np.float64]
 
 
-def load_particles(path: str, part_type: int = 1) -> ArrayF:
-    '''Read particle positions from a Gadget-format HDF5 snapshot.
+def load_particles(
+    path: str, part_type: int = 1,
+) -> tuple[ArrayF, ArrayF | None]:
+    '''Read particle positions and masses from a Gadget-format HDF5 snapshot.
 
     Parameters
     ----------
@@ -66,12 +71,16 @@ def load_particles(path: str, part_type: int = 1) -> ArrayF:
     -------
     pos : ndarray, shape (N, 3)
         Particle positions.
+    masses : ndarray, shape (N,) or None
+        Per-particle masses, if present in the snapshot.
     '''
     with h5py.File(path, 'r') as f:
         grp = f[f'PartType{part_type}']
         pos = grp['Coordinates'][:]
+        masses = grp['Masses'][:] if 'Masses' in grp else None
     log.info('Loaded %d particles from %s', pos.shape[0], path)
-    return pos.astype(np.float64)
+    masses_f = masses.astype(np.float64) if masses is not None else None
+    return pos.astype(np.float64), masses_f
 
 
 def subsample(
@@ -79,8 +88,9 @@ def subsample(
     fraction: float,
     *,
     seed: int = 42,
-) -> ArrayF:
-    '''Return a random subsample of particle positions.
+    masses: ArrayF | None = None,
+) -> tuple[ArrayF, ArrayF | None]:
+    '''Return a random subsample of particle positions (and masses).
 
     Parameters
     ----------
@@ -90,44 +100,46 @@ def subsample(
         Fraction of particles to keep, in (0, 1].
     seed : int
         RNG seed for reproducibility.
+    masses : ndarray or None
+        Optional per-particle masses, subsampled with the same indices.
 
     Returns
     -------
-    ndarray, shape (M, 3)
+    pos_sub : ndarray, shape (M, 3)
         Subsampled positions.
+    masses_sub : ndarray or None
+        Subsampled masses, or ``None`` if ``masses`` is ``None``.
     '''
     n_total = pos.shape[0]
     n_keep = max(1, int(n_total * fraction))
     if n_keep >= n_total:
-        return pos
+        return pos, masses
     rng = np.random.default_rng(seed)
     idx = rng.choice(n_total, size=n_keep, replace=False)
-    return pos[idx]
+    return pos[idx], (masses[idx] if masses is not None else None)
 
 
-def _radial_sizes(
-    pos: ArrayF,
-    geometry: str,
+def _mass_sizes(
+    masses: ArrayF,
     *,
     s_min: float = 0.01,
     s_max: float = 2.5,
 ) -> ArrayF:
-    r'''Compute per-particle scatter sizes that grow with radial distance.
+    r'''Compute per-particle scatter sizes that grow with particle mass.
 
-    For spherical geometry the radius is measured from the centroid of
-    the distribution; for cylindrical it is the distance from the
-    z-axis (through the centroid in x-y). Sizes are linearly
-    interpolated between ``s_min`` at the centre and ``s_max`` at the
-    outermost particle.
+    Sizes are linearly interpolated between ``s_min`` at the smallest
+    log-mass and ``s_max`` at the largest log-mass. For shell-based
+    geometries with a uniform-resolution interior (the RCRIT zone),
+    every interior particle carries the same mass, so this scheme
+    renders the interior with a single, uniform marker size while
+    outer shells grow logarithmically with the per-shell mass.
 
     Parameters
     ----------
-    pos : ndarray, shape (N, 3)
-        Particle positions (already subsampled).
-    geometry : ``'spherical'`` or ``'cylindrical'``
-        Determines which radius definition to use.
+    masses : ndarray, shape (N,)
+        Per-particle masses (already subsampled).
     s_min, s_max : float
-        Marker area at the smallest and largest radius respectively
+        Marker area at the smallest and largest log-mass respectively
         (matplotlib ``s`` units, i.e. points²).
 
     Returns
@@ -135,21 +147,172 @@ def _radial_sizes(
     sizes : ndarray, shape (N,)
         Per-particle marker sizes.
     '''
-    centre = pos.mean(axis=0)
-    if geometry == 'spherical':
-        r = np.linalg.norm(pos - centre, axis=1)
-    elif geometry == 'cylindrical':
-        r = np.sqrt(
-            (pos[:, 0] - centre[0])**2 + (pos[:, 1] - centre[1])**2
-        )
-    else:
-        raise ValueError(f'Unsupported geometry for radial sizing: {geometry}')
+    log_m = np.log10(masses)
+    log_min = log_m.min()
+    log_max = log_m.max()
+    if log_max == log_min:
+        return np.full(masses.shape[0], 0.5 * (s_min + s_max))
+    t = (log_m - log_min) / (log_max - log_min)
+    return s_min + (s_max - s_min) * t
 
-    r_max = r.max()
-    if r_max == 0.0:
-        return np.full(pos.shape[0], s_min)
-    t = r / r_max                       # normalized to [0, 1]
-    return s_min + (s_max - s_min) * t   # linear ramp
+
+def _slice_axis_to_int(axis: str) -> int:
+    '''Convert a slice-axis label ('x', 'y', 'z') to a coordinate index.'''
+    try:
+        return {'x': 0, 'y': 1, 'z': 2}[axis.lower()]
+    except KeyError as exc:
+        raise ValueError(
+            f'Unknown slice axis {axis!r}; expected one of x, y, z.'
+        ) from exc
+
+
+def _select_slice(
+    pos: ArrayF,
+    masses: ArrayF | None,
+    *,
+    axis: int,
+    thickness: float,
+    centre: float,
+    grid_layer: bool = False,
+) -> tuple[ArrayF, ArrayF | None]:
+    '''Select particles inside a slab (or single grid layer) of a 3D snapshot.
+
+    Parameters
+    ----------
+    pos : ndarray, shape (N, 3)
+        Particle positions.
+    masses : ndarray or None
+        Per-particle masses, sliced with the same mask.
+    axis : int
+        Coordinate index normal to the slice (0=x, 1=y, 2=z).
+    thickness : float
+        Slab thickness along ``axis`` [Mpc/h]. Ignored if ``grid_layer``.
+    centre : float
+        Position of the slice centre along ``axis`` [Mpc/h].
+    grid_layer : bool
+        If ``True``, snap to the unique value of ``pos[:, axis]`` closest
+        to ``centre`` and select that layer only.
+
+    Returns
+    -------
+    pos_sub, masses_sub
+        Selected positions and (optional) masses.
+    '''
+    s = pos[:, axis]
+    if grid_layer:
+        unique_vals = np.unique(s)
+        chosen = unique_vals[np.argmin(np.abs(unique_vals - centre))]
+        mask = s == chosen
+    else:
+        mask = np.abs(s - centre) <= 0.5 * thickness
+    return pos[mask], (masses[mask] if masses is not None else None)
+
+
+def _draw_panel_2d(
+    ax: plt.Axes,
+    pos_full: ArrayF,
+    title: str,
+    *,
+    slice_axis: int,
+    slice_thickness: float,
+    grid_layer: bool,
+    fraction: float = 1.0,
+    point_size: float = 1.2,
+    point_color: str = 'k',
+    point_alpha: float = 0.55,
+    geometry: str | None = None,
+    masses: ArrayF | None = None,
+    pad: float = 0.02,
+) -> int:
+    '''Draw a 2D slice of a particle distribution onto a 2D axis.
+
+    Parameters
+    ----------
+    ax : Axes
+        Target 2D axis.
+    pos_full : ndarray, shape (N, 3)
+        Full particle array (used for both slicing and panel limits).
+    slice_axis : int
+        Axis normal to the slice (0=x, 1=y, 2=z).
+    slice_thickness : float
+        Slab thickness [Mpc/h]. Ignored when ``grid_layer`` is ``True``.
+    grid_layer : bool
+        If ``True`` (cubic grid panel), pick a single grid layer instead
+        of a slab so the regular lattice pattern is preserved.
+    geometry : {'spherical', 'cylindrical'} or None
+        Enables mass-based marker sizing for the shell geometries.
+
+    Returns the number of particles drawn.
+    '''
+    s = pos_full[:, slice_axis]
+    centre = 0.5 * (s.min() + s.max())
+
+    sliced, sliced_m = _select_slice(
+        pos_full, masses,
+        axis=slice_axis,
+        thickness=slice_thickness,
+        centre=centre,
+        grid_layer=grid_layer,
+    )
+
+    # Subsample only when not pinned to a single grid layer; otherwise
+    # we'd punch holes in the regular lattice we're trying to show.
+    if not grid_layer:
+        sliced, sliced_m = subsample(sliced, fraction, masses=sliced_m)
+
+    n_plot = sliced.shape[0]
+
+    plot_axes = [a for a in (0, 1, 2) if a != slice_axis]
+    x = sliced[:, plot_axes[0]]
+    y = sliced[:, plot_axes[1]]
+
+    if geometry in ('spherical', 'cylindrical'):
+        if sliced_m is None:
+            raise ValueError(
+                f'Mass-based sizing requested for {geometry!r} panel '
+                'but the snapshot has no Masses dataset.'
+            )
+        # Larger size range than 3D: 2D slices are sparser, so dots can
+        # afford to be bigger without saturating the panel.
+        sizes = _mass_sizes(sliced_m, s_min=0.6, s_max=8.0)
+    else:
+        sizes = point_size
+
+    ax.scatter(
+        x, y,
+        s=sizes,
+        c=point_color,
+        alpha=point_alpha,
+        edgecolors='none',
+        rasterized=True,
+    )
+
+    # Square panel from the full particle extent (not just the slab).
+    fx = pos_full[:, plot_axes[0]]
+    fy = pos_full[:, plot_axes[1]]
+    cx = 0.5 * (fx.min() + fx.max())
+    cy = 0.5 * (fy.min() + fy.max())
+    half = 0.5 * max(fx.max() - fx.min(), fy.max() - fy.min()) * (1.0 + pad)
+
+    ax.set_aspect('equal', adjustable='box')
+    ax.set_xlim(cx - half, cx + half)
+    ax.set_ylim(cy - half, cy + half)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_edgecolor('0.70')
+        spine.set_linewidth(0.5)
+
+    ax.text(
+        0.03, 0.97, title,
+        transform=ax.transAxes, fontsize=7,
+        va='top', ha='left',
+        bbox=dict(
+            facecolor='white', edgecolor='none', alpha=0.80, pad=1.5,
+        ),
+    )
+
+    return n_plot
 
 
 def _draw_panel_3d(
@@ -164,6 +327,7 @@ def _draw_panel_3d(
     elev: float = 22.0,
     azim: float = -42.0,
     geometry: str | None = None,
+    masses: ArrayF | None = None,
 ) -> int:
     '''Draw a 3D scatter of a subsampled particle distribution.
 
@@ -171,16 +335,25 @@ def _draw_panel_3d(
     ----------
     geometry : str or None
         If ``'spherical'`` or ``'cylindrical'``, marker sizes scale
-        with radial distance (bigger dots further from the centre).
+        with per-particle ``log10(mass)`` (bigger dots for heavier
+        outer-shell particles, uniform inside the RCRIT zone).
         If ``None`` (cubical panels), a uniform ``point_size`` is used.
+    masses : ndarray or None
+        Per-particle masses; required when ``geometry`` enables
+        mass-based sizing.
 
     Returns the number of particles plotted.
     '''
-    sub = subsample(pos, fraction)
+    sub, sub_masses = subsample(pos, fraction, masses=masses)
     n_plot = sub.shape[0]
 
     if geometry in ('spherical', 'cylindrical'):
-        sizes = _radial_sizes(sub, geometry)
+        if sub_masses is None:
+            raise ValueError(
+                f'Mass-based sizing requested for {geometry!r} panel '
+                'but the snapshot has no Masses dataset.'
+            )
+        sizes = _mass_sizes(sub_masses)
     else:
         sizes = point_size
 
@@ -295,8 +468,11 @@ def plot_particle_loads(
     fraction: float = 0.08,
     elev: float = 22.0,
     azim: float = -42.0,
+    plot_2d: bool = False,
+    slice_axis: str = 'z',
+    slice_thickness: float = 25.0,
 ) -> None:
-    r'''Produce the 4-panel 3D particle load validation figure.
+    r'''Produce the 4-panel particle load validation figure.
 
     Parameters
     ----------
@@ -308,10 +484,20 @@ def plot_particle_loads(
         Output file path. Interactive display if ``None``.
     fraction : float
         Fraction of particles to show per panel (random subsample).
-    elev : float
-        3D viewing elevation angle [degrees].
-    azim : float
-        3D viewing azimuth angle [degrees].
+        In 2D mode the slab itself already culls most particles, so
+        the default is raised to 1.0 (no further subsampling).
+    elev, azim : float
+        3D viewing elevation and azimuth angles [degrees]. Unused in
+        2D mode.
+    plot_2d : bool
+        If ``True``, render 2D slices instead of 3D scatter views.
+    slice_axis : {'x', 'y', 'z'}
+        Coordinate normal to the 2D slice. Only used when
+        ``plot_2d`` is ``True``.
+    slice_thickness : float
+        Slab thickness along ``slice_axis`` [Mpc/h]. The ``cubic_grid``
+        panel ignores this and snaps to a single grid layer to preserve
+        the regular lattice pattern.
     '''
     setup_matplotlib()
 
@@ -331,6 +517,15 @@ def plot_particle_loads(
 
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=300)
 
+    slice_axis_int = _slice_axis_to_int(slice_axis) if plot_2d else None
+
+    # Map panel key -> geometry for radial marker sizing.
+    # Cubical panels get None (uniform size).
+    _geom_map = {
+        'spherical': 'spherical',
+        'cylindrical': 'cylindrical',
+    }
+
     for i, (key, title) in enumerate(zip(panel_keys, panel_titles)):
         path = paths.get(key)
         if path is None or not Path(path).exists():
@@ -339,49 +534,48 @@ def plot_particle_loads(
             )
             continue
 
-        ax = fig.add_subplot(1, n_panels, i + 1, projection='3d')
-        pos = load_particles(path)
+        pos, masses = load_particles(path)
         n_total = pos.shape[0]
 
-        # Set axis limits based on geometry
-        if key in ('cubic_random', 'cubic_grid'):
-            _set_equal_aspect_3d(ax, pos)
+        if plot_2d:
+            ax = fig.add_subplot(1, n_panels, i + 1)
+            n_plotted = _draw_panel_2d(
+                ax, pos, title,
+                slice_axis=slice_axis_int,
+                slice_thickness=slice_thickness,
+                grid_layer=(key == 'cubic_grid'),
+                fraction=fraction,
+                geometry=_geom_map.get(key),
+                masses=masses,
+            )
+        else:
+            ax = fig.add_subplot(1, n_panels, i + 1, projection='3d')
 
-        elif key == 'spherical':
-            _set_equal_aspect_3d(ax, pos)
+            if key in ('cubic_random', 'cubic_grid', 'spherical'):
+                _set_equal_aspect_3d(ax, pos)
+            elif key == 'cylindrical':
+                centre = pos.mean(axis=0)
+                dx = pos[:, 0] - centre[0]
+                dy = pos[:, 1] - centre[1]
+                r_max = float(np.max(np.sqrt(dx**2 + dy**2)))
+                _set_cylinder_aspect(
+                    ax, pos, r_max,
+                    z_min=float(np.min(pos[:, 2])),
+                    z_max=float(np.max(pos[:, 2])),
+                    xy_centre=centre[:2],
+                )
+            else:
+                raise ValueError(f'Unknown panel key: {key}')
 
-        elif key == 'cylindrical':
-            centre = pos.mean(axis=0)
-            dx = pos[:, 0] - centre[0]
-            dy = pos[:, 1] - centre[1]
-            r_max = float(np.max(np.sqrt(dx**2 + dy**2)))
-
-            z_min = float(np.min(pos[:, 2]))
-            z_max = float(np.max(pos[:, 2]))
-
-            _set_cylinder_aspect(
-                ax, pos, r_max,
-                z_min=z_min, z_max=z_max,
-                xy_centre=centre[:2],
+            n_plotted = _draw_panel_3d(
+                ax, pos, title,
+                fraction=fraction,
+                elev=elev,
+                azim=azim,
+                geometry=_geom_map.get(key),
+                masses=masses,
             )
 
-        else:
-            raise ValueError(f'Unknown panel key: {key}')
-
-        # Map panel key -> geometry for radial marker sizing.
-        # Cubical panels get None (uniform size).
-        _geom_map = {
-            'spherical': 'spherical',
-            'cylindrical': 'cylindrical',
-        }
-
-        n_plotted = _draw_panel_3d(
-            ax, pos, title,
-            fraction=fraction,
-            elev=elev,
-            azim=azim,
-            geometry=_geom_map.get(key),
-        )
         log.info(
             '%s: N_total = %d, N_shown = %d (%.1f%%)',
             key, n_total, n_plotted, 100.0 * n_plotted / n_total,
@@ -423,8 +617,10 @@ def parse_args() -> argparse.Namespace:
         help='HDF5 snapshot of the cylindrical shell particle load.',
     )
     p.add_argument(
-        '--fraction', type=float, default=0.08,
-        help='Fraction of particles to display per panel.',
+        '--fraction', type=float, default=None,
+        help='Fraction of particles to display per panel. '
+             'Default: 0.08 in 3D mode, 1.0 in 2D mode (the slab '
+             'already culls most particles).',
     )
     p.add_argument(
         '--elev', type=float, default=22.0,
@@ -433,6 +629,21 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         '--azim', type=float, default=-42.0,
         help='3D viewing azimuth angle [degrees].',
+    )
+    p.add_argument(
+        '--plot-2d', action='store_true',
+        help='Render 2D slices instead of 3D scatter views. '
+             'The cubic_grid panel snaps to a single grid layer; the '
+             'three other panels show a slab of --slice-thickness.',
+    )
+    p.add_argument(
+        '--slice-axis', type=str, default='x', choices=['x', 'y', 'z'],
+        help='Coordinate normal to the 2D slice (only used with --plot-2d).',
+    )
+    p.add_argument(
+        '--slice-thickness', type=float, default=25.0,
+        help='Slab thickness along --slice-axis [Mpc/h]. '
+             'The cubic_grid panel ignores this and uses one grid layer.',
     )
     p.add_argument(
         '-o', '--output', type=str, default=None,
@@ -462,10 +673,18 @@ if __name__ == '__main__':
         sys.exit(1)
 
     log.info('Panels to plot: %s', ', '.join(provided.keys()))
+
+    fraction = args.fraction
+    if fraction is None:
+        fraction = 1.0 if args.plot_2d else 0.08
+
     plot_particle_loads(
         load_paths,
         output=args.output,
-        fraction=args.fraction,
+        fraction=fraction,
         elev=args.elev,
         azim=args.azim,
+        plot_2d=args.plot_2d,
+        slice_axis=args.slice_axis,
+        slice_thickness=args.slice_thickness,
     )

@@ -403,7 +403,7 @@ def setup_matplotlib() -> None:
     }
     text_settings: dict = {
         'text.usetex': True,
-        'text.latex.preamble': r'\usepackage{amssymb}',
+        'text.latex.preamble': r'\usepackage{amsmath}\usepackage{amssymb}',
         'font.family': 'serif',
         'font.serif': ['Computer Modern Roman'],
         'axes.unicode_minus': False,

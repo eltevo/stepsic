@@ -29,6 +29,7 @@
 #    3. spherical    - generate spherical shell IC
 #    4. cylindrical  - generate cylindrical shell IC
 #    5. plot         - 4-panel 3D scatter figure
+#    6. plot_2d      - 4-panel 2D slice figure (xy plane, z slab)
 #
 #  Configuration (edit config.env or export before running):
 #    LBOX            Cubic box side [Mpc/h]       (default: 500)
@@ -75,7 +76,8 @@ if (( VLIB_LIST_STEPS )); then
     vlib::step_check "cubic_grid"   "${IC_CUBIC_GRID}/ic.hdf5"   || :
     vlib::step_check "spherical"    "${IC_SPHERICAL}/ic.hdf5"     || :
     vlib::step_check "cylindrical"  "${IC_CYLINDRICAL}/ic.hdf5"   || :
-    vlib::step_check "plot"         "${OUTPUT}/particle-load.pdf" || :
+    vlib::step_check "plot"         "${OUTPUT}/particle-load.pdf"    || :
+    vlib::step_check "plot_2d"      "${OUTPUT}/particle-load-2d.pdf" || :
     exit 0
 fi
 
@@ -97,6 +99,7 @@ echo "  LBOX: ${LBOX}   R_3D: ${R_3D}   D_4D: ${D_4D}   RCRIT: ${RCRIT}"
 echo "  NGRID: ${NGRID}   NPART: ${NPART}   NSHELL: ${NSHELL}"
 echo "  cache:  ${VLIB_CACHE_DIR}"
 echo "  output: ${OUTPUT}/particle-load.pdf"
+echo "          ${OUTPUT}/particle-load-2d.pdf"
 echo ""
 
 mkdir -p "${TOML_DIR}" \
@@ -312,11 +315,15 @@ if vlib::step_check "cylindrical" "${IC_CYLINDRICAL}/ic.hdf5"; then
     vlib::step_done "cylindrical"
 fi
 
-if vlib::step_check "plot" "${OUTPUT}/particle-load.pdf"; then
+_resolve_ic_paths() {
     IC_CR="$(vlib::find_ic "${IC_CUBIC_RANDOM}")"
     IC_CG="$(vlib::find_ic "${IC_CUBIC_GRID}")"
     IC_SP="$(vlib::find_ic "${IC_SPHERICAL}")"
     IC_CY="$(vlib::find_ic "${IC_CYLINDRICAL}")"
+}
+
+if vlib::step_check "plot" "${OUTPUT}/particle-load.pdf"; then
+    _resolve_ic_paths
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot.py" \
         --cubic-random "${IC_CR}" \
         --cubic-grid   "${IC_CG}" \
@@ -325,6 +332,19 @@ if vlib::step_check "plot" "${OUTPUT}/particle-load.pdf"; then
         --fraction "${PLOT_FRACTION}" \
         -o "${OUTPUT}/particle-load.pdf"
     vlib::step_done "plot"
+fi
+
+if vlib::step_check "plot_2d" "${OUTPUT}/particle-load-2d.pdf"; then
+    _resolve_ic_paths
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot.py" \
+        --cubic-random "${IC_CR}" \
+        --cubic-grid   "${IC_CG}" \
+        --spherical    "${IC_SP}" \
+        --cylindrical  "${IC_CY}" \
+        --plot-2d \
+        --slice-thickness "${SLICE_THICKNESS}" \
+        -o "${OUTPUT}/particle-load-2d.pdf"
+    vlib::step_done "plot_2d"
 fi
 
 vlib::report_done
