@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stepsic"
-version = "2.0.0beta"
+version = "1.0.0b1"
 authors = [
     { name = "Balazs Pal", email = "pal.balazs@ttk.elte.hu" },
     { name = "Gabor Racz", email = "gabor.racz@helsinki.fi" },

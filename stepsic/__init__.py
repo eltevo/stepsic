@@ -25,7 +25,7 @@ def get_git_branch() -> str:
     except Exception:
         return "unknown"
 
-__version__ = '2.0.0beta'
+__version__ = '1.0.0b1'
 __year__ = '2017-2026'
 __authors__ = ['Balazs Pal', 'Gabor Racz']
 __programname__ = "stepsic.py"
@@ -50,10 +50,8 @@ def _make_header(Nart: int = 79, Ncop: int = 79, Nwar: int = 79):
     ''')
     # cop = dedent(f'''
     # Copyright (C) ({__year__}) {', '.join(__authors__)}
-    # \tJet Propulsion Laboratory, California Institute of Technology | Pasadena, CA, USA
     # \tDepartment of Physics of Complex Systems, Eotvos Lorand University | Budapest, Hungary
     # \tHeavy-ion Physics Research Group, HUN-REN Wigner RCP | Budapest, Hungary
-    # \tDepartment of Physics & Astronomy, Johns Hopkins University | Baltimore, MD, USA
     # \tDepartment of Physics, University of Helsinki | Helsinki, Finland
     # ''')
     cop = dedent(f'''
