@@ -4,24 +4,58 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stepsic"
-version = "2.0.0"
+version = "1.0.0b1"
 authors = [
-  { name = "Gabor Racz", email = "gabor.racz@helsinki.fi" },
-  { name = "Balazs Pal", email = "pal.balazs@ttk.elte.hu" }
+    { name = "Balazs Pal", email = "pal.balazs@ttk.elte.hu" },
+    { name = "Gabor Racz", email = "gabor.racz@helsinki.fi" },
 ]
 description = "StePS cosmological initial condition generator"
 readme = "README.md"
-requires-python = ">=3.11"
+license = "GPL-2.0-or-later"
+requires-python = ">=3.10"
+keywords = [
+    "cosmology",
+    "initial-conditions",
+    "n-body",
+    "stereographic-projection",
+    "lagrangian-perturbation-theory",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 dependencies = [
-  "toml",
-  "tabulate",
-  "h5py",
-  "numpy",
-  "scipy",
-  "astropy",
-  "camb",
-  "colossus"
+    "toml",
+    "tabulate",
+    "h5py",
+    "numpy>=1.22",
+    "scipy>=1.8",
+    "astropy>=5.0",
+    "camb",
+    "colossus",
 ]
 
+[project.optional-dependencies]
+gadget = ["glio"]
+
+[project.scripts]
+stepsic = "stepsic.stepsic:main"
+
 [project.urls]
-"Homepage" = "https://github.com/eltevo/StePS/"
+Homepage = "https://github.com/eltevo/stepsic"
+Documentation = "https://eltevo.github.io/projects/stepsic"
+Repository = "https://github.com/eltevo/stepsic"
+"Bug Tracker" = "https://github.com/eltevo/stepsic/issues"
+
+[tool.isort]
+profile = "black"
+known_first_party = ["stepsic"]

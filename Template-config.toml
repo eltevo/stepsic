@@ -1,82 +1,170 @@
-# Parameters for stepsic
+#*****************************************************************************#
+#  stepsic - An initial condition generator for                               #
+#           STEreographically Projected cosmological Simulations              #
+#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                           #
+#                                                                             #
+#    This program is free software; you can redistribute it and/or modify     #
+#    it under the terms of the GNU General Public License as published by     #
+#    the Free Software Foundation; either version 2 of the License, or        #
+#    (at your option) any later version.                                      #
+#                                                                             #
+#    This program is distributed in the hope that it will be useful,          #
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of           #
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the            #
+#    GNU General Public License for more details.                             #
+#*****************************************************************************#
 
-# IC parameters
-GEOMETRY = "cylindrical"     # Geometry of the simulation, options: "cylindrical", "spherical", "cubical".
-NMESH = 0                    # Number of mesh points along the shortest dimension of the box. Other dimensions will be scaled accordingly. Set to 0 to initiate a multiscale IC generation.
-LBOX = [ 1000, 1000, 1000 ]  # Box dimensions in [Mpc]. You can use a single scalar to define a cubical box, or an array in the form of `[ Lx, Ly, Lz ]` for any rectangular cuboid.
-PERIODIC = [ 0, 0, 1 ]       # Periodic boundary conditions in the form of `[ Px, Py, Pz ]`. `true` or `1` for periodic, `false` or `0` for non-periodic. You can use a single value to set periodicity for all dimensions at once.
-REDSHIFT = 63                # Target redshift of the IC generation.
-LPTORDER = 2                 # Order of the LPT used for the IC generation. Options: 1, 2, 3. Higher orders are not supported yet.
-COI = [ 0, 0, 0 ]            # Center of interest in Mpc. This is the point where the IC will be centered. You can use a single scalar to define a point in the center of the box, or an array in the form of `[ x, y, z ]` for any point in the box.
+# -- 1. Geometry and simulation volume ---------------------------------
+#
+#  GEOMETRY determines how the simulation volume is shaped. Options:
+#
+#    "cubical"        Standard periodic box.    TYPE = "grid", "random" or "glass".
+#    "cylindrical"    StePS S^1 x R^2.          TYPE = "glass" or "shell".
+#    "spherical"      StePS R^3.                TYPE = "glass" or "shell".
 
-# Stereographic projection parameters (Only relevant for cylindrical and spherical geometries)
+GEOMETRY = "cubical"
+
+# ** Cubical geometry **************************************************
+#  Box dimensions. LBOX defines all three side lengths. You can use a
+#  scalar to define a cubical box, or an array of `[ Lx, Ly, Lz ]` for a
+#  rectangular cuboid.
+#  If HINDEPENDENT = false, numbers here are in [Mpc], otherwise [Mpc/h].
+LBOX = [ 1000, 1000, 1000 ]
+#  Periodic boundary conditions in the form of `[ Px, Py, Pz ]`. In
+# "cubical" geometry any of the three dimensions can be periodic. Use
+# `true` or `1` for periodic, `false` or `0` for non-periodic. You can
+# also use a single value to set periodicity for all dimensions at once.
+PERIODIC = [ 1, 1, 1 ]
+
+# TODO: GLASSTILEFAC + Z_REPEAT
+
+# ** Stereographic geometry ********************************************
+#  These define the stereographic projection parameters. For cubical
+#  geometry they are ignored by the code, but must still be present in
+#  the file (validation will skip them in a future version).
+#
+#  Cylindrical (S^1 x R^2):
+#    - R_3D sets the radius of the compactified R^2 plane
+#    - LBOX[2] (Lz) sets the periodic non-compact dimension
+#    - PERIODIC should be [0, 0, 1] (enforced in stepsic)
+#
+#  Spherical (R^3):
+#    - R_3D sets the radius of the full simulation sphere
+#    - LBOX is the bounding box (should box the sphere: Lx=Ly=Lz = 2*R_3D)
+#    - PERIODIC should be [0, 0, 0] (enforced in stepsic)
 R_3D = 500             # RADIUS of the simulated volume in Mpc in the Euclidean space.
-D_4D = 75              # DIAMETER of the compactified sphere in Mpc in the stereographic projection.
+D_4D = 75              # DIAMETER of the compactified hypersphere in [Mpc].
 BIN_MODE = "omega"     # Binning mode of the multi-resolution stereographic projection in the radial direction, options: "omega", "volume".
 NRBINS = 224           # Number of radial bins in the stereographic projection.
 
-# IO parameters
-INPUT_GLASS = "./examples/input_glass.hdf5"  # Path to the input glass file inserted into the middle of the simulation. If not provided, a glass will be generated. See "IC generation parameters" below for that.
-# TODO: INPUT_WHITE_NOISE = "example/ic_white_noise.hdf5"  # Path to the input white noise file. If not provided, a `white noise` will be generated. This file should contain a 3D array of random numbers with the same shape as the mesh size defined by `NMESH`.
-# TODO: INPUT_DELTA_K = "example/ic_delta_k.hdf5"  # Path to the input delta_k file. If not provided, a `delta_k` will be generated.
+# ** Center of Interest ************************************************
+#  The point around which the IC is centered. For cubical geometry this
+#  shifts the box origin; for StePS geometries it sets the observer position.
+#  If HINDEPENDENT = false, numbers here are in [Mpc], otherwise [Mpc/h].
+COI = [ 0, 0, 0 ] 
 
-IC_DIR = "output"      # Directory where the IC files will be saved
-IC_PREFIX = "stepsic"  # Prefix for the output files
-IC_FORMAT = "hdf5"     # Output file format, options: "hdf5", "npy" "gadget", "ascii"
-USE_DOUBLE = true      # If `true`, the output files will be saved in double precision. Otherwise, they will be saved in single precision.
 
-# IC generation parameters
-TYPE = "glass"         # Type of the IC generation, options: "glass", "grid", "random".
-NPART = 32768          # Number of particles in the simulation if "random" generation is used. This is the total number of particles, not per dimension.
-SPHEREMODE = false     # If `true`, the IC will be generated in a spherical shell in k-space, otherwise it will be generated in a cubical box in k-space.
+# -- 2. Particle generation --------------------------------------------
+#
+#  TYPE controls how particles are placed in the volume. Options:
+#
+#    "grid"      Regular lattice.             Cubical geometry only.
+#    "random"    Poisson sampling.            Cubical geometry only.
+#    "shell"    Concentric shell filling.    Cylindrical / spherical geometry only.
+#    "glass"     Load a pre-built glass.      Any geometry.
+
+TYPE = "glass"
+
+# ** Cubical geometry **************************************************
+NGRID = 64             # Grid cells per shortest dimension for TYPE = "grid". Other dimensions will be scaled accordingly.
+NPART = 32768          # Total particle count for TYPE = "random". !! Only advised to use with LPTORDER = 0 in pre-glass generation mode. !!
+
+# ** Cylindrical / spherical geometry **********************************
+#  Generates N_total = NSHELL * NRBINS particles, distributed in
+#  concentric shells whose radii follow the stereographic binning.
+#  !! Only advised to use with LPTORDER = 0 in pre-glass generation mode. !!
+NSHELL = 12288         # Particles per radial shell.
+
+# ** Glass input (any geometry) ****************************************
+#  If TYPE = "glass", the initial particle distribution will be loaded
+#  from a pre-built glass file. This file should contain the particle
+#  positions in the same geometry as defined by the `GEOMETRY` parameter.
+INPUT_GLASS = "./examples/input_glass.hdf5"   # Path to the input glass file.
+
+# ** General options ***************************************************
 SEED = 137             # Random seed to initialize the Numpy RNG with. This will be used in particle generation and in the sampling of Gaussian displacements.
-NGRIDSAMPLES = 7       # Number of grid samples to use for the multiscale IC generation.
 COMOVING = true        # If `true`, the IC will be generated in comoving coordinates, otherwise in physical coordinates. This is useful for cosmological simulations where the expansion of the universe is taken into account.
-COUNTER = false        # If `true`, the IC will be generated with a phase flip in Fourier space.
+HINDEPENDENT = true    # If `true`, the IC will be generated in units of [U/h] instead of [U]. By default, the code calculates everything in [U/h] units. If set to `false`, then the code also expects the input glass to be in units of [U] instead of [U/h].
+
+# ** Rotating IC (experimental) ****************************************
+ROTATE = 0.0           # Add an angular velocity to the IC in rad / Gyr.
+
+
+# -- 3. Perturbation theory --------------------------------------------
+
+NMESH = 128            # Mesh size for calculating the displacements and velocities. !! Set to 0 for adaptive multiscale IC generation. !!
+LPTORDER = 2           # Order of the LPT. Options: 0 (no perturbation, glass-making mode), 1 (Zel'dovich), 2 (2LPT), 3 (3LPT).
+REDSHIFT = 63          # Target redshift
+INTERPOLATION = "tsc"  # Grid-to-particle interpolation to calculate displacements and velocities. Options: "ngp", "cic", "tsc".
+COMPENSATE = true      # If `true`, the IC will be generated with a compensation kernel to pre-sharpen the field before interpolation. This is useful for reducing the smoothing effect of interpolation when using low-resolution meshes or high-order interpolation methods, especially in the case of glass IC where particles do not coincide with grid points. For regular lattices where particles coincide with grid points, this should be False.
+SPHEREMODE = false     # If `true`, the IC will be generated in a spherical shell in k-space, otherwise it will be generated in a cubical box in k-space.
+PAIRED = false         # If `true`, two ICs will be generated with opposite phases in the Fourier space. This is useful for reducing the cosmic variance by pairing normal and antipodal simulations.
 PHASE_SHIFT = 0.0      # Phase shift to apply to the IC. This is useful for generating IC with a specific phase shift in the Fourier space, primarily to reduce the cosmic variance by pairing normal and antipodal simulations.
-HINDEPENDENT = false   # If `true`, the IC will be generated in units of [U/h] instead of [U].
+
+# ** Adaptive multiscale (glass + NMESH=0) *****************************
+NMESHSAMPLES = 7       # Number of resolution levels for multiscale IC.
 
 # TODO: Primordial non-Gaussianity
 
-# Rotating IC parameters
-ROTATE = 0.0           # Add an angular velocity to the IC in degrees / Gyr.
 
-# Cosmology parameters
-# By default, we use parameters from table 2.20 of the Planck 2018 results
-# https://wiki.cosmos.esa.int/planck-legacy-archive/images/b/be/Baseline_params_table_2018_68pc.pdf
-# Check `stepsic/config/cosmology.toml` for the possible values for `cosmology`
+# -- 4. Input/output and format ----------------------------------------
+
+# TODO: INPUT_WHITE_NOISE = "example/ic_white_noise.hdf5"  # Path to the input white noise file. If not provided, a `white noise` will be generated. This file should contain a 3D array of random numbers with the same shape as the mesh size defined by `NGRID`.
+# TODO: INPUT_DELTA_K = "example/ic_delta_k.hdf5"  # Path to the input delta_k file. If not provided, a `delta_k` will be generated.
+IC_DIR = "output"      # Base output directory for the generated files. Subdirectories will be created based on the IC parameters to store the generated files in an organized way.
+IC_PREFIX = "stepsic"  # Name prefix of the output subdirectories and files.
+IC_FORMAT = "hdf5"     # Output file format. Options: "hdf5", "gadget", "ascii"
+USE_DOUBLE = true      # If `true`, the output files will be saved in double precision. Otherwise, they will be saved in single precision.
+
+
+# -- 5. Cosmology parameters -------------------------------------------
+#
+#  By default, we use parameters from table 2.20 of the Planck 2018 results
+#  https://wiki.cosmos.esa.int/planck-legacy-archive/images/b/be/Baseline_params_table_2018_68pc.pdf
+#  Select a built-in parameter set from stepsic/config/cosmology.toml.
+#  Any individual parameter below will override the selected set.
 
 COSMOLOGY = "Planck2018EE+BAO+SN"
 
-# To overwrite the default cosmology parameters, uncomment the following lines and set your values
-## Base parameters
-# H0 = 67.742          # 
-# OMEGA_M = 0.3099     # 
-# OMEGA_B = 0.048891   # 
-# OMEGA_L = 0.6901     # 
-# NS = 0.96822         # 
-# AS = 2.1064e-9       # 
-# SIGMA8 = 0.8105      # 
-## Additional species and thermal history
-# YHE = 0.245421       # 
-# MNU = 0.06           # 
-# NNU = 3.046          # 
-# ZREI = 7.89          # 
-# TCMB = 2.7255        # 
+# ** Base parameters ***************************************************
+# H0 = 67.742          # Hubble parameter at z=0 in km/s/Mpc
+# OMEGA_M = 0.3099     # Matter density parameter
+# OMEGA_B = 0.048891   # Baryon density parameter
+# OMEGA_L = 0.6901     # Dark energy density parameter
+# NS = 0.96822         # Scalar spectral index
+# AS = 2.1064e-9       # Amplitude of the primordial power spectrum
+# SIGMA8 = 0.8105      # RMS density fluctuation in spheres of 8 Mpc/h at z=0
+# ** Additional species and thermal history ****************************
+# YHE = 0.245421       # Helium mass fraction
+# MNU = 0.06           # Sum of neutrino masses in eV
+# NNU = 3.046          # Effective number of neutrino species
+# ZREI = 7.89          # Reionization redshift
+# TCMB = 2.7255        # CMB temperature in K
 # KPIVOT = 0.05        # Pivot scale in Mpc^-1
-## Dark energy EoS parameters
-# W0 = -1.0            # 
-# WA = 0.0             # 
+# ** Dark energy EoS parameters ****************************************
+# W0 = -1.0            # Dark energy equation of state parameter at z=0
+# WA = 0.0             # Dark energy equation of state parameter evolution
 
-# Power spectrum parameters
+# ** Power spectrum ****************************************************
 SPECTRUM = "camb"   # Type of the power spectrum, options: "input", "camb".
 NONLINEAR = false    # If `true`, the non-linear corrections will be applied to the power spectrum. In cosmological IC generation, this is not a valid method, as we approximate the linear regime with LPT.
 HALOFIT = "mead2020"  # Check `camb.NonLinearModel.Halofit` for possible values.
 INPUT_SPECTRUM = "./examples/LCDM2018_input_spectrum.txt"  # Path to the file with the power spectrum. This file should be in the format of two columns: log(k) and log(P^3(k)). If `SPECTRUM` is `camb`, this file will be ignored.
 INPUT_SPECTRUM_UNIT_L_IN_CM = 3.085678e24
 
-# Internal units of the simulation software the IC will be generated for.
-# Default values are set to the StePS internal units.
+# -- 6. Internal units -------------------------------------------------
+#
+#  Default values are set to match StePS internal units.
 UNIT_L_IN_CM = 3.085678e24           # Length unit in cm, default is 1 Mpc.
 UNIT_M_IN_G = 1.989e44               # Mass unit in g, default is 1e11 M_sun.
 UNIT_V_IN_KMPS = 20.738652969844207  # Velocity unit in km/s, default is the ratio of 1 Mpc and the Hubble length.

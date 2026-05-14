@@ -3,16 +3,21 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.11
-  - toml
+  - python=3.10
+  - pip
   - tabulate
-  - h5py
   - numpy
+  - matplotlib
   - scipy
+  - h5py
   - astropy
   - camb
-  - matplotlib
-  - seaborn
-  - pip
+  - toml  # dead library, remove when we move to Python 3.11+
+  # nbodykit dependencies
+  - gsl
+  - openmpi
+  - mpi4py
+  - compilers
   - pip:
       - colossus
+      - nbodykit

@@ -1,25 +1,27 @@
-#*******************************************************************************#
-#  stepsic - An initial condition generator for                                 #
-#            STEreographically Projected cosmological Simulations               #
-#    Copyright (C) 2017-2025 Gabor Racz, Balazs Pal                             #
-#                                                                               #
-#    This program is free software; you can redistribute it and/or modify       #
-#    it under the terms of the GNU General Public License as published by       #
-#    the Free Software Foundation; either version 2 of the License, or          #
-#    (at your option) any later version.                                        #
-#                                                                               #
-#    This program is distributed in the hope that it will be useful,            #
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of             #
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the              #
-#    GNU General Public License for more details.                               #
-#*******************************************************************************#
+#*****************************************************************************#
+#  stepsic - An initial condition generator for                               #
+#           STEreographically Projected cosmological Simulations              #
+#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                           #
+#                                                                             #
+#    This program is free software; you can redistribute it and/or modify     #
+#    it under the terms of the GNU General Public License as published by     #
+#    the Free Software Foundation; either version 2 of the License, or        #
+#    (at your option) any later version.                                      #
+#                                                                             #
+#    This program is distributed in the hope that it will be useful,          #
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of           #
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the            #
+#    GNU General Public License for more details.                             #
+#*****************************************************************************#
 
-import numpy as np
-
-import camb
-from colossus.cosmology import cosmology
+from __future__ import annotations
 
 import logging
+
+import camb
+import numpy as np
+from colossus.cosmology import cosmology
+
 log = logging.getLogger(__name__)
 
 
@@ -180,7 +182,7 @@ class ColossusCosmology:
         Parameters
         ----------
         z : float
-            Redshift(s) at which to compute the growth factor.
+            Redshift at which to compute the growth factor.
         
         Returns
         -------
@@ -216,7 +218,7 @@ class CAMBCosmology:
         nnu : float
             Total effective number of massive and massless neutrinos.
         YHe : float
-            Fraction of baryonic mass in helium. Set to `None` to be
+            Fraction of baryonic mass in helium. Set to ``None`` to be
             calculated internally for BBN consistency.
         TCMB : float
             CMB temperature in Kelvin.
@@ -227,7 +229,7 @@ class CAMBCosmology:
         wa : float
             Dark energy equation of state parameter evolution.
         nonlinear : bool
-            If True, include non-linear corrections using Halofit.
+            If ``True``, include non-linear corrections using Halofit.
         halofit_version : str
             Version of the Halofit model to use for non-linear corrections.
             Check ``camb.nonlinear.Halofit`` for available models.
@@ -335,4 +337,5 @@ class CAMBCosmology:
         kh, _, pk = results.get_matter_power_spectrum(
             minkh=kmin, maxkh=kmax, npoints=npoints, var1=component, var2=component)
         pk3 = pk * kh**3/(2*np.pi**2)  # Save (log(kh), log(pk3)).T for StePS/Gadget
+        #np.savetxt(f'output/power_spectrum_z{z}.txt', np.log10(kh, pk, pk3).T)
         return kh, pk, pk3

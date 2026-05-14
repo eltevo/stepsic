@@ -1,26 +1,37 @@
-#*******************************************************************************#
-#  StePS_IC.py - An initial condition generator for                             #
-#     STEreographically Projected cosmological Simulations                      #
-#    Copyright (C) 2017-2025 Gabor Racz                                         #
-#                                                                               #
-#    This program is free software; you can redistribute it and/or modify       #
-#    it under the terms of the GNU General Public License as published by       #
-#    the Free Software Foundation; either version 2 of the License, or          #
-#    (at your option) any later version.                                        #
-#                                                                               #
-#    This program is distributed in the hope that it will be useful,            #
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of             #
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the              #
-#    GNU General Public License for more details.                               #
-#*******************************************************************************#
+#*****************************************************************************#
+#  stepsic - An initial condition generator for                               #
+#           STEreographically Projected cosmological Simulations              #
+#    Copyright (C) 2017-2026 Balazs Pal, Gabor Racz                           #
+#                                                                             #
+#    This program is free software; you can redistribute it and/or modify     #
+#    it under the terms of the GNU General Public License as published by     #
+#    the Free Software Foundation; either version 2 of the License, or        #
+#    (at your option) any later version.                                      #
+#                                                                             #
+#    This program is distributed in the hope that it will be useful,          #
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of           #
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the            #
+#    GNU General Public License for more details.                             #
+#*****************************************************************************#
 
 from __future__ import annotations
-from typing import List, Dict, Any
 
 import re
+from pathlib import Path
+
 import h5py
 import numpy as np
-from pathlib import Path
+
+from stepsic.__init__ import (
+    __authors__,
+    __gitbranch__,
+    __githash__,
+    __header__,
+    __programname__,
+    __version__,
+    __year__,
+)
+from stepsic._typing import PathInput
 
 # Gadget IO library for reading Gadget snapshots
 # Download from https://www.github.com/masterdesky/glio
@@ -31,6 +42,7 @@ except ImportError as _err:
     # _GLIO_IMPORT_ERROR = _err
 
 import logging
+
 log = logging.getLogger(__name__)
 
 
@@ -94,6 +106,88 @@ class CosmoIO:
         path = path.expanduser().resolve()
         saver = CosmoIO._find_saver(fmt)
         saver(path, data=data, **kwargs)
+
+    @staticmethod
+    def get_box_size(path: Path):
+        '''
+        Retrieves the box size from the snapshot file.
+
+        If the header contains a missing, zero, or clearly invalid
+        ``BoxSize`` (e.g. a denormalized float), the value is logged
+        as a warning and ``None`` is returned so the caller can decide
+        how to handle it.
+
+        Parameters
+        ----------
+        path : pathlib.Path
+            Path to the snapshot file.
+
+        Returns
+        -------
+        boxsize : float or None
+            The box size in internal units, or ``None`` if the header
+            value is missing or invalid.
+        '''
+        path = path.expanduser().resolve()
+        ext = CosmoIO._get_extension(path)
+        boxsize = None
+        if ext in ['hdf5', 'h5']:
+            with h5py.File(path, 'r') as hdf:
+                if '/Header' in hdf and 'BoxSize' in hdf['/Header'].attrs:
+                    boxsize = float(hdf['/Header'].attrs['BoxSize'])
+        elif ext in ['dat', 'txt']:
+            raise NotImplementedError('Box size retrieval from ASCII files is not implemented.')
+        else:
+            if glio is None:
+                raise UnsupportedFormatError(
+                    f'`{ext}` is an unsupported extension and glio is not installed.'
+                )
+            s = glio.GadgetSnapshot(path)
+            boxsize = float(s.header.BoxSize)
+
+        # Validate: reject zero, negative, subnormal, inf, nan
+        if boxsize is not None and (
+            not np.isfinite(boxsize) or boxsize <= 0.0 or np.isclose(boxsize, 0.0)
+        ):
+            log.warning(
+                f'Invalid BoxSize={boxsize} in header of {path.name}. '
+                f'Treating as unset.'
+            )
+            boxsize = None
+        return boxsize
+    
+    @staticmethod
+    def get_simulation_radius(path: Path):
+        '''
+        Retrieves the simulation radius from the snapshot file.
+        This will be useful for re-scaling spherical snapshots.
+
+        Parameters
+        ----------
+        path : pathlib.Path
+            Path to the snapshot file.
+
+        Returns
+        -------
+        boxsize : float
+            The box size in internal units.
+        '''
+        path = path.expanduser().resolve()
+        ext = CosmoIO._get_extension(path)
+        if ext in ['hdf5', 'h5']:
+            with h5py.File(path, 'r') as hdf:
+                boxsize = hdf['/Header'].attrs['SimulationRadius']
+            return boxsize
+        elif ext in ['dat', 'txt']:
+            raise NotImplementedError('Box size retrieval from ASCII files is not implemented.')
+        else:
+            if glio is None:
+                raise UnsupportedFormatError(
+                    f'`{ext}` is an unsupported extension and glio is not installed.'
+                )
+            s = glio.GadgetSnapshot(path)
+            boxsize = s.header.BoxSize
+            return boxsize / 2.0
 
     @staticmethod
     def _match_extension(path: Path):
@@ -160,7 +254,7 @@ class CosmoIO:
 
         Returns
         -------
-        files : List[pathlib.Path]
+        files : list of pathlib.Path
             A sorted list of Path objects for all files in the snapshot.
             Returns an empty list if the filepath does not match a valid
             pattern.
@@ -222,7 +316,7 @@ class CosmoIO:
         raise UnsupportedFormatError('Only HDF5 files are supported.')
 
     @staticmethod
-    def _load_ascii(files: List[Path], **kwargs):
+    def _load_ascii(files: PathInput, **kwargs):
         '''Load a cosmological snapshot from an ASCII file.'''
         dtype = kwargs.get('dtype', np.float32)
         particleIDs, coordinates, velocities, masses = [], [], [], []
@@ -254,7 +348,7 @@ class CosmoIO:
         return particleIDs, coordinates, velocities, masses
 
     @staticmethod
-    def _load_hdf5(files: List[Path], *args, **kwargs):
+    def _load_hdf5(files: PathInput, *args, **kwargs):
         '''Load a cosmological snapshot from an HDF5 file.'''
         log.info(f'Reading the input HDF5 files ...')
         part_type = kwargs.get('part_type', 1)
@@ -266,9 +360,13 @@ class CosmoIO:
             log.info(f'Opening HDF file {path}...')
             with h5py.File(path, 'r') as hdf:
                 for ai in args:
-                    arguments[ai].append(hdf[f'/PartType{part_type}/{ai}'][:])
+                    g = f'/PartType{part_type}/{ai}'
+                    if g not in hdf:
+                        log.warning(f'Group {g} not found in HDF5 file {path}.')
+                        continue
+                    arguments[ai].append(hdf[g][:])
                     dtypes[ai] = hdf[f'/PartType{part_type}/{ai}'].dtype
-                if 'Masses' in args:
+                if 'Masses' in args and 'Masses' in hdf[f'/PartType{part_type}']:
                     N_part = hdf['/Header'].attrs['NumPart_ThisFile'][part_type]
                     mass_part_type = hdf['/Header'].attrs['MassTable'][part_type]
                     if np.all(arguments['Masses'] == 0):
@@ -276,8 +374,11 @@ class CosmoIO:
                     if kwargs.get('constant_res', False):
                         arguments['Masses'] *= mass_part_type
         for ai in args:
-            arguments[ai] = np.concatenate(arguments[ai], dtype=dtypes[ai])
-        return arguments.values()
+            if not arguments[ai]:
+                arguments[ai] = None
+            else:
+                arguments[ai] = np.concatenate(arguments[ai], dtype=dtypes[ai])
+        return tuple(arguments.values())
     
     @staticmethod
     def _save_ascii(path: Path, data: "CosmoData", **kwargs):
@@ -303,11 +404,11 @@ class CosmoIO:
         data : stepsic.CosmoData
             The cosmological data to save.
 
-        .. Optional Parameters :
-        header arguments
+        .. Optional Parameters:
+        *header arguments*
             Additional parameters for the snapshot header. TODO.
         part_type : int
-            The particle type to save (e.g., 1 for dark matter in Gadget).
+            The particle type to save (e.g. 1 for dark matter in Gadget).
         dtype : numpy.dtype
             The data type to use for the snapshot positions, velocities
             and masses.
@@ -317,16 +418,21 @@ class CosmoIO:
             part_type = kwargs.get('part_type', 1)
             dtype = kwargs.get('dtype', np.float32)
 
-            h = hdf_file.create_group("/Header")
             num_part_array = np.zeros(6, dtype=np.uint32)
             num_part_array[part_type] = data.N_part
+
+            h = hdf_file.create_group("/Header")
+            h.attrs['ProgramName'] = __programname__
+            h.attrs['ProgramVersion'] = __version__
+            h.attrs['ProgramCommitID'] = __githash__
             h.attrs['NumPart_ThisFile'] = num_part_array
             h.attrs['NumPart_Total'] = num_part_array
             h.attrs['NumPart_Total_HighWord'] = np.zeros(6, dtype=np.uint32)
             h.attrs['MassTable'] = np.zeros(6, dtype=dtype)
             h.attrs['Time'] = 1.0 / (kwargs.get('Redshift', 0) + 1.0)
             h.attrs['Redshift'] = float(kwargs.get('Redshift', 0.0))
-            h.attrs['BoxSize'] = float(kwargs.get('BoxSize', 0.0))
+            h.attrs['BoxSize'] = float(kwargs.get('BoxSize', 0.0))  # L_z; used in T^3 and S^1xR^2 simulations
+            h.attrs['SimulationRadius'] = float(kwargs.get('SimulationRadius', 0.0))  # R_sim; used in R^1xR^2 and R^3 simulations
             h.attrs['NumFilesPerSnapshot'] = kwargs.get('NumFilesPerSnapshot', 1)
             h.attrs['Omega0'] = float(kwargs.get('Omega0', 0.0))
             h.attrs['OmegaLambda'] = float(kwargs.get('OmegaLambda', 0.0))
