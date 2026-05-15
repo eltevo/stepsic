@@ -437,7 +437,10 @@ EOF
 
     echo "  Config: ${MONOFONIC_CONF}"
     echo "  Noise:  ${_noise_abs}"
-    vlib::run_in_env "${MONOFONIC_ENV}" "${MONOFONIC_BIN}" "${MONOFONIC_CONF}"
+    (
+        cd "${OUTPUT}"
+        vlib::run_in_env "${MONOFONIC_ENV}" "${MONOFONIC_BIN}" "${MONOFONIC_CONF}"
+    )
 
     if [[ ! -f "${MONOFONIC_IC}" ]]; then
         echo "ERROR: monofonIC did not produce ${MONOFONIC_IC}." >&2; exit 1
