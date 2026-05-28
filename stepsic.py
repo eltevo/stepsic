@@ -72,6 +72,10 @@ def main():
         ic_orig = CosmoData.load_snapshot(Path(params['INPUT_GLASS']))
         ic_orig.to_internal_units(params)
         ic_orig.rescale_snapshot_size(params)
+        #converting the glass to 32bit or 64bit floats, depending on the DTYPE parameter
+        ic_orig.pos = ic_orig.pos.astype(params['DTYPE'])
+        ic_orig.vel = ic_orig.vel.astype(params['DTYPE'])
+        ic_orig.mass = ic_orig.mass.astype(params['DTYPE'])
     elif params['TYPE'] == 'shell':
         # Shell-based particle generation for StePS geometries
         pos, mass = create_shell_particles(params)
@@ -163,7 +167,7 @@ def main():
                 log.info(f'Resolution: {res:.0f} voxels, Mass: {mass:.6f} 1e11 Msol/h')
                 nvox, dk = cubic_voxels(res, params['LBOX'])
                 # White noise field for complete reproducibility
-                field = white_noise(nvox=nvox, seed=params['SEED'])
+                field = white_noise(nvox=nvox, seed=params['SEED'], dtype=params['DTYPE'])
                 delta_k = generate_delta_k(kh, pk, nvox, dk, field=field)
 
                 if params['LPTORDER'] == 1:
@@ -197,12 +201,12 @@ def main():
             # a specific resolution.
             nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
             # White noise field for complete reproducibility
-            field = white_noise(nvox=nvox, seed=params['SEED'])
-            delta_k = generate_delta_k(kh, pk, nvox, dk, field=field)
+            field = white_noise(nvox=nvox, seed=params['SEED'], dtype=params['DTYPE'])
+            delta_k = generate_delta_k(kh, pk, nvox, dk, field=field, dtype=params['DTYPE'])
 
             lpt_kwargs = dict(
                 delta_k=delta_k, nvox=nvox, dk=dk, g1=g1, aHf1=aHf1,
-                method=params['INTERPOLATION'], compensate=params['COMPENSATE']
+                method=params['INTERPOLATION'], compensate=params['COMPENSATE'], dtype=params['DTYPE']
             )
             if params['LPTORDER'] == 1:
                 # Use 1st order Lagrangian PT (Zel'dovich approximation)
