@@ -218,7 +218,7 @@ def fourier_grid(
     else:
         kz = scipy.fft.fftfreq(nvox[2]) * 2 * np.pi / dk
     kvec = np.array(np.meshgrid(kx, ky, kz, indexing='ij'), dtype=dtype)
-    kmod = dtype(np.linalg.norm(kvec, axis=0))
+    kmod = np.linalg.norm(kvec, axis=0).astype(dtype)
     return kvec, kmod
 
 
