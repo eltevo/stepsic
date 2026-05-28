@@ -247,7 +247,7 @@ def white_noise(nvox: FloatVec3, seed: Seed = None, dtype: np.dtype = np.float64
         3D array of white noise values.
     '''
     rng = RNG(seed=seed)
-    w_k = scipy.fft.rfftn(dtype(rng.normal(size=nvox, seed=seed)), workers=-1)
+    w_k = scipy.fft.rfftn(rng.normal(size=nvox, seed=seed).astype(dtype), workers=-1)
     w_k[0, 0, 0] = 0.0  # set DC=0 (mean density) as we only need fluctuations
     return w_k
 
