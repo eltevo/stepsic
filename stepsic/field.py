@@ -166,7 +166,8 @@ def anisotropic_voxels(nmesh: int, boxsize: FloatVec3) -> tuple[FloatVec3, float
 def fourier_grid(
         nvox: FloatVec3,
         dk: float,
-        hermitian: bool = False
+        hermitian: bool = False,
+        dtype: np.dtype = np.float64
 ) -> tuple[RealField, RealField]:
     r'''
     Construct a 3D Fourier space grid.
@@ -194,6 +195,8 @@ def fourier_grid(
     hermitian : bool
         If `True`, assume the field has Hermitian symmetry (i.e. it is
         real-valued) and use the reduced FFT along the last dimension.
+    dtype : np.dtype
+        The data type of the generated arrays (e.g., `np.float32` or `np.float64`).
 
     Returns
     -------
@@ -214,12 +217,12 @@ def fourier_grid(
         kz = scipy.fft.rfftfreq(nvox[2]) * 2 * np.pi / dk
     else:
         kz = scipy.fft.fftfreq(nvox[2]) * 2 * np.pi / dk
-    kvec = np.array(np.meshgrid(kx, ky, kz, indexing='ij'))
-    kmod = np.linalg.norm(kvec, axis=0)
+    kvec = np.array(np.meshgrid(kx, ky, kz, indexing='ij'), dtype=dtype)
+    kmod = dtype(np.linalg.norm(kvec, axis=0))
     return kvec, kmod
 
 
-def white_noise(nvox: FloatVec3, seed: Seed = None) -> RealField:
+def white_noise(nvox: FloatVec3, seed: Seed = None, dtype: np.dtype = np.float64) -> RealField:
     r'''
     Return a complex Gaussian array :math:`W(k)` on the ``rfftn()`` grid
     `(Nx, Ny, Nz//2+1)`, obeying Hermitian constraints that guarantee
@@ -244,7 +247,7 @@ def white_noise(nvox: FloatVec3, seed: Seed = None) -> RealField:
         3D array of white noise values.
     '''
     rng = RNG(seed=seed)
-    w_k = scipy.fft.rfftn(rng.normal(size=nvox, seed=seed), workers=-1)
+    w_k = scipy.fft.rfftn(dtype(rng.normal(size=nvox, seed=seed)), workers=-1)
     w_k[0, 0, 0] = 0.0  # set DC=0 (mean density) as we only need fluctuations
     return w_k
 
@@ -258,7 +261,8 @@ def generate_delta_k(
         field: RealField = None,
         seed: Seed = None,
         fixed: bool = False,
-        paired: bool = False
+        paired: bool = False,
+        dtype: np.dtype = np.float64
 ) -> ComplexField:
     r'''
     Generates the Fourier modes of an arbitrary input field from a
@@ -289,6 +293,8 @@ def generate_delta_k(
     paired : bool
         If `True`, generates a paired field by applying a global sign
         flip to the Fourier-space density field.
+    dtype : np.dtype
+        The data type of the generated field (e.g., `np.float32` or `np.float64`).
 
     Returns
     -------
@@ -296,21 +302,21 @@ def generate_delta_k(
         A 3D complex-valued array of shape `(Nx, Ny, Nz//2+1)` representing
         the Fourier modes of the overdensity field.
     '''
-    _, kmod = fourier_grid(nvox, dk, hermitian=True)
+    _, kmod = fourier_grid(nvox, dk, hermitian=True, dtype=dtype)
 
     # interpolate the power spectrum in log-log space
     spline = CubicSpline(np.log(kh), np.log(pk), extrapolate=True)
-    pk_grid = np.zeros_like(kmod, dtype=float)
+    pk_grid = np.zeros_like(kmod, dtype=dtype)
     mask = kmod > 0
     if np.any(mask):
         ktarget_log = np.log(kmod[mask])
         pk_grid[mask] = np.exp(spline(ktarget_log))
 
     if field is None:
-        field = white_noise(nvox=nvox, seed=seed)
+        field = white_noise(nvox=nvox, seed=seed, dtype=dtype)
 
     # Sirko 2005; Bagla & Padmanabhan 1997; Klypin & Holtzman 1997
-    target_A = np.sqrt(pk_grid / dk**3)
+    target_A = np.sqrt(pk_grid / dk**3, dtype=dtype)
     if fixed:
         # Flips phase and sets amplitude to 1 for every mode.
         # Angulo & Pontzen 2016
@@ -325,7 +331,6 @@ def generate_delta_k(
 
     if paired:
         delta_k = -delta_k
-
     return delta_k
 
 

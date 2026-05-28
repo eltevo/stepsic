@@ -70,7 +70,8 @@ def lpt1(
     g1: float,
     aHf1: float,
     compensate: bool = False,
-    method: str = 'cic'
+    method: str = 'cic',
+    dtype: np.dtype = np.float64,
 ) -> Tuple[RealField, RealField]:
     r'''
     Apply the Zel'dovich approximation (1LPT) to displace particles.
@@ -107,6 +108,8 @@ def lpt1(
         regular lattices where particles sit on grid nodes.
     method : {'ngp', 'cic', 'tsc'}
         Interpolation kernel (default: ``'cic'``).
+    dtype : np.dtype
+        Numerical precision for Fourier-space calculations (default: ``np.float64``).
 
     Returns
     -------
@@ -115,20 +118,23 @@ def lpt1(
     vpert : ndarray of shape (N, 3)
         Peculiar velocities [km/s].
     '''
-    kvec, kmod = fourier_grid(nvox, dk, hermitian=True)
+    kvec, kmod = fourier_grid(nvox, dk, hermitian=True, dtype=dtype)
     mask = kmod > 0.0  # Avoid division by zero at k = 0
-    phi_k = np.zeros_like(kmod, dtype=complex)
+    if dtype == np.float32:
+        phi_k = np.zeros_like(kmod, dtype=np.complex64)
+    else:
+        phi_k = np.zeros_like(kmod, dtype=np.complex128)
     phi_k[mask] = -delta_k[mask] / kmod[mask]**2  # Gravitational potential in Fourier space
     psi1_k = -1j * phi_k[np.newaxis, ...] * kvec  # Displacement field in Fourier space
-    boxsize = np.asarray(nvox) * dk
+    boxsize = np.asarray(nvox, dtype=dtype) * dk
     # Apply deconvolution to pre-sharpen the field before interpolation
     if compensate:
-        W_inv = compensation_kernel(kvec, nvox, boxsize, method=method)
+        W_inv = compensation_kernel(kvec, nvox, boxsize, method=method, dtype=dtype)
         psi1_k *= W_inv[np.newaxis, ...]
     disp_field = scipy.fft.irfftn(psi1_k, s=nvox, axes=(-3, -2, -1), workers=-1)
     disp_field_interp = interpolate_field(
         x=x, field=disp_field, boxsize=boxsize,
-        origin=-boxsize / 2, method=method, vox_offset=0.5, periodic=True)
+        origin=-boxsize / 2, method=method, vox_offset=0.5, periodic=True, dtype=dtype)
     xpert = x + g1 * disp_field_interp  # Bernardeau et al. 2002, eq. 98
     vpert = g1 * aHf1 * disp_field_interp  # Bernardeau et al. 2002, eq. 99
     return xpert, vpert
@@ -145,6 +151,7 @@ def lpt2(
     aHf2: float,
     compensate: bool = False,
     method: str = 'cic',
+    dtype: np.dtype = np.float64
 ) -> tuple[RealField, RealField]:
     r'''
     Apply second-order LPT (2LPT) to displace particles.
@@ -191,6 +198,8 @@ def lpt2(
         Apply MAS deconvolution before interpolation (see `lpt1`).
     method : {'ngp', 'cic', 'tsc'}
         Interpolation kernel (default: ``'cic'``).
+    dtype : np.dtype
+        Numerical precision for Fourier-space calculations (default: ``np.float64``).
 
     Returns
     -------
@@ -203,16 +212,19 @@ def lpt2(
     --------
     lpt1 : First-order (Zel'dovich) displacement only.
     '''
-    kvec, kmod = fourier_grid(nvox, dk, hermitian=True)
+    kvec, kmod = fourier_grid(nvox, dk, hermitian=True, dtype=dtype)
     mask = kmod > 0.0  # Avoid division by zero at k = 0
-    boxsize = np.asarray(nvox) * dk
+    boxsize = np.asarray(nvox, dtype=dtype) * dk
 
     # Precompute deconvolution kernel if needed
     if compensate:
-        W_inv = compensation_kernel(kvec, nvox, boxsize, method=method)
+        W_inv = compensation_kernel(kvec, nvox, boxsize, method=method, dtype=dtype)
 
     # -- 1. First-order displacement (Psi^(1)) --------------------------------
-    phi1_k = np.zeros_like(kmod, dtype=complex)
+    if dtype == np.float32:
+        phi1_k = np.zeros_like(kmod, dtype=np.complex64)
+    else:
+        phi1_k = np.zeros_like(kmod, dtype=np.complex128)
     phi1_k[mask] = -delta_k[mask] / kmod[mask]**2  # Gravitational potential in Fourier space
     psi1_k = -1j * phi1_k[np.newaxis, ...] * kvec  # Displacement field in Fourier space
     # Apply deconvolution to pre-sharpen before interpolation
@@ -261,10 +273,10 @@ def lpt2(
     # first- and second-order) from the grid to the particle positions.
     disp_field1_interp = interpolate_field(
         x=x, field=disp_field1, boxsize=boxsize,
-        origin=-boxsize / 2, method=method, vox_offset=0.5, periodic=True)
+        origin=-boxsize / 2, method=method, vox_offset=0.5, periodic=True, dtype=dtype)
     disp_field2_interp = interpolate_field(
         x=x, field=disp_field2, boxsize=boxsize,
-        origin=-boxsize / 2, method=method, vox_offset=0.5, periodic=True)
+        origin=-boxsize / 2, method=method, vox_offset=0.5, periodic=True, dtype=dtype)
 
     xpert = x + g1 * disp_field1_interp + g2 * disp_field2_interp
     vpert = g1 * aHf1 * disp_field1_interp + g2 * aHf2 * disp_field2_interp

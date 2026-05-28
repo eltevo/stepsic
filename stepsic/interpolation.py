@@ -186,6 +186,7 @@ def compensation_kernel(
     nvox: IntVec3,
     boxsize: FloatVec3,
     method: str | InterpolationKernel = 'cic',
+    dtype: np.dtype = np.float64,
 ) -> RealField:
     r'''
     Compute the deconvolution kernel that compensates for the smoothing
@@ -208,6 +209,8 @@ def compensation_kernel(
         Physical size of the box.
     method : str or InterpolationKernel
         Interpolation method: 'ngp', 'cic', 'tsc', or a kernel instance.
+    dtype : np.dtype
+        Numerical precision for the output kernel (default: np.float64).
 
     Returns
     -------
@@ -244,8 +247,8 @@ def compensation_kernel(
     else:
         kernel = method
 
-    nvox = np.asarray(nvox, dtype=np.float64)
-    boxsize = np.asarray(boxsize, dtype=np.float64)
+    nvox = np.asarray(nvox, dtype=dtype)
+    boxsize = np.asarray(boxsize, dtype=dtype)
 
     # Nyquist wavenumber per axis: k_Ny = pi * N / L
     k_ny = np.pi * nvox / boxsize  # shape (3,)
@@ -281,6 +284,8 @@ class FieldInterpolator:
         Interpolation kernel: 'ngp', 'cic', 'tsc', or a custom kernel instance.
     geometry : GridGeometry
         Grid geometry specification.
+    dtype : np.dtype
+        Floating-point precision used for interpolation computations and output.
 
     Examples
     --------
@@ -299,11 +304,15 @@ class FieldInterpolator:
         self, 
         kernel: str | InterpolationKernel,
         geometry: GridGeometry,
+        dtype: np.dtype = np.float64,
     ):
         if isinstance(kernel, str):
             kernel = KERNELS[kernel.lower()]()
         self.kernel = kernel
         self.geometry = geometry
+        self.dtype = np.dtype(dtype)
+        if not np.issubdtype(self.dtype, np.floating):
+            raise TypeError('dtype must be a floating-point type')
 
     def __call__(
             self,
@@ -325,19 +334,20 @@ class FieldInterpolator:
         ndarray
             Interpolated field values at the input positions, shape ``(N, ncomp)``.
         '''
+        field = np.asarray(field, dtype=self.dtype)
+
         # Convert positions to fractional grid coordinates
         g = self.geometry.pos_to_grid(x)  # (N, 3)
         g_int = np.floor(g).astype(np.int32, copy=False)
-        g_frc = g - g_int
+        g_frc = (g - g_int).astype(self.dtype, copy=False)
  
         # Compute 1-D weights along each axis; shape (support, N)
         wx, wy, wz = (
             np.vstack(self.kernel.weights(g_frc[:, i])) for i in range(3)
         )
 
-        # Promote result type to float to avoid integer truncation; shape (N, ncomp)
-        res_dtype = np.result_type(field.dtype, np.float64)
-        result = np.zeros((x.shape[0], field.shape[0]), dtype=res_dtype)
+        # Shape (N, ncomp)
+        result = np.zeros((x.shape[0], field.shape[0]), dtype=self.dtype)
 
         # Loop over all combinations of kernel offsets
         nvox = self.geometry.nvox
@@ -376,6 +386,8 @@ class FieldDepositor:
         a custom kernel instance.
     geometry : GridGeometry
         Grid geometry specification.
+    dtype : np.dtype
+        Floating-point precision used for deposition computations and output.
  
     Examples
     --------
@@ -396,11 +408,15 @@ class FieldDepositor:
         self,
         kernel: str | InterpolationKernel,
         geometry: GridGeometry,
+        dtype: np.dtype = np.float64,
     ):
         if isinstance(kernel, str):
             kernel = KERNELS[kernel.lower()]()
         self.kernel = kernel
         self.geometry = geometry
+        self.dtype = np.dtype(dtype)
+        if not np.issubdtype(self.dtype, np.floating):
+            raise TypeError('dtype must be a floating-point type')
  
     def __call__(
         self,
@@ -431,19 +447,19 @@ class FieldDepositor:
  
         # Handle scalar vs. vector deposit
         if values is None:
-            values = np.ones((N, 1), dtype=np.float64)
+            values = np.ones((N, 1), dtype=self.dtype)
         else:
-            values = np.asarray(values, dtype=np.float64)
+            values = np.asarray(values, dtype=self.dtype)
             if values.ndim == 1:
                 values = values[:, np.newaxis]  # (N,) -> (N, 1)
         ncomp = values.shape[1]
  
-        grid = np.zeros((ncomp, *nvox), dtype=np.float64)
+        grid = np.zeros((ncomp, *nvox), dtype=self.dtype)
  
         # Convert positions to fractional grid coordinates
         g = self.geometry.pos_to_grid(x)  # (N, 3)
         g_int = np.floor(g).astype(np.int32, copy=False)
-        g_frc = g - g_int
+        g_frc = (g - g_int).astype(self.dtype, copy=False)
  
         # Compute 1-D weights along each axis; shape (support, N)
         wx, wy, wz = (
@@ -479,6 +495,7 @@ def interpolate_field(
     method: str = 'cic',
     vox_offset: float = 0.0,
     origin: FloatVec3 | None = None,
+    dtype: np.dtype = np.float64,
 ) -> RealField:
     '''
     Interpolate a 3D field at particle positions.
@@ -513,7 +530,7 @@ def interpolate_field(
         origin=origin,
         periodic=periodic,
     )
-    interpolator = FieldInterpolator(method, geometry)
+    interpolator = FieldInterpolator(method, geometry, dtype=dtype)
     return interpolator(field, x)
 
 
