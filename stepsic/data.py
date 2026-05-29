@@ -127,7 +127,9 @@ class CosmoData:
             self.Lbox = params['LBOX'][2]
             return
         elif params['GEOMETRY'] == 'spherical':
-            # no rescaling needed for spherical (R^3) geometry
+            # in spherical (R^3) geometry, we only need to rescale the the glass to h-independent units, if the input snapshot is in h-dependent units.
+            if not params['HINDEPENDENT']:
+                self.pos *= params['H']
             return
         else:
             # this should never happen 

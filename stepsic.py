@@ -237,6 +237,11 @@ def main():
         params['R_3D'] /= params['H']
         params['D_4D'] /= params['H']
 
+    if params['GEOMETRY'] == 'spherical':
+        # shifting back the center of the sphere to the origin
+        log.info('Shifting the center of the sphere back to the origin...')
+        ic.pos += params['COI']
+
     if not params['COMOVING'] and params['LPTORDER'] > 0:
         log.info('Converting the IC to proper coordinates...')
         ic.pos *= params['SCALE']
