@@ -224,6 +224,7 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('IC_DIR', ptype=PType.PATH_MKDIR, label="IC output directory"),
     Param('IC_PREFIX', ptype=PType.STRING, label="IC name prefix"),
     Param('IC_FORMAT', ptype=PType.STRING, label="Output format", choices=('ascii', 'gadget', 'hdf5')),
+    Param('SAVE_WHITE_NOISE', ptype=PType.BOOL, label="Save white noise field"),
 
     # -- Stereographic projection --------------------------------------
     Param('R_3D', label="Euclidean sim. radius", h_scaled=True, h_display=True, h_precision=4),

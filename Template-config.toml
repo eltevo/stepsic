@@ -123,9 +123,10 @@ NMESHSAMPLES = 7       # Number of resolution levels for multiscale IC.
 
 # TODO: INPUT_WHITE_NOISE = "example/ic_white_noise.hdf5"  # Path to the input white noise file. If not provided, a `white noise` will be generated. This file should contain a 3D array of random numbers with the same shape as the mesh size defined by `NGRID`.
 # TODO: INPUT_DELTA_K = "example/ic_delta_k.hdf5"  # Path to the input delta_k file. If not provided, a `delta_k` will be generated.
-IC_DIR = "output"      # Base output directory for the generated files. Subdirectories will be created based on the IC parameters to store the generated files in an organized way.
-IC_PREFIX = "stepsic"  # Name prefix of the output subdirectories and files.
-IC_FORMAT = "hdf5"     # Output file format. Options: "hdf5", "gadget", "ascii"
+IC_DIR = "output"        # Base output directory for the generated files. Subdirectories will be created based on the IC parameters to store the generated files in an organized way.
+IC_PREFIX = "stepsic"    # Name prefix of the output subdirectories and files.
+IC_FORMAT = "hdf5"       # Output file format. Options: "hdf5", "gadget", "ascii"
+SAVE_WHITE_NOISE = false # If 'true', delta_k and the white noise will be saved into separate hdf5 files for reproducibility.
 
 
 # -- 5. Cosmology parameters -------------------------------------------
