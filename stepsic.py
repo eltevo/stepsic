@@ -46,12 +46,52 @@ from stepsic.field import (
     generate_delta_k,
     white_noise,
 )
-from stepsic.geometry import create_shell_particles
+from stepsic.geometry import create_pds_grid_particles, create_shell_particles
 from stepsic.lpt import log_lpt, lpt1, lpt2
 from stepsic.parameters import CosmoParameters
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+
+def finalize_pds_ic(ic, params):
+    """
+    Post-process a PDS initial condition after the LPT displacements:
+
+    1. wrap particles that were displaced outside the dodecahedral
+       fundamental domain back into it (applying the corresponding I*
+       isometry to their velocities via the exact stereographic Jacobian),
+    2. attach the (N, 4) unit-quaternion positions to the IC, which the
+       HDF5 writer stores as /PartType1/Quaternions (StePS uses them
+       directly and skips the projection + wrap at IC load time).
+
+    The quaternion map x -> q only depends on the ratio x/R_curv, so it is
+    insensitive to the h-dependent vs h-independent unit choice as long as
+    positions and PDS_R_CURV are in the same (internal) units - which they
+    are at this point in the pipeline.  The velocity transformation is
+    linear in v and therefore commutes with the later scalar unit
+    conversions.
+    """
+    from stepsic import pds
+
+    R = float(np.asarray(params['PDS_R_CURV']))
+    quat = pds.inverse_stereo(ic.pos, R)
+    inside = pds.in_domain(quat)
+    n_out = int(np.sum(~inside))
+    if n_out > 0:
+        log.info(
+            f'PDS: wrapping {n_out} particle(s) displaced outside the '
+            f'fundamental domain (of {ic.N_part}).'
+        )
+        q_in = quat[~inside]
+        q_wrapped = pds.wrap(q_in)
+        x_wrapped = pds.stereo_project(q_wrapped, R)
+        ic.vel[~inside] = pds.stereo_vel_transform(
+            q_in, q_wrapped, ic.pos[~inside], x_wrapped,
+            ic.vel[~inside], R).astype(ic.vel.dtype)
+        ic.pos[~inside] = x_wrapped.astype(ic.pos.dtype)
+        quat[~inside] = q_wrapped
+    ic.quat = quat
 
 
 def main():
@@ -84,9 +124,18 @@ def main():
             mass=mass.astype(params['DTYPE']),
         )
     elif params['TYPE'] == 'grid':
-        nvox, dk = cubic_voxels(params['NGRID'], params['LBOX'])
-        pos, _ = create_grid(nvox, dk)
-        ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
+        if params['GEOMETRY'] == 'pds':
+            # grid clipped to the dodecahedral fundamental domain with
+            # conformal-volume (Omega^3) mass weighting
+            pos, mass = create_pds_grid_particles(params)
+            ic_orig = CosmoData(
+                pos=pos.astype(params['DTYPE']),
+                mass=mass.astype(params['DTYPE']),
+            )
+        else:
+            nvox, dk = cubic_voxels(params['NGRID'], params['LBOX'])
+            pos, _ = create_grid(nvox, dk)
+            ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
     elif params['TYPE'] == 'random':
         pos = create_particles(
             npart=params['NPART'], boxsize=params['LBOX'], seed=params['SEED'])
@@ -104,6 +153,8 @@ def main():
             'Writing unperturbed particle load for glass-making.'
         )
         ic.periodic_shift(params)
+        if params['GEOMETRY'] == 'pds':
+            finalize_pds_ic(ic, params)
 
     else:
         # Initialize cosmology models and calculate growth parameters
@@ -220,6 +271,9 @@ def main():
             ic.pos = xpert
             ic.vel = vpert
 
+        if params['GEOMETRY'] == 'pds':
+            finalize_pds_ic(ic, params)
+
         # Prepare the IC for final output
         ic.vel /= params['H']  # Convert to [km/s] in all cases
         ic.vel /= np.sqrt(params['SCALE'])  # Gadget/StePS convention
@@ -236,6 +290,8 @@ def main():
         params['COI'] /= params['H']
         params['R_3D'] /= params['H']
         params['D_4D'] /= params['H']
+        if params['GEOMETRY'] == 'pds':
+            params['PDS_R_CURV'] = np.asarray(params['PDS_R_CURV']) / params['H']
 
     if params['GEOMETRY'] == 'spherical':
         # shifting back the center of the sphere to the origin
@@ -259,6 +315,10 @@ def main():
         'dtype': params['DTYPE'],
         'SimulationRadius': params['R_3D'],
     }
+    if params['GEOMETRY'] == 'pds':
+        # geodesic inradius of the fundamental domain (R_curv * pi/10)
+        header['SimulationRadius'] = float(np.asarray(params['PDS_R_CURV'])) * np.pi / 10.0
+        header['PDS_R_CURV'] = float(np.asarray(params['PDS_R_CURV']))
     ic.save_snapshot(path=run_dir / 'ic.hdf5', fmt=params['IC_FORMAT'], **header)
     if params['LPTORDER'] > 0 and params['SAVE_WHITE_NOISE']:
         with h5py.File(run_dir / 'ic_white_noise.hdf5', 'w') as f:

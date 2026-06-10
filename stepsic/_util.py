@@ -96,6 +96,9 @@ def _run_dirname(params: dict) -> str:
     elif params['GEOMETRY'] in ['spherical', 'cylindrical']:
         parts.append(f'R3D{params["R_3D"]:.0f}_D4D{params["D_4D"]:.0f}')
         parts.append(f'Lz{params["LBOX"][2]:.0f}')
+    elif params['GEOMETRY'] == 'pds':
+        parts.append(f'Rcurv{float(params["PDS_R_CURV"]):.0f}')
+        parts.append(f'L{params["LBOX"][0]:.0f}')
 
     parts.append(_resolution_tag(params))
 

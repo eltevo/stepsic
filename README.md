@@ -30,6 +30,7 @@ Supported geometry families:
 - **Cubical/cuboid**: standard boxes with arbitrary aspect ratios and configurable periodic axes.
 - **Spherical**: open StePS $\mathbb{R}^3$ geometry for observer-centric, true zoom-in simulations.
 - **Cylindrical**: StePS $S^1 \times \mathbb{R}^2$ geometry, periodic along the cylinder axis and open in the stereographic radial directions.
+- **PDS**: StePS $S^3/I^*$ (Poincaré Dodecahedral Space) geometry — a regular stereographic grid clipped to the dodecahedral fundamental domain, with conformal-volume ($\Omega^3$) mass weighting for an exactly uniform comoving density on $S^3$, escaped-particle wrapping with the exact velocity Jacobian, and a `/PartType1/Quaternions` dataset in the output (set `GEOMETRY = "pds"`, `PDS_R_CURV`, `TYPE = "grid"`; the quaternion utilities live in `stepsic/pds.py` with unit tests in `tests/test_pds.py`). The LPT displacements use the flat-space $P(k)$ — a valid approximation for domain sizes $\lesssim 0.3\,R_{\rm curv}$; the discrete $S^3$ spectrum is future work.
 
 ## Installation
 
@@ -129,7 +130,7 @@ All runtime settings live in one TOML file. The starting point is [Template-conf
 
 ### Geometry and volume
 
-`GEOMETRY` selects the domain. Use `cubical` for conventional boxes, `spherical` for open StePS spheres, and `cylindrical` for StePS cylinders. `LBOX`, `PERIODIC`, and `COI` define the box dimensions, boundary conditions, and center of interest. In StePS geometries, `R_3D`, `D_4D`, `BIN_MODE`, and `NRBINS` additionally define the stereographic projection and its radial mass-resolution bins.
+`GEOMETRY` selects the domain. Use `cubical` for conventional boxes, `spherical` for open StePS spheres, `cylindrical` for StePS cylinders, and `pds` for the StePS Poincaré Dodecahedral Space. `LBOX`, `PERIODIC`, and `COI` define the box dimensions, boundary conditions, and center of interest. In StePS geometries, `R_3D`, `D_4D`, `BIN_MODE`, and `NRBINS` additionally define the stereographic projection and its radial mass-resolution bins. For `pds`, `PDS_R_CURV` sets the curvature radius of $S^3$ and `LBOX` only sizes the LPT FFT mesh (it must enclose the fundamental domain: `min(LBOX) >= 2*PDS_R_CURV*tan(10.7°)`).
 
 For spherical runs, `PERIODIC` is effectively non-periodic in all directions. For cylindrical runs, the axial direction is periodic while the stereographic radial directions are open.
 

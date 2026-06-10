@@ -193,7 +193,7 @@ _COSMO_DISPLAY: tuple[Param, ...] = tuple(
 # Parameter table - IC parameters
 IC_PARAMS: tuple[Param, ...] = (
     # -- Geometry, box, and scale --------------------------------------
-    Param('GEOMETRY', ptype=PType.STRING, label="Geometry", choices=('cylindrical', 'spherical', 'cubical')),
+    Param('GEOMETRY', ptype=PType.STRING, label="Geometry", choices=('cylindrical', 'spherical', 'cubical', 'pds')),
     Param('LBOX', ptype=PType.ARRAY, label="Box size [X, Y, Z]", h_scaled=True, h_display=True),
     Param('PERIODIC', ptype=PType.ARRAY, label="Periodicity [X, Y, Z]", array_dtype=bool),
     Param('REDSHIFT',                  label="Target redshift", fmt=".2f"),
@@ -229,6 +229,8 @@ IC_PARAMS: tuple[Param, ...] = (
     # -- Stereographic projection --------------------------------------
     Param('R_3D', label="Euclidean sim. radius", h_scaled=True, h_display=True, h_precision=4),
     Param('D_4D', label="Compact. sim. diameter", h_scaled=True, h_display=True, h_precision=4),
+    Param('PDS_R_CURV', label="PDS curvature radius", h_scaled=True, h_display=True, h_precision=4,
+          condition=lambda P: P.get('GEOMETRY') == 'pds'),
     Param('BIN_MODE', ptype=PType.STRING, label="Binning mode", choices=('omega', 'volume'), condition=lambda P: P.get('TYPE') == 'shell'),
     Param('NRBINS', ptype=PType.INT, label="Radial bins", condition=lambda P: P.get('TYPE') == 'shell'),
     Param('RCRIT', label="Constant-res. radius", h_scaled=True, h_display=True, h_precision=4,
@@ -270,17 +272,17 @@ IC_DERIVED: tuple[Param, ...] = (
 IC_CONSTRAINTS: tuple[Constraint, ...] = (
     # -- TYPE / GEOMETRY compatibility ---------------------------------
     Constraint(
-        check=lambda P: P.get('TYPE') != 'shell' or P.get('GEOMETRY') != 'cubical',
+        check=lambda P: P.get('TYPE') != 'shell' or P.get('GEOMETRY') not in ('cubical', 'pds'),
         message=lambda P: (
-            "TYPE='shell' is not valid for cubical geometry. "
-            "Use TYPE='grid' or TYPE='random' instead."
+            f"TYPE='shell' is not valid for {P['GEOMETRY']} geometry. "
+            "Use TYPE='grid' instead."
         ),
         level='error',
     ),
     Constraint(
-        check=lambda P: P.get('TYPE') != 'grid' or P.get('GEOMETRY') == 'cubical',
+        check=lambda P: P.get('TYPE') != 'grid' or P.get('GEOMETRY') in ('cubical', 'pds'),
         message=lambda P: (
-            f"TYPE='grid' is only valid for cubical geometry, "
+            f"TYPE='grid' is only valid for cubical and pds geometries, "
             f"got GEOMETRY='{P['GEOMETRY']}'. "
             f"Use TYPE='shell' for cylindrical/spherical geometries."
         ),
@@ -291,9 +293,55 @@ IC_CONSTRAINTS: tuple[Constraint, ...] = (
         message=lambda P: (
             f"TYPE='random' is only valid for cubical geometry, "
             f"got GEOMETRY='{P['GEOMETRY']}'. "
-            f"Use TYPE='shell' for cylindrical/spherical geometries."
+            f"Use TYPE='shell' for cylindrical/spherical geometries, "
+            f"TYPE='grid' for pds."
         ),
         level='error',
+    ),
+
+    # -- PDS (Poincare Dodecahedral Space) geometry --------------------
+    Constraint(
+        # the box must enclose the fundamental domain: the stereographic
+        # vertex (outradius) distance is R_curv * tan(~10.7 deg)
+        check=lambda P: (
+            P.get('GEOMETRY') != 'pds'
+            or np.min(P.get('LBOX', [0])) >= 2.0 * np.tan(np.radians(10.7)) * np.asarray(P.get('PDS_R_CURV', np.inf))
+        ),
+        message=lambda P: (
+            f"GEOMETRY='pds' requires min(LBOX) >= 2*PDS_R_CURV*tan(10.7deg) "
+            f"= {2.0 * np.tan(np.radians(10.7)) * np.asarray(P['PDS_R_CURV']):.1f} "
+            f"so the box encloses the dodecahedral fundamental domain "
+            f"(vertices at stereographic radius PDS_R_CURV*tan(~10.7deg))."
+        ),
+        level='error',
+    ),
+    Constraint(
+        check=lambda P: P.get('GEOMETRY') != 'pds' or not np.any(P.get('PERIODIC', [False])),
+        message=lambda P: (
+            "GEOMETRY='pds' requires PERIODIC=[false, false, false]: "
+            "the S^3/I* boundary identifications are handled by StePS itself."
+        ),
+        level='error',
+    ),
+    Constraint(
+        check=lambda P: P.get('GEOMETRY') != 'pds' or P.get('COMOVING', True),
+        message=lambda P: (
+            "GEOMETRY='pds' requires COMOVING=true: the quaternion/velocity "
+            "consistency of the PDS IC is only defined in comoving coordinates."
+        ),
+        level='error',
+    ),
+    Constraint(
+        check=lambda P: (
+            P.get('GEOMETRY') != 'pds'
+            or np.min(P.get('LBOX', [0])) <= 3.6 * np.tan(np.radians(10.5)) * np.asarray(P.get('PDS_R_CURV', 0))
+        ),
+        message=lambda P: (
+            "LBOX is much larger than the PDS fundamental domain "
+            "(vertices at PDS_R_CURV*tan(~10.5deg)); most of the FFT mesh "
+            "resolution is wasted outside the domain."
+        ),
+        level='warning',
     ),
 
     # -- NMESH / TYPE compatibility ------------------------------------

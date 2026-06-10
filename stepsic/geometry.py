@@ -1035,3 +1035,63 @@ def create_shell_particles(params: dict) -> tuple[NDArray, NDArray]:
         raise ValueError(f"Unknown GEOMETRY '{geometry}'.")
 
     return pos, mass
+
+def create_pds_grid_particles(params: dict) -> tuple[NDArray, NDArray]:
+    r'''
+    Particle load for the Poincaré Dodecahedral Space (PDS) geometry.
+
+    Builds a regular Cartesian grid (spacing ``LBOX/NGRID``, centred on the
+    origin of the stereographic coordinate system), keeps only the points
+    whose quaternion image lies inside the dodecahedral fundamental domain
+    of :math:`S^3/I^*`, and weights each particle mass with the cube of the
+    stereographic conformal factor
+
+    .. math::
+        m_i \propto \Omega(r_i)^3\,\Delta x^3,
+        \qquad \Omega(r) = \frac{2 R^2}{R^2 + r^2},
+
+    which makes the comoving density on :math:`S^3` exactly uniform
+    (:math:`\Omega^3\,d^3x` is the physical volume element of the
+    stereographic chart).  The absolute mass normalisation is applied later
+    by :meth:`stepsic.data.CosmoData.rescale_snapshot_mass` using the
+    fundamental-domain volume :math:`V = \pi^2 R^3 / 60`.
+
+    This function should be called when ``GEOMETRY = 'pds'`` and
+    ``TYPE = 'grid'`` are selected in the configuration.
+
+    Parameters
+    ----------
+    params : dict
+        Full parameter dictionary.  Must contain ``'NGRID'``, ``'LBOX'``
+        and ``'PDS_R_CURV'`` (curvature radius, internal length units).
+
+    Returns
+    -------
+    pos : ndarray of shape (N, 3)
+        Particle positions in stereographic Cartesian coordinates,
+        centred on the domain centre (internal length units).
+    mass : ndarray of shape (N,)
+        Relative particle masses (conformal-volume weighted; the absolute
+        normalisation is applied by ``rescale_snapshot_mass``).
+    '''
+    from stepsic.field import create_grid, cubic_voxels
+    from stepsic import pds
+
+    R = float(np.asarray(params['PDS_R_CURV']))
+    nvox, dx = cubic_voxels(params['NGRID'], params['LBOX'])
+    pos, _ = create_grid(nvox, dx)  # already centred on the origin
+
+    quat = pds.inverse_stereo(pos, R)
+    inside = pds.in_domain(quat)
+    pos = pos[inside]
+    log.info(
+        f'PDS: {inside.sum()} of {inside.size} grid points are inside the '
+        f'dodecahedral fundamental domain (R_curv = {R:.1f}).'
+    )
+    if inside.sum() == 0:
+        raise ValueError(
+            'PDS particle load is empty - check LBOX/NGRID/PDS_R_CURV.'
+        )
+
+    mass = pds.conformal_factor(pos, R) ** 3 * dx ** 3
+    return pos, mass

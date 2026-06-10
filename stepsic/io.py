@@ -443,9 +443,16 @@ class CosmoIO:
             h.attrs['Flag_Metals'] = float(kwargs.get('Flag_Metals', 0.0))
             h.attrs['Flag_Feedback'] = float(kwargs.get('Flag_Feedback', 0.0))
             h.attrs['Flag_Entropy_ICs'] = float(kwargs.get('Flag_Entropy_ICs', 0.0))
+            if 'PDS_R_CURV' in kwargs:
+                h.attrs['PDS_R_CURV'] = float(kwargs['PDS_R_CURV'])
 
             p = hdf_file.create_group(f"/PartType{part_type}")
             p.create_dataset('ParticleIDs', data=data.id)
             p.create_dataset('Coordinates', data=data.pos, dtype=dtype)
             p.create_dataset('Velocities', data=data.vel, dtype=dtype)
             p.create_dataset('Masses', data=data.mass, dtype=dtype)
+            if getattr(data, 'quat', None) is not None:
+                # unit quaternions on S^3 (PDS geometry); StePS reads this
+                # dataset directly and skips the inverse stereographic
+                # projection + wrapping at IC load time
+                p.create_dataset('Quaternions', data=data.quat, dtype=np.float64)

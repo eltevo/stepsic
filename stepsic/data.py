@@ -39,7 +39,7 @@ class CosmoData:
     data : ndarray of shape (N, 7)
         Array containing the particle data, where N is the number of particles.
     '''
-    def __init__(self, id=None, pos=None, vel=None, mass=None, Lbox=None):
+    def __init__(self, id=None, pos=None, vel=None, mass=None, Lbox=None, quat=None):
         if pos is None:
             raise ValueError('Particle positions must be provided!')
         if id is None:
@@ -53,6 +53,7 @@ class CosmoData:
         self.vel = vel    # Particle velocities
         self.mass = mass  # Particle masses
         self.Lbox = Lbox  # Linear size of the simulation volume (in z direction)
+        self.quat = quat  # (N, 4) unit quaternions on S^3 (PDS geometry only)
 
         # Calculated values
         self.N_part = self.id.size  # Number of particles
@@ -153,6 +154,10 @@ class CosmoData:
             V_sim = params['R_3D']**2 * np.min(params['LBOX']) * np.pi
         elif params['GEOMETRY'] == 'cubical':
             V_sim = np.prod(params['LBOX'])
+        elif params['GEOMETRY'] == 'pds':
+            # physical volume of the S^3/I* fundamental domain:
+            # Vol(S^3)/|I*| = 2 pi^2 R^3 / 120
+            V_sim = np.pi**2 * float(np.asarray(params['PDS_R_CURV']))**3 / 60.0
         omega_m_box = (M_tot / V_sim) / params['RHO_CRIT']
         if np.isclose(omega_m_box, params['OMEGA_M'], rtol=1e-9):
             log.info(f'Omega_m calculated from particle masses: {omega_m_box = :.6f}')
@@ -179,6 +184,10 @@ class CosmoData:
         params : dict
             Dictionary containing the cosmological parameters.
         '''
+        if params['GEOMETRY'] == 'pds':
+            # the PDS particle load is generated centred on the domain centre;
+            # a Center-of-Interest shift would break the quaternion mapping
+            return
         log.info('Centering the particles around the Center-of-Interest...')
         # move the particles to the center of the box
         Lbox_half = np.multiply(params['LBOX'], 0.5)

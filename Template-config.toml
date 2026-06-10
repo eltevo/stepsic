@@ -21,8 +21,25 @@
 #    "cubical"        Standard periodic box.    TYPE = "grid", "random" or "glass".
 #    "cylindrical"    StePS S^1 x R^2.          TYPE = "glass" or "shell".
 #    "spherical"      StePS R^3.                TYPE = "glass" or "shell".
+#    "pds"            StePS S^3/I* (Poincare    TYPE = "grid".
+#                     Dodecahedral Space).
+#
+#  For "pds": set PDS_R_CURV (curvature radius of S^3, e.g. 3100 Mpc for the
+#  Luminet et al. 2003 best fit). The particle load is a regular grid clipped
+#  to the dodecahedral fundamental domain (stereo vertex radius
+#  PDS_R_CURV*tan(~10.7 deg)), with masses weighted by the conformal volume
+#  factor Omega(r)^3 = (2R^2/(R^2+r^2))^3 so the comoving density on S^3 is
+#  exactly uniform. LBOX only defines the LPT FFT mesh and must enclose the
+#  domain: min(LBOX) >= 2*PDS_R_CURV*tan(10.7 deg). Requires
+#  PERIODIC = [0, 0, 0] and COMOVING = true. The output HDF5 contains a
+#  /PartType1/Quaternions dataset that StePS uses directly.
 
 GEOMETRY = "cubical"
+
+# ** PDS geometry ******************************************************
+#  Curvature radius of S^3 [Mpc] (or [Mpc/h] if HINDEPENDENT = true).
+#  Only required when GEOMETRY = "pds".
+# PDS_R_CURV = 3100.0
 
 # ** Cubical geometry **************************************************
 #  Box dimensions. LBOX defines all three side lengths. You can use a
