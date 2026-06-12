@@ -1,4 +1,8 @@
 .vscode/
+.agents/
+.claude/
+AGENTS.md
+CLAUDE.md
 
 # data files written by the stepsic package
 examples/
