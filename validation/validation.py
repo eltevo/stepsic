@@ -232,7 +232,7 @@ def run_lpt(
     delta_k : ndarray
         Fourier-space overdensity field.
     nvox : ndarray, shape (3,)
-        Number of grid cells per dimension.
+        Number of voxels in each dimension of the grid `(Nx, Ny, Nz)`.
     dk : float
         Physical cell size [Mpc/h].
     growth : GrowthData
@@ -302,7 +302,7 @@ def generate_field(
     Parameters
     ----------
     nvox : ndarray, shape (3,)
-        Number of grid cells per dimension.
+        Number of voxels in each dimension of the grid `(Nx, Ny, Nz)`.
     dk : float
         Physical cell size [Mpc/h].
     growth : GrowthData

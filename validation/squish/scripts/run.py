@@ -39,7 +39,7 @@ import time
 import numpy as np
 from scipy.interpolate import CubicSpline
 
-from stepsic.field import create_grid, fourier_grid, wrap
+from stepsic.field import create_grid, fourier_kmod, wrap
 from stepsic.pk import _bin_isotropic_modes, measure_pk
 
 from validation import (
@@ -109,7 +109,7 @@ def _fixed_dk_mesh(
     Returns
     -------
     nvox : ndarray of int, shape (3,)
-        Number of voxels per axis (guaranteed even).
+        Number of voxels in each dimension of the grid `(Nx, Ny, Nz)`.
     mesh_boxsize : ndarray of float, shape (3,)
         Effective periodic box: ``nvox * dk``.
     '''
@@ -137,7 +137,7 @@ def _band_average_reference_pk(
     '''Band-average the input theory P(k) over the exact discrete
     Fourier modes for a given box geometry.
     '''
-    _, kmod = fourier_grid(nvox, dk, hermitian=True)
+    kmod = fourier_kmod(nvox, dk, hermitian=True)
     pk_spline = CubicSpline(
         np.log(kh_input), np.log(pk_input), extrapolate=False,
     )

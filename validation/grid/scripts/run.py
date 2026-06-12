@@ -53,7 +53,7 @@ from scipy.interpolate import CubicSpline
 from stepsic.field import (
     create_grid,
     cubic_voxels,
-    fourier_grid,
+    fourier_kmod,
     wrap,
 )
 from stepsic.pk import (
@@ -97,7 +97,7 @@ def _band_average_reference_pk(
     dk_bin: float | None,
 ) -> tuple[ArrayF, ArrayF, ArrayI]:
     '''Band-average the input theory P(k) over the exact discrete Fourier modes.'''
-    _, kmod = fourier_grid(nvox, dk, hermitian=True)
+    kmod = fourier_kmod(nvox, dk, hermitian=True)
     pk_spline = CubicSpline(
         np.log(kh_input), np.log(pk_input), extrapolate=False,
     )
