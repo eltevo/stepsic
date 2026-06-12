@@ -163,26 +163,14 @@ def anisotropic_voxels(nmesh: int, boxsize: FloatVec3) -> tuple[FloatVec3, float
     return nvox, dk
 
 
-def fourier_grid(
+def fourier_vectors(
         nvox: FloatVec3,
         dk: float,
         hermitian: bool = False,
         dtype: np.dtype = np.float64
-) -> tuple[RealField, RealField]:
+) -> tuple[RealField, RealField, RealField]:
     r'''
-    Construct a 3D Fourier space grid.
-
-    This function generates a three-dimensional array of wavevector
-    components (``kvec``) and computes the corresponding magnitude
-    (``kmod``) for a cubic grid with ``nmesh`` points per side within
-    a box of size ``boxsize``.
-
-    The grid is then constructed using the FFT frequencies:
-    - For the first two dimensions, the full set of FFT frequencies is
-      computed using ``scipy.fft.fftfreq``.
-    - For the third dimension, if the input field is real-valued (i.e.
-      if Hermitian symmetry is assumed), the reduced set of frequencies
-      is computed using ``scipy.fft.rfftfreq``.
+    Construct the 1D per-axis wavevectors of a Fourier-space grid.
 
     Parameters
     ----------
@@ -193,33 +181,57 @@ def fourier_grid(
         of the shortest dimension divided by the number of voxels in
         that dimension.
     hermitian : bool
-        If `True`, assume the field has Hermitian symmetry (i.e. it is
-        real-valued) and use the reduced FFT along the last dimension.
+        If `True`, use the reduced ``rfftfreq`` frequencies along the last
+        axis (length `Nz//2+1`); otherwise the full ``fftfreq`` set.
     dtype : np.dtype
-        The data type of the generated arrays (e.g., `np.float32` or `np.float64`).
+        The data type of the returned vectors (e.g. `np.float32` or
+        `np.float64`).
 
     Returns
     -------
-    kvec : ndarray
-        A three-dimensional array of wavevector components with shape:
-          - :math:`(3, {N_x}, {N_y}, {N_z}//2+1)` if ``hermitian`` is `True`.
-          - :math:`(3, {N_x}, {N_y}, {N_z})` if ``hermitian`` is `False`.
-        Each sub-array corresponds to the ``x``, ``y``, or ``z`` component
-        of the wavevector.
-
-    kmod : ndarray
-        The magnitude of the wavevector at each grid point, computed as
-        :math:`\|\mathbf{k}\| = \sqrt{k_x^2 + k_y^2 + k_z^2}`.
+    kx, ky, kz : ndarray
+        1D wavevector components of length `Nx`, `Ny`, and
+        `Nz//2+1` (if ``hermitian``) or `Nz`, respectively.
     '''
-    kx = scipy.fft.fftfreq(nvox[0]) * 2 * np.pi / dk
-    ky = scipy.fft.fftfreq(nvox[1]) * 2 * np.pi / dk
+    kx = (scipy.fft.fftfreq(nvox[0]) * 2 * np.pi / dk).astype(dtype)
+    ky = (scipy.fft.fftfreq(nvox[1]) * 2 * np.pi / dk).astype(dtype)
     if hermitian:
-        kz = scipy.fft.rfftfreq(nvox[2]) * 2 * np.pi / dk
+        kz = (scipy.fft.rfftfreq(nvox[2]) * 2 * np.pi / dk).astype(dtype)
     else:
-        kz = scipy.fft.fftfreq(nvox[2]) * 2 * np.pi / dk
-    kvec = np.array(np.meshgrid(kx, ky, kz, indexing='ij'), dtype=dtype)
-    kmod = np.linalg.norm(kvec, axis=0).astype(dtype)
-    return kvec, kmod
+        kz = (scipy.fft.fftfreq(nvox[2]) * 2 * np.pi / dk).astype(dtype)
+    return kx, ky, kz
+
+
+def fourier_kmod(
+        nvox: FloatVec3,
+        dk: float,
+        hermitian: bool = False,
+        dtype: np.dtype = np.float64
+) -> RealField:
+    r'''
+    Compute only the wavevector magnitude :math:`|\mathbf{k}|`.
+
+    Parameters
+    ----------
+    nvox : tuple of int
+        The number of voxels in each dimension of the grid `(Nx, Ny, Nz)`.
+    dk : float
+        The uniform step size in each dimension.
+    hermitian : bool
+        If `True`, assume Hermitian symmetry (reduced last axis).
+    dtype : np.dtype
+        The data type of the returned magnitude array.
+
+    Returns
+    -------
+    kmod : ndarray
+        The wavevector magnitude at each grid point,
+        :math:`\sqrt{k_x^2 + k_y^2 + k_z^2}`.
+    '''
+    kx, ky, kz = fourier_vectors(nvox, dk, hermitian=hermitian, dtype=dtype)
+    kmod = np.sqrt(
+        kx[:, None, None]**2 + ky[None, :, None]**2 + kz[None, None, :]**2)
+    return kmod.astype(dtype, copy=False)
 
 
 def white_noise(nvox: FloatVec3, seed: Seed = None, dtype: np.dtype = np.float64) -> RealField:
@@ -302,7 +314,7 @@ def generate_delta_k(
         A 3D complex-valued array of shape `(Nx, Ny, Nz//2+1)` representing
         the Fourier modes of the overdensity field.
     '''
-    _, kmod = fourier_grid(nvox, dk, hermitian=True, dtype=dtype)
+    kmod = fourier_kmod(nvox, dk, hermitian=True, dtype=dtype)
 
     # interpolate the power spectrum in log-log space
     spline = CubicSpline(np.log(kh), np.log(pk), extrapolate=True)

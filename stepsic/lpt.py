@@ -23,8 +23,8 @@ import scipy
 import numpy as np
 
 from stepsic._typing import ComplexField, IntVec3, RealField
-from stepsic.field import fourier_grid
-from stepsic.interpolation import compensation_kernel, interpolate_field
+from stepsic.field import fourier_vectors
+from stepsic.interpolation import compensation_factors, interpolate_field
 
 log = logging.getLogger(__name__)
 
@@ -118,20 +118,34 @@ def lpt1(
     vpert : ndarray of shape (N, 3)
         Peculiar velocities [km/s].
     '''
-    kvec, kmod = fourier_grid(nvox, dk, hermitian=True, dtype=dtype)
-    mask = kmod > 0.0  # Avoid division by zero at k = 0
-    if dtype == np.float32:
-        phi_k = np.zeros_like(kmod, dtype=np.complex64)
-    else:
-        phi_k = np.zeros_like(kmod, dtype=np.complex128)
-    phi_k[mask] = -delta_k[mask] / kmod[mask]**2  # Gravitational potential in Fourier space
-    psi1_k = -1j * phi_k[np.newaxis, ...] * kvec  # Displacement field in Fourier space
+    kx, ky, kz = fourier_vectors(nvox, dk, hermitian=True, dtype=dtype)
+    K = (kx[:, None, None], ky[None, :, None], kz[None, None, :])
     boxsize = np.asarray(nvox, dtype=dtype) * dk
-    # Apply deconvolution to pre-sharpen the field before interpolation
+
+    # Gravitational potential in Fourier space: phi(k) = -delta(k) / |k|^2.
+    # |k|^2 is built on the fly from the 1D vectors (one transient array).
+    # Setting the DC mode to inf forces phi(0)=0 without a boolean mask;
+    # delta_k[0, 0, 0] is already 0, so this only avoids the 0/0 there.
+    k2 = K[0]**2 + K[1]**2 + K[2]**2
+    k2[0, 0, 0] = np.inf
+    phi_k = -delta_k / k2  # inherits delta_k's complex dtype (complex64/128)
+
+    # Separable MAS deconvolution to pre-sharpen the field before interpolation
     if compensate:
-        W_inv = compensation_kernel(kvec, nvox, boxsize, method=method, dtype=dtype)
-        psi1_k *= W_inv[np.newaxis, ...]
-    disp_field = scipy.fft.irfftn(psi1_k, s=nvox, axes=(-3, -2, -1), workers=-1)
+        wx, wy, wz = compensation_factors(
+            nvox, dk, boxsize, method=method, dtype=dtype)
+
+    # Build the displacement field one axis at a time using the identity
+    #       psi_i(k) = -i k_i phi(k).
+    disp_field = np.empty((3, *nvox), dtype=dtype)
+    for i in range(3):
+        psi_i = (-1j * K[i]) * phi_k
+        if compensate:
+            psi_i *= wx[:, None, None]
+            psi_i *= wy[None, :, None]
+            psi_i *= wz[None, None, :]
+        disp_field[i] = scipy.fft.irfftn(
+            psi_i, s=nvox, axes=(0, 1, 2), workers=-1)
     disp_field_interp = interpolate_field(
         x=x, field=disp_field, boxsize=boxsize,
         origin=-boxsize / 2, method=method, vox_offset=0.5, periodic=True, dtype=dtype)
@@ -212,61 +226,64 @@ def lpt2(
     --------
     lpt1 : First-order (Zel'dovich) displacement only.
     '''
-    kvec, kmod = fourier_grid(nvox, dk, hermitian=True, dtype=dtype)
-    mask = kmod > 0.0  # Avoid division by zero at k = 0
+    kx, ky, kz = fourier_vectors(nvox, dk, hermitian=True, dtype=dtype)
+    K = (kx[:, None, None], ky[None, :, None], kz[None, None, :])
     boxsize = np.asarray(nvox, dtype=dtype) * dk
 
-    # Precompute deconvolution kernel if needed
+    # Separable MAS deconvolution factors (applied per axis, in place below)
     if compensate:
-        W_inv = compensation_kernel(kvec, nvox, boxsize, method=method, dtype=dtype)
+        wx, wy, wz = compensation_factors(
+            nvox, dk, boxsize, method=method, dtype=dtype)
+
+    # |k|^2 on the fly; DC -> inf forces phi(0)=0 without a boolean mask
+    # (delta_k[0, 0, 0] is already 0). Reused for both Poisson solves below.
+    k2 = K[0]**2 + K[1]**2 + K[2]**2
+    k2[0, 0, 0] = np.inf
 
     # -- 1. First-order displacement (Psi^(1)) --------------------------------
-    if dtype == np.float32:
-        phi1_k = np.zeros_like(kmod, dtype=np.complex64)
-    else:
-        phi1_k = np.zeros_like(kmod, dtype=np.complex128)
-    phi1_k[mask] = -delta_k[mask] / kmod[mask]**2  # Gravitational potential in Fourier space
-    psi1_k = -1j * phi1_k[np.newaxis, ...] * kvec  # Displacement field in Fourier space
-    # Apply deconvolution to pre-sharpen before interpolation
-    if compensate:
-        psi1_k_comp = psi1_k * W_inv[np.newaxis, ...]
-    else:
-        psi1_k_comp = psi1_k
-    disp_field1 = scipy.fft.irfftn(psi1_k_comp, s=nvox, axes=(-3, -2, -1), workers=-1)
+    phi1_k = -delta_k / k2  # gravitational potential; inherits delta_k complex dtype
+    disp_field1 = np.empty((3, *nvox), dtype=dtype)
+    for i in range(3):
+        psi_i = (-1j * K[i]) * phi1_k  # -i k_i phi(k)
+        if compensate:  # pre-sharpen before interpolation
+            psi_i *= wx[:, None, None]
+            psi_i *= wy[None, :, None]
+            psi_i *= wz[None, None, :]
+        disp_field1[i] = scipy.fft.irfftn(
+            psi_i, s=nvox, axes=(0, 1, 2), workers=-1)
 
-    # -- 2. Compute derivatives of Psi^(1) for the second-order source --------
-    # NOTE: The derivatives for the 2LPT source term use the uncompensated
-    # `psi1_k`. The compensation corrects for interpolation artifacts,
-    # but the source term S(x) is computed on the grid (no interpolation
-    # involved), so it must use the physically correct (uncompensated)
-    # displacement field.
-    axes = (0, 1, 2)
-    dPxx = scipy.fft.irfftn(1j * psi1_k[0] * kvec[0], s=nvox, axes=axes, workers=-1)  # d(Psi_x)/dx
-    dPxy = scipy.fft.irfftn(1j * psi1_k[0] * kvec[1], s=nvox, axes=axes, workers=-1)  # d(Psi_x)/dy
-    dPxz = scipy.fft.irfftn(1j * psi1_k[0] * kvec[2], s=nvox, axes=axes, workers=-1)  # d(Psi_x)/dz
-    # --
-    dPyy = scipy.fft.irfftn(1j * psi1_k[1] * kvec[1], s=nvox, axes=axes, workers=-1)  # d(Psi_y)/dy
-    dPyz = scipy.fft.irfftn(1j * psi1_k[1] * kvec[2], s=nvox, axes=axes, workers=-1)  # d(Psi_y)/dz
-    # --
-    dPzz = scipy.fft.irfftn(1j * psi1_k[2] * kvec[2], s=nvox, axes=axes, workers=-1)  # d(Psi_z)/dz
+    # -- 2. Second-order source S(x) from the 1LPT deformation tensor ---------
+    # The derivatives d(Psi_i)/dx_j use the UNCOMPENSATED field. The
+    # source S(x) lives on the original grid, so it must use the
+    # physically correct displacement. Using the identity
+    #       1j * psi1_k[i] * k_j == phi1_k * k_i * k_j ,
+    # each derivative is built directly from phi1_k and the 1D vectors.
+    def _dP(i, j):
+        return scipy.fft.irfftn(
+            phi1_k * (K[i] * K[j]), s=nvox, axes=(0, 1, 2), workers=-1)
 
-    # Compute the quadratic source S(x) and its Fourier transform S(k)
-    S = dPxx * dPyy + dPxx * dPzz + dPyy * dPzz - (dPxy**2 + dPxz**2 + dPyz**2)
+    # Accumulate S incrementally so at most three deformation arrays are alive.
+    dPxx, dPyy, dPzz = _dP(0, 0), _dP(1, 1), _dP(2, 2)
+    S = dPxx * dPyy + dPxx * dPzz + dPyy * dPzz
+    del dPxx, dPyy, dPzz
+    S -= _dP(0, 1)**2  # (d Psi_x/dy)^2
+    S -= _dP(0, 2)**2  # (d Psi_x/dz)^2
+    S -= _dP(1, 2)**2  # (d Psi_y/dz)^2
     S_k = scipy.fft.rfftn(S, workers=-1)
+    del S
 
     # -- 3. Second-order displacement (Psi^(2)) -------------------------------
-    # Solve the Poisson equation in Fourier space, now for the source term S(k)
-    #
-    #     phi2(k) = -S(k) / |k|^2
-    #
-    phi2_k = np.zeros_like(S_k, dtype=complex)
-    phi2_k[mask] = -S_k[mask] / kmod[mask]**2
-    psi2_k = -1j * phi2_k[np.newaxis, ...] * kvec  # Displacement field in Fourier space
-    # Compensate the second-order field as well
-    # We can simply overwrite psi2_k here, because it will not be reused
-    if compensate:
-        psi2_k *= W_inv[np.newaxis, ...]
-    disp_field2 = scipy.fft.irfftn(psi2_k, s=nvox, axes=(-3, -2, -1), workers=-1)
+    # Poisson equation for the source: phi2(k) = -S(k) / |k|^2.
+    phi2_k = -S_k / k2  # inherits S_k complex dtype
+    disp_field2 = np.empty((3, *nvox), dtype=dtype)
+    for i in range(3):
+        psi_i = (-1j * K[i]) * phi2_k
+        if compensate:
+            psi_i *= wx[:, None, None]
+            psi_i *= wy[None, :, None]
+            psi_i *= wz[None, None, :]
+        disp_field2[i] = scipy.fft.irfftn(
+            psi_i, s=nvox, axes=(0, 1, 2), workers=-1)
 
     # -- 4. Interpolate and update particle positions and velocities ----------
     # For each spatial axis, interpolate the displacement fields (both

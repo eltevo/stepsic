@@ -22,6 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from stepsic._typing import *
+from stepsic.field import fourier_vectors
 
 
 @dataclass(frozen=True)
@@ -202,7 +203,7 @@ def compensation_kernel(
     Parameters
     ----------
     kvec : ndarray of shape (3, nx, ny, nz)
-        Wavevector components from ``fourier_grid``.
+        Explicit Fourier wavevector components for the stored grid.
     nvox : tuple of int or array of shape (3,)
         Number of grid cells in each dimension.
     boxsize : tuple of float or array of shape (3,)
@@ -270,6 +271,79 @@ def compensation_kernel(
     # Guard against division by zero near k_Ny
     # Should not happen for k < k_Ny, but protect anyway
     return np.where(np.abs(W) > 1e-15, 1.0 / W, 1.0)
+
+
+def compensation_factors(
+    nvox: IntVec3,
+    dk: float,
+    boxsize: FloatVec3,
+    hermitian: bool = True,
+    method: str | InterpolationKernel = 'cic',
+    dtype: np.dtype = np.float64,
+) -> Tuple[RealField, RealField, RealField]:
+    r'''
+    Separable 1D form of :func:`compensation_kernel`.
+
+    The MAS deconvolution kernel factorises over the axes,
+
+    .. math::
+        W^{-1}(\mathbf{k}) = \prod_{i=x,y,z}
+            \mathrm{sinc}\!\left(\frac{k_i}{2 k_{\mathrm{Ny},i}}\right)^{-(p+1)},
+
+    so it can be applied to a Fourier-space field one axis at a time without
+    ever building the full 3D kernel::
+
+        wx, wy, wz = compensation_factors(nvox, dk, boxsize, method=method)
+        arr *= wx[:, None, None]
+        arr *= wy[None, :, None]
+        arr *= wz[None, None, :]
+
+    Each returned factor is already raised to the ``-(p+1)`` power. Because
+    ``sinc`` is bounded in :math:`[2/\pi, 1]` over the half-open FFT frequency
+    range :math:`[-1/2, 1/2)`, it never vanishes and no division guard is
+    needed (unlike the full-grid :func:`compensation_kernel`).
+
+    Parameters
+    ----------
+    nvox : tuple of int or array of shape (3,)
+        Number of grid cells in each dimension.
+    dk : float
+        The uniform step size in each dimension.
+    boxsize : tuple of float or array of shape (3,)
+        Physical size of the box.
+    hermitian : bool
+        If `True`, use the reduced last axis (length `Nz//2+1`).
+    method : str or InterpolationKernel
+        Interpolation method: 'ngp', 'cic', 'tsc', or a kernel instance.
+    dtype : np.dtype
+        Numerical precision for the returned factors.
+
+    Returns
+    -------
+    wx, wy, wz : ndarray
+        1D deconvolution factors of length `Nx`, `Ny`, and `Nz//2+1`
+        (if ``hermitian``) or `Nz`. Their outer product equals
+        :func:`compensation_kernel`.
+
+    See Also
+    --------
+    compensation_kernel : Full 3D kernel (kept for reference/back-compat).
+    '''
+    if isinstance(method, str):
+        kernel = KERNELS[method.lower()]()
+    else:
+        kernel = method
+    power = kernel.order + 1  # = kernel.support
+
+    nvox_f = np.asarray(nvox, dtype=dtype)
+    boxsize = np.asarray(boxsize, dtype=dtype)
+    k_ny = np.pi * nvox_f / boxsize  # Nyquist wavenumber per axis, shape (3,)
+
+    kx, ky, kz = fourier_vectors(nvox, dk, hermitian=hermitian, dtype=dtype)
+    wx = (1.0 / np.sinc(kx / (2.0 * k_ny[0]))**power).astype(dtype, copy=False)
+    wy = (1.0 / np.sinc(ky / (2.0 * k_ny[1]))**power).astype(dtype, copy=False)
+    wz = (1.0 / np.sinc(kz / (2.0 * k_ny[2]))**power).astype(dtype, copy=False)
+    return wx, wy, wz
 
 
 class FieldInterpolator:

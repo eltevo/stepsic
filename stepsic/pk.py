@@ -24,8 +24,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from stepsic._typing import ComplexField, FloatVec3, IntVec3, RealField
-from stepsic.field import cubic_voxels, fourier_grid
-from stepsic.interpolation import compensation_kernel, deposit_field
+from stepsic.field import cubic_voxels, fourier_kmod, fourier_vectors
+from stepsic.interpolation import compensation_factors, deposit_field
 
 log = logging.getLogger(__name__)
 
@@ -346,7 +346,7 @@ def measure_pk_from_delta_k(
         )
 
     dk = _cell_size(nvox, boxsize)
-    _, kmod = fourier_grid(nvox, dk, hermitian=True)
+    kmod = fourier_kmod(nvox, dk, hermitian=True)
     N_cells = int(np.prod(nvox))
     V_box = np.prod(boxsize)
 
@@ -531,12 +531,13 @@ def measure_pk(
             x, nvox, boxsize, mass, method, origin=-0.5 * dk,
         )
 
-        # Undo the shift in Fourier space.
-        # A real-space shift by -dk/2 introduces a phase factor
-        # exp(-i k·Δx). Undo it with exp(+i dk/2 * (kx+ky+kz)).
+        # Undo the shift in Fourier space. A real-space shift by -dk/2
+        # introduces a phase factor exp(-i k*dx). Undo it with
+        # exp(+i dk/2 * (kx+ky+kz)).
         # Reference: Sefusatti et al. 2016, eq. 11
-        kvec, kmod = fourier_grid(nvox, dk, hermitian=True)
-        phase_shift = 0.5 * dk * (kvec[0] + kvec[1] + kvec[2])
+        kx, ky, kz = fourier_vectors(nvox, dk, hermitian=True)
+        phase_shift = 0.5 * dk * (
+            kx[:, None, None] + ky[None, :, None] + kz[None, None, :])
         delta_k_B *= np.exp(1j * phase_shift)
 
         # Average the two deposits, as this cancels the leading aliasing
@@ -547,13 +548,18 @@ def measure_pk(
         delta_k = _deposit_overdensity_k(
             x, nvox, boxsize, mass, method, origin=0,
         )
-        kvec, kmod = fourier_grid(nvox, dk, hermitian=True)
 
     # --- MAS deconvolution ---
     if deconvolve:
-        # Naive sinc deconvolution is always safe with interlacing
-        W_inv = compensation_kernel(kvec, nvox, boxsize, method=method)
-        delta_k *= W_inv
+        # Naive sinc deconvolution is always safe with interlacing.
+        # Separable kernel applied per axis in place.
+        wx, wy, wz = compensation_factors(nvox, dk, boxsize, method=method)
+        delta_k *= wx[:, None, None]
+        delta_k *= wy[None, :, None]
+        delta_k *= wz[None, None, :]
+
+    # |k| magnitude for isotropic shell binning (one transient full array)
+    kmod = fourier_kmod(nvox, dk, hermitian=True)
 
     # --- Power spectrum estimation ---
     # P(k) = V / N_cells^2 * |delta_k|^2
