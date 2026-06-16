@@ -179,7 +179,7 @@ def main():
                 nvox, dk = cubic_voxels(res, params['LBOX'])
                 # White noise field for complete reproducibility
                 field = white_noise(nvox=nvox, seed=params['SEED'], dtype=params['DTYPE'])
-                delta_k = generate_delta_k(kh, pk, nvox, dk, field=field)
+                delta_k = generate_delta_k(kh, pk, nvox, dk, field=field, paired=params['PAIRED'], fixed=params['FIXED'])
 
                 if params['LPTORDER'] == 1:
                     # Use 1st order Lagrangian PT (Zel'dovich approximation)
@@ -212,7 +212,7 @@ def main():
             nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
             # White noise field for complete reproducibility
             field = white_noise(nvox=nvox, seed=params['SEED'], dtype=params['DTYPE'])
-            delta_k = generate_delta_k(kh, pk, nvox, dk, field=field, dtype=params['DTYPE'])
+            delta_k = generate_delta_k(kh, pk, nvox, dk, field=field, paired=params['PAIRED'], fixed=params['FIXED'], dtype=params['DTYPE'])
             if not params['SAVE_WHITE_NOISE']:
                 del field  # only read again when saving the white noise
 
@@ -257,7 +257,7 @@ def main():
     if params['GEOMETRY'] == 'spherical':
         # shifting back the center of the sphere to the origin
         log.info('Shifting the center of the sphere back to the origin...')
-        ic.pos += params['COI']
+        ic.pos += params['COI'] + params['LBOX']/2
 
     if not params['COMOVING'] and params['LPTORDER'] > 0:
         log.info('Converting the IC to proper coordinates...')
