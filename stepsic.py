@@ -255,6 +255,17 @@ def main():
             field = white_noise(nvox=nvox, seed=params['SEED'], dtype=params['DTYPE'])
             delta_k = generate_delta_k(kh, pk, nvox, dk, field=field, dtype=params['DTYPE'])
 
+            # Phase 7B: when the discrete S^3/I* modes are enabled, high-pass the flat
+            # field above the discrete splice scale k(n_max), so the flat path supplies
+            # only the small scales and its (incorrect, including PDS-forbidden) power at
+            # the discrete scales is removed.  For n_max=12 this is below the box
+            # fundamental and a no-op (purely additive).
+            if params['GEOMETRY'] == 'pds' and int(params.get('PDS_DISCRETE_NMAX', 0)) > 0:
+                from stepsic import s3lpt
+                k_split = s3lpt.s3.wavenumber(int(params['PDS_DISCRETE_NMAX']),
+                                              float(np.asarray(params['PDS_R_CURV'])))
+                delta_k = s3lpt.highpass_delta_k(delta_k, nvox, dk, k_split)
+
             lpt_kwargs = dict(
                 delta_k=delta_k, nvox=nvox, dk=dk, g1=g1, aHf1=aHf1,
                 method=params['INTERPOLATION'], compensate=params['COMPENSATE'], dtype=params['DTYPE']
@@ -270,6 +281,26 @@ def main():
                 log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='2LPT')
             ic.pos = xpert
             ic.vel = vpert
+
+            # Phase 7B: add the discrete S^3/I* eigenmode (topology-carrying) large-scale
+            # field on top of the flat-spectrum small-scale LPT.  Enabled by
+            # PDS_DISCRETE_NMAX > 0 (off by default -> existing runs unchanged).  The
+            # flat box cannot represent the I*-invariant modes (n=12 is below its
+            # fundamental); the discrete modes supply the correct PDS large-scale power.
+            if params['GEOMETRY'] == 'pds' and int(params.get('PDS_DISCRETE_NMAX', 0)) > 0:
+                from scipy.interpolate import interp1d
+                from stepsic import s3lpt
+                R_c = float(np.asarray(params['PDS_R_CURV']))
+                nmax = int(params['PDS_DISCRETE_NMAX'])
+                pkf = interp1d(kh, pk, bounds_error=False, fill_value=(pk[0], pk[-1]))
+                dx_disc, dinfo = s3lpt.pds_discrete_displacement(
+                    ic_orig.pos, pkf, R_c, nmax,
+                    rng=np.random.default_rng(int(params['SEED']) + 1))
+                ic.pos = ic.pos + dx_disc.astype(ic.pos.dtype)
+                ic.vel = ic.vel + (aHf1 * dx_disc).astype(ic.vel.dtype)
+                log.info(f"PDS discrete S^3/I* modes added (degrees "
+                         f"{sorted(dinfo['used'])}, n<= {nmax}); "
+                         f"rms |dx_disc| = {np.sqrt((dx_disc**2).sum(1)).mean():.4f} Mpc")
 
         if params['GEOMETRY'] == 'pds':
             finalize_pds_ic(ic, params)

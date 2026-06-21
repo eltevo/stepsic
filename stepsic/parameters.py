@@ -231,6 +231,8 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('D_4D', label="Compact. sim. diameter", h_scaled=True, h_display=True, h_precision=4),
     Param('PDS_R_CURV', label="PDS curvature radius", h_scaled=True, h_display=True, h_precision=4,
           condition=lambda P: P.get('GEOMETRY') == 'pds'),
+    Param('PDS_DISCRETE_NMAX', ptype=PType.INT, label="PDS discrete eigenmode n_max (0=off)",
+          condition=lambda P: 'PDS_DISCRETE_NMAX' in P and P.get('GEOMETRY') == 'pds'),
     Param('BIN_MODE', ptype=PType.STRING, label="Binning mode", choices=('omega', 'volume'), condition=lambda P: P.get('TYPE') == 'shell'),
     Param('NRBINS', ptype=PType.INT, label="Radial bins", condition=lambda P: P.get('TYPE') == 'shell'),
     Param('RCRIT', label="Constant-res. radius", h_scaled=True, h_display=True, h_precision=4,
