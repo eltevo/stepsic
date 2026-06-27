@@ -1095,3 +1095,54 @@ def create_pds_grid_particles(params: dict) -> tuple[NDArray, NDArray]:
 
     mass = pds.conformal_factor(pos, R) ** 3 * dx ** 3
     return pos, mass
+
+
+def create_pds_random_particles(params: dict) -> tuple[NDArray, NDArray]:
+    r'''
+    Poisson particle load for the Poincaré Dodecahedral Space (PDS) geometry.
+
+    Draws ``NPART`` points distributed *uniformly on* :math:`S^3` and folds
+    each into the dodecahedral fundamental domain of :math:`S^3/I^*` with
+    :func:`stepsic.pds.wrap`.  Because :math:`I^*` tiles :math:`S^3` by
+    isometries, a uniform sample on the sphere maps to a uniform Poisson
+    sample inside a single fundamental cell.  This is the standard starting
+    point for **glass making**: a structureless (grid-free, isotropic)
+    distribution that reverse-gravity relaxation drives to a glass.
+
+    Unlike :func:`create_pds_grid_particles` (a regular Cartesian grid in the
+    stereographic chart, which carries the chart's orientation and a static
+    grid imprint), this load has no preferred directions and uniform comoving
+    density on :math:`S^3`, so every particle carries **equal mass**
+    (:math:`\Omega^3\,d^3x` volume weighting is already built into the uniform
+    sphere sampling).  The absolute normalisation is applied later by
+    :meth:`stepsic.data.CosmoData.rescale_snapshot_mass`.
+
+    Should be called when ``GEOMETRY = 'pds'`` and ``TYPE = 'random'``.
+
+    Parameters
+    ----------
+    params : dict
+        Must contain ``'NPART'``, ``'SEED'`` and ``'PDS_R_CURV'``.
+
+    Returns
+    -------
+    pos : ndarray of shape (N, 3)
+        Stereographic Cartesian positions, centred on the domain centre.
+    mass : ndarray of shape (N,)
+        Equal relative masses (absolute normalisation applied downstream).
+    '''
+    from stepsic import pds
+
+    R = float(np.asarray(params['PDS_R_CURV']))
+    n = int(params['NPART'])
+    rng = np.random.default_rng(params['SEED'])
+    q = rng.standard_normal((n, 4))
+    q /= np.linalg.norm(q, axis=1, keepdims=True)  # uniform on S^3
+    q = pds.wrap(q)                                # fold into fundamental domain
+    pos = pds.stereo_project(q, R)
+    log.info(
+        f'PDS Poisson load: {n} particles uniform on S^3/I* '
+        f'(R_curv = {R:.1f}); equal-mass, grid-free (for glass making).'
+    )
+    mass = np.ones(n, dtype=float)
+    return pos, mass

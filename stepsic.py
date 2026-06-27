@@ -46,7 +46,11 @@ from stepsic.field import (
     generate_delta_k,
     white_noise,
 )
-from stepsic.geometry import create_pds_grid_particles, create_shell_particles
+from stepsic.geometry import (
+    create_pds_grid_particles,
+    create_pds_random_particles,
+    create_shell_particles,
+)
 from stepsic.lpt import log_lpt, lpt1, lpt2
 from stepsic.parameters import CosmoParameters
 
@@ -137,9 +141,17 @@ def main():
             pos, _ = create_grid(nvox, dk)
             ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
     elif params['TYPE'] == 'random':
-        pos = create_particles(
-            npart=params['NPART'], boxsize=params['LBOX'], seed=params['SEED'])
-        ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
+        if params['GEOMETRY'] == 'pds':
+            # Poisson load on S^3/I* (grid-free) for reverse-gravity glass making
+            pos, mass = create_pds_random_particles(params)
+            ic_orig = CosmoData(
+                pos=pos.astype(params['DTYPE']),
+                mass=mass.astype(params['DTYPE']),
+            )
+        else:
+            pos = create_particles(
+                npart=params['NPART'], boxsize=params['LBOX'], seed=params['SEED'])
+            ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
     ic_orig.rescale_snapshot_mass(params)
     ic_orig.center_snapshot(params)
     ic = copy.deepcopy(ic_orig)  # The output IC will be stored here

@@ -77,6 +77,28 @@ KPIVOT = 0.05
 W0 = -1.0
 WA = 0.0
 
+# Einstein-de Sitter (flat, matter-only). For reverse-gravity GLASS MAKING the
+# background must be EdS (Omega_m=1, Omega_L=0): dark energy would freeze the
+# relaxation before the load reaches a glass. H0 kept at the production value so
+# the length/time units and box match the LCDM run the glass is built for.
+# Spectrum params are placeholders (glass making uses LPTORDER=0, no spectrum).
+["EdS"]
+H0 = {best = 67.702, mean = 67.702, error = 0.42}
+OMEGA_M = {best = 1.0, mean = 1.0, error = 0.0}
+OMEGA_B = {best = 0.048972, mean = 0.04897, error = 0.00068}
+OMEGA_L = {best = 0.0, mean = 0.0, error = 0.0}
+NS = {best = 0.96824, mean = 0.9665, error = 0.0038}
+AS = {best = 2.1073e-9, mean = 2.105e-9, error = 0.030e-9}
+SIGMA8 = {best = 0.8110, mean = 0.8102, error = 0.0060}
+YHE = {best = 0.245425, mean = 0.245414, error = 0.000055}
+MNU = 0.0
+NNU = 3.046
+ZREI = {best = 7.90, mean = 7.82, error = 0.71}
+TCMB = 2.7255
+KPIVOT = 0.05
+W0 = -1.0
+WA = 0.0
+
 # Dark Energy Survey Year Three (DES Y3; Abbott et al. 2022) ‘3 × 2pt + All Ext.’ (D3A)
 # https://journals.aps.org/prd/abstract/10.1103/PhysRevD.105.023520
 ["D3A-LCDM"]

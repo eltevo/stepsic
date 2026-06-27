@@ -291,12 +291,11 @@ IC_CONSTRAINTS: tuple[Constraint, ...] = (
         level='error',
     ),
     Constraint(
-        check=lambda P: P.get('TYPE') != 'random' or P.get('GEOMETRY') == 'cubical',
+        check=lambda P: P.get('TYPE') != 'random' or P.get('GEOMETRY') in ('cubical', 'pds'),
         message=lambda P: (
-            f"TYPE='random' is only valid for cubical geometry, "
-            f"got GEOMETRY='{P['GEOMETRY']}'. "
-            f"Use TYPE='shell' for cylindrical/spherical geometries, "
-            f"TYPE='grid' for pds."
+            f"TYPE='random' is only valid for cubical and pds geometries "
+            f"(Poisson glass-making load), got GEOMETRY='{P['GEOMETRY']}'. "
+            f"Use TYPE='shell' for cylindrical/spherical geometries."
         ),
         level='error',
     ),

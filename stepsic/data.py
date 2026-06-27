@@ -132,6 +132,14 @@ class CosmoData:
             if not params['HINDEPENDENT']:
                 self.pos *= params['H']
             return
+        elif params['GEOMETRY'] == 'pds':
+            # PDS glass: stereographic positions are tied to PDS_R_CURV, so the box
+            # must NOT be rescaled (self.Lbox is the StePS L_BOX, not the domain size).
+            # Like the spherical glass, only convert physical Mpc -> internal (Mpc/h)
+            # units when the run is h-dependent, so the load matches the grid path.
+            if not params['HINDEPENDENT']:
+                self.pos *= params['H']
+            return
         else:
             # this should never happen 
             raise ValueError(f'Unknown geometry type: {params["GEOMETRY"]}')
