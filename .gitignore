@@ -5,6 +5,7 @@ AGENTS.md
 CLAUDE.md
 
 # data files written by the stepsic package
+profiles/
 examples/
 output/
 

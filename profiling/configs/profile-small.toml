@@ -34,6 +34,7 @@ IC_DIR     = "profiles/output-small"
 IC_PREFIX  = "profile-small"
 IC_FORMAT  = "hdf5"
 USE_DOUBLE = false
+SAVE_WHITE_NOISE = false
 
 # -- 5. Cosmology ----------------------------------------------------------
 COSMOLOGY = "Planck2018EE+BAO+SN"
