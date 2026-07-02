@@ -92,6 +92,13 @@ def philox4x64_10(counter, key) -> np.ndarray:
     return np.stack((c0, c1, c2, c3), axis=-1)
 
 
+def philox_complex_gaussian(counter, key) -> np.ndarray:
+    '''Return unit complex Gaussian variates from Philox counter blocks.'''
+    words = philox4x64_10(counter, key)
+    u1 = ((words[..., 0] >> np.uint64(11)).astype(np.float64) + 1.0) * 2.0**-53
+    u2 = (words[..., 1] >> np.uint64(11)).astype(np.float64) * 2.0**-53
+    return np.sqrt(-np.log(u1)) * np.exp(2j * np.pi * u2)
+
 
 class RNG:
     def __init__(self, seed: Seed = None):

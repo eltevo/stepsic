@@ -24,7 +24,7 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 from tabulate import tabulate
 
-from stepsic.rng import RNG
+from stepsic.rng import RNG, philox_complex_gaussian
 
 log = logging.getLogger(__name__)
 
@@ -234,33 +234,86 @@ def fourier_kmod(
     return kmod.astype(dtype, copy=False)
 
 
-def white_noise(nvox: FloatVec3, seed: Seed = None, dtype: np.dtype = np.float64) -> RealField:
+def white_noise(nvox: FloatVec3, seed: Seed = None, dtype: np.dtype = np.float64) -> ComplexField:
     r'''
-    Return a complex Gaussian array :math:`W(k)` on the ``rfftn()`` grid
-    `(Nx, Ny, Nz//2+1)`, obeying Hermitian constraints that guarantee
-    :math:`\delta(x)` reconstructed with ``irfftn()`` is real.
+    Return a complex Gaussian array W(k) on the rfftn grid
+    (Nx, Ny, Nz//2+1), obeying Hermitian constraints that guarantee
+    irfftn(W) is real.
 
-    The field is generated in the real space.
+    Modes are drawn directly in Fourier space with Philox4x64-10. The
+    counter is the grid-independent signed integer mode triple
+    (ix, iy, iz), stored as uint64 two's-complement words, with counter
+    word 3 reserved at zero. The Philox key is (seed, 0). If seed is
+    None, a random uint64 seed is drawn and logged.
+
+    The returned field is W(k) = sqrt(prod(nvox)) * a(k), where a(k) is
+    a unit complex Gaussian. Thus W(k) / sqrt(prod(nvox)) is identical
+    for every shared integer mode across resolutions with the same seed.
+    Each grid's own Nyquist planes and DC mode are set exactly to zero.
 
     Parameters
     ----------
     nvox : tuple of int
-        Number of voxels in each dimension `(Nx, Ny, Nz)`.
-    dk : float
-        The uniform step size in each dimension, calculated as the length
-        of the shortest dimension divided by the number of voxels in
-        that dimension.
+        Number of voxels in each dimension (Nx, Ny, Nz).
     seed : int or None, optional
-        Random seed for reproducibility. If `None`, uses the default RNG.
+        Random seed for reproducibility. If None, a random uint64 seed is
+        logged and used for this field.
+    dtype : dtype
+        Real precision controlling the returned complex dtype. float32
+        returns complex64; float64 returns complex128.
 
     Returns
     -------
     w_k : ndarray
-        3D array of white noise values.
+        Complex white-noise values on the rfftn grid.
     '''
-    rng = RNG(seed=seed)
-    w_k = scipy.fft.rfftn(rng.normal(size=nvox, seed=seed).astype(dtype), workers=-1)
-    w_k[0, 0, 0] = 0.0  # set DC=0 (mean density) as we only need fluctuations
+    nvox = np.asarray(nvox, dtype=np.int64)
+    if nvox.shape != (3,):
+        raise ValueError('nvox must contain exactly three axes')
+    assert np.all(nvox % 2 == 0), 'white_noise requires even nvox'
+    nx, ny, nz = map(int, nvox)
+
+    if seed is None:
+        seed = np.random.default_rng().integers(
+            0, np.iinfo(np.uint64).max, dtype=np.uint64
+        )
+        log.info('white_noise seed: %d', int(seed))
+    key = np.array((np.uint64(seed), np.uint64(0)), dtype=np.uint64)
+
+    ix = (scipy.fft.fftfreq(nx) * nx).astype(np.int64)
+    iy = (scipy.fft.fftfreq(ny) * ny).astype(np.int64)
+    iz = (scipy.fft.rfftfreq(nz) * nz).astype(np.int64)
+    nz_half = nz // 2 + 1
+
+    w_k = np.empty((nx, ny, nz_half), dtype=np.result_type(dtype, np.complex64))
+    norm = float(np.sqrt(np.prod(nvox, dtype=np.float64)))
+
+    iy_grid, iz_grid = np.meshgrid(iy, iz, indexing='ij')
+    ncounter = ny * nz_half
+    counters = np.empty((ncounter, 4), dtype=np.uint64)
+    counters[:, 1] = iy_grid.ravel().astype(np.uint64)
+    counters[:, 2] = iz_grid.ravel().astype(np.uint64)
+    counters[:, 3] = 0
+
+    for i, ix_mode in enumerate(ix):
+        counters[:, 0] = np.array(ix_mode, dtype=np.int64).astype(np.uint64)
+        w_k[i] = (philox_complex_gaussian(counters, key) * norm).reshape(
+            ny, nz_half
+        )
+
+    w_k[nx // 2, :, :] = 0.0
+    w_k[:, ny // 2, :] = 0.0
+    w_k[:, :, nz // 2] = 0.0
+
+    ix_signed = ix[:, None]
+    iy_signed = iy[None, :]
+    canonical = (ix_signed > 0) | ((ix_signed == 0) & (iy_signed > 0))
+    flip_i = (-np.arange(nx)) % nx
+    flip_j = (-np.arange(ny)) % ny
+    plane = w_k[:, :, 0]
+    mirrored = np.conj(plane[flip_i[:, None], flip_j[None, :]])
+    w_k[:, :, 0] = np.where(canonical, plane, mirrored)
+    w_k[0, 0, 0] = 0.0
     return w_k
 
 
