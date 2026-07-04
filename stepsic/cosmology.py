@@ -327,15 +327,41 @@ class CAMBCosmology:
             'delta_baryon' for baryonic matter, etc. See CAMB documentation
             for more details.
         '''
-        # Optional rescaling of the `As` amplitude to match a desired sigma8
-        sigma8, As = self._rescale_As(sigma8_init, As=As, ns=ns, kmax=kmax)
-        log.info(f'Value for matter fluctuation amplitude used: {sigma8 = :.4f}')
+        if self.params.NonLinear != camb.model.NonLinear_none:
+            # Non-linear corrections are baked into the transfer functions,
+            # so rescaling As requires full recomputations.
+            sigma8, As = self._rescale_As(sigma8_init, As=As, ns=ns, kmax=kmax)
+            log.info(f'Value for matter fluctuation amplitude used: {sigma8 = :.4f}')
+            self.params.set_matter_power(redshifts=np.atleast_1d(z).tolist(), kmax=kmax)
+            results = camb.get_results(self.params)
+        else:
+            # Linear theory: compute the transfer functions once (including
+            # z=0 for the sigma8 normalization) and rescale As from the
+            # cached transfers instead of rerunning camb.get_results.
+            z_req = np.atleast_1d(z).astype(float)
+            z_calc = z_req.tolist()
+            if not np.any(np.isclose(z_req, 0.0)):
+                z_calc.append(0.0)
+            self.params.InitPower.set_params(As=As, ns=ns)
+            self.params.set_matter_power(redshifts=z_calc, kmax=kmax)
+            results = camb.get_results(self.params)
+            sigma8 = results.get_sigma8_0()
+            if sigma8_init is not None and not np.isclose(sigma8, sigma8_init, rtol=1e-4):
+                scale = (sigma8_init / sigma8)**2
+                log.info(f'Rescaling matter-fluctuation amplitude by {scale:.3g}')
+                As = As * scale
+                self.params.InitPower.set_params(As=As, ns=ns)
+                results.power_spectra_from_transfer(self.params.InitPower)
+                sigma8 = results.get_sigma8_0()
+            log.info(f'Value for matter fluctuation amplitude used: {sigma8 = :.4f}')
 
-        # Calculating P(k) at redshift `z`
-        self.params.set_matter_power(redshifts=np.atleast_1d(z).tolist(), kmax=kmax)
-        results = camb.get_results(self.params)
-        kh, _, pk = results.get_matter_power_spectrum(
+        kh, z_out, pk = results.get_matter_power_spectrum(
             minkh=kmin, maxkh=kmax, npoints=npoints, var1=component, var2=component)
+        if self.params.NonLinear == camb.model.NonLinear_none:
+            # Drop the internally added z=0 row (if any), keeping CAMB's
+            # native row order for the requested redshifts.
+            keep = np.any(np.isclose(np.asarray(z_out)[:, None], z_req[None, :]), axis=1)
+            pk = pk[keep]
         pk3 = pk * kh**3/(2*np.pi**2)  # Save (log(kh), log(pk3)).T for StePS/Gadget
         #np.savetxt(f'output/power_spectrum_z{z}.txt', np.log10(kh, pk, pk3).T)
         return kh, pk, pk3
