@@ -240,9 +240,14 @@ def lpt2(
     k2 = K[0]**2 + K[1]**2 + K[2]**2
     k2[0, 0, 0] = np.inf
 
+    # Both displacement orders share one (6, ...) buffer so a single
+    # interpolation pass below evaluates them at the particle positions.
+    disp_field = np.empty((6, *nvox), dtype=dtype)
+    disp_field1 = disp_field[:3]
+    disp_field2 = disp_field[3:]
+
     # -- 1. First-order displacement (Psi^(1)) --------------------------------
     phi1_k = -delta_k / k2  # gravitational potential; inherits delta_k complex dtype
-    disp_field1 = np.empty((3, *nvox), dtype=dtype)
     for i in range(3):
         psi_i = (-1j * K[i]) * phi1_k  # -i k_i phi(k)
         if compensate:  # pre-sharpen before interpolation
@@ -275,7 +280,6 @@ def lpt2(
     # -- 3. Second-order displacement (Psi^(2)) -------------------------------
     # Poisson equation for the source: phi2(k) = -S(k) / |k|^2.
     phi2_k = -S_k / k2  # inherits S_k complex dtype
-    disp_field2 = np.empty((3, *nvox), dtype=dtype)
     for i in range(3):
         psi_i = (-1j * K[i]) * phi2_k
         if compensate:
@@ -288,12 +292,13 @@ def lpt2(
     # -- 4. Interpolate and update particle positions and velocities ----------
     # For each spatial axis, interpolate the displacement fields (both
     # first- and second-order) from the grid to the particle positions.
-    disp_field1_interp = interpolate_field(
-        x=x, field=disp_field1, boxsize=boxsize,
+    # A single 6-component pass shares the position-to-grid conversion,
+    # kernel weights, and wrapped index arithmetic between both orders.
+    disp_interp = interpolate_field(
+        x=x, field=disp_field, boxsize=boxsize,
         origin=-boxsize / 2, method=method, vox_offset=0.5, periodic=True, dtype=dtype)
-    disp_field2_interp = interpolate_field(
-        x=x, field=disp_field2, boxsize=boxsize,
-        origin=-boxsize / 2, method=method, vox_offset=0.5, periodic=True, dtype=dtype)
+    disp_field1_interp = disp_interp[:, :3]
+    disp_field2_interp = disp_interp[:, 3:]
 
     xpert = x + g1 * disp_field1_interp + g2 * disp_field2_interp
     vpert = g1 * aHf1 * disp_field1_interp + g2 * aHf2 * disp_field2_interp
