@@ -6,21 +6,33 @@
 #    pip install py-spy scalene snakeviz
 #
 #  Usage:
-#    bash profiles/run_profiles.sh [small|medium|all]
+#    bash profiling/run-profiles.sh [small|medium|large|all|cprofile]
+#
+#  Note:
+#    large is intentionally opt-in; all runs small + medium only.
 #
 #  Output:
-#    profiles/stepsic-small.svg          py-spy flamegraph (small)
-#    profiles/stepsic-medium.svg         py-spy flamegraph (medium)
-#    profiles/stepsic-scalene.html       scalene line-level report
-#    profiles/stepsic-small.prof         cProfile binary dump
-#    profiles/stepsic-medium.prof        cProfile binary dump
-#    profiles/cprofile-small.txt         cProfile text summary
-#    profiles/cprofile-medium.txt        cProfile text summary
+#    profiling/audit/stepsic-small.svg          py-spy flamegraph (small)
+#    profiling/audit/stepsic-medium.svg         py-spy flamegraph (medium)
+#    profiling/audit/stepsic-large.svg          py-spy flamegraph (large)
+#    profiling/audit/stepsic-scalene-small.json scalene line-level report (small)
+#    profiling/audit/stepsic-scalene-medium.json scalene line-level report (medium)
+#    profiling/audit/stepsic-scalene-large.json scalene line-level report (large)
+#    profiling/audit/stepsic-small.prof         cProfile binary dump (small)
+#    profiling/audit/stepsic-medium.prof        cProfile binary dump (medium)
+#    profiling/audit/stepsic-large.prof         cProfile binary dump (large)
+#    profiling/audit/cprofile-small.txt         cProfile text summary (small)
+#    profiling/audit/cprofile-medium.txt        cProfile text summary (medium)
+#    profiling/audit/cprofile-large.txt         cProfile text summary (large)
+#    profiling/audit/output-small/               generated IC output (small)
+#    profiling/audit/output-medium/              generated IC output (medium)
+#    profiling/audit/output-large/               generated IC output (large)
 #*****************************************************************************#
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROFILE_DIR="${SCRIPT_DIR}"
+AUDIT_DIR="${SCRIPT_DIR}/audit"
+PROFILE_DIR="${AUDIT_DIR}"
 CONFIG_DIR="${SCRIPT_DIR}/configs"
 
 # Resolve the stepsic entry point relative to the profile directory
@@ -29,6 +41,7 @@ STEPSIC="${STEPSIC_ENTRY:-stepsic.py}"
 
 SMALL_CFG="${CONFIG_DIR}/profile-small.toml"
 MEDIUM_CFG="${CONFIG_DIR}/profile-medium.toml"
+LARGE_CFG="${CONFIG_DIR}/profile-large.toml"
 
 MODE="${1:-all}"
 
@@ -92,7 +105,7 @@ run_scalene() {
     local cfg="$1" label="$2"
     if ! check_tool "scalene"; then return; fi
 
-    local wrapper="${PROFILE_DIR}/scalene-wrapper.py"
+    local wrapper="${SCRIPT_DIR}/scalene-wrapper.py"
     if [[ ! -f "${wrapper}" ]]; then
         echo "WARNING: scalene wrapper '${wrapper}' not found. Skipping."
         return
@@ -183,6 +196,11 @@ case "${MODE}" in
         run_scalene   "${MEDIUM_CFG}" "medium"
         run_pyspy     "${MEDIUM_CFG}" "medium"
         ;;
+    large)
+        run_cprofile  "${LARGE_CFG}"  "large"
+        run_scalene   "${LARGE_CFG}"  "large"
+        run_pyspy     "${LARGE_CFG}"  "large"
+        ;;
     all)
         # Small: all three tools
         run_cprofile  "${SMALL_CFG}"  "small"
@@ -198,15 +216,18 @@ case "${MODE}" in
         run_cprofile  "${MEDIUM_CFG}" "medium"
         ;;
     *)
-        echo "Usage: $0 [small|medium|all|cprofile]"
+        echo "Usage: $0 [small|medium|large|all|cprofile]"
         exit 1
         ;;
 esac
 
 banner "Done"
 echo "  Quick analysis commands:"
-echo "    snakeviz profiles/stepsic-small.prof"
-echo "    snakeviz profiles/stepsic-medium.prof"
-echo "    open profiles/stepsic-medium.svg"
-echo "    scalene view profiles/stepsic-scalene-small.json"
+echo "    snakeviz profiling/audit/stepsic-small.prof"
+echo "    snakeviz profiling/audit/stepsic-medium.prof"
+echo "    snakeviz profiling/audit/stepsic-large.prof"
+echo "    open profiling/audit/stepsic-medium.svg"
+echo "    open profiling/audit/stepsic-large.svg"
+echo "    scalene view profiling/audit/stepsic-scalene-small.json"
+echo "    scalene view profiling/audit/stepsic-scalene-large.json"
 echo ""

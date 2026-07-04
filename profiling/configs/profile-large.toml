@@ -1,12 +1,12 @@
-# profile-small.toml
+# profile-large.toml
 #
-# Purpose: Fast profiling run; exercises the full 2LPT pipeline.
+# Purpose: Large opt-in profiling run for full-scale memory/FFT behavior.
 # Tools:    cProfile (cumtime/tottime), scalene (line-level), py-spy (flamegraph)
-# Grid:     32^3 particles on a 64^3 FFT mesh -> tiny FFTs, fast interp.
+# Grid:     768^3 particles on a 324^3 FFT mesh; expensive, run explicitly.
 
 # -- 1. Geometry -----------------------------------------------------------
 GEOMETRY    = "cubical"
-LBOX        = 500
+LBOX        = 1500
 PERIODIC    = true
 COI         = [0, 0, 0]
 
@@ -16,11 +16,11 @@ D_4D = 75
 
 # -- 2. Particle generation ------------------------------------------------
 TYPE  = "grid"
-NGRID = 32
+NGRID = 768
 SEED  = 137
 
 # -- 3. Perturbation theory ------------------------------------------------
-NMESH         = 64
+NMESH         = 324
 LPTORDER      = 2
 REDSHIFT      = 63
 INTERPOLATION = "cic"
@@ -30,8 +30,8 @@ PAIRED        = false
 PHASE_SHIFT   = 0.0
 
 # -- 4. Output -------------------------------------------------------------
-IC_DIR     = "profiling/audit/output-small"
-IC_PREFIX  = "profile-small"
+IC_DIR     = "profiling/audit/output-large"
+IC_PREFIX  = "profile-large"
 IC_FORMAT  = "hdf5"
 USE_DOUBLE = false
 SAVE_WHITE_NOISE = false

@@ -30,7 +30,7 @@ PAIRED        = false
 PHASE_SHIFT   = 0.0
 
 # -- 4. Output -------------------------------------------------------------
-IC_DIR     = "profiles/output-medium"
+IC_DIR     = "profiling/audit/output-medium"
 IC_PREFIX  = "profile-medium"
 IC_FORMAT  = "hdf5"
 USE_DOUBLE = false
