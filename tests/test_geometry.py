@@ -25,7 +25,17 @@ from stepsic.rng import RNG
 
 
 @pytest.mark.parametrize(
-    "y", [0.0, 1e-6, 0.1, 1.0, np.pi, 2.0 * np.pi - 1.0, 2.0 * np.pi]
+    "y",
+    [
+        0.0,
+        1e-6,
+        0.1,
+        1.0,
+        np.pi,
+        2.0 * np.pi - 1.0,
+        2.0 * np.pi - 1e-6,
+        2.0 * np.pi,
+    ],
 )
 def test_invert_x_minus_sin_x__round_trips_and_matches_brentq(y) -> None:
     """T1/T3: algebraic round trip plus scipy.brentq's bracketed root oracle."""
