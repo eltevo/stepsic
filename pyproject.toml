@@ -46,6 +46,7 @@ dependencies = [
 
 [project.optional-dependencies]
 gadget = ["glio"]
+test = ["pytest>=8"]
 
 [project.scripts]
 stepsic = "stepsic.stepsic:main"
@@ -59,3 +60,13 @@ Repository = "https://github.com/eltevo/stepsic"
 [tool.isort]
 profile = "black"
 known_first_party = ["stepsic"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers -m 'not slow'"
+markers = [
+    "slow: >2s; excluded from default run",
+    "camb: requires CAMB/Colossus calls",
+]
+filterwarnings = ["error"]

@@ -1,0 +1,40 @@
+GEOMETRY = "cubical"
+LBOX = [12.0, 12.0, 12.0]
+PERIODIC = true
+COI = [0.0, 0.0, 0.0]
+R_3D = 6.0
+D_4D = 2.0
+
+TYPE = "grid"
+NGRID = 4
+SEED = 42
+USE_DOUBLE = true
+COMOVING = true
+HINDEPENDENT = true
+ROTATE = 0.0
+
+NMESH = 8
+LPTORDER = 1
+REDSHIFT = 9.0
+INTERPOLATION = "cic"
+COMPENSATE = false
+SPHEREMODE = false
+PAIRED = false
+PHASE_SHIFT = 0.0
+
+IC_DIR = "tests/data"
+IC_PREFIX = "tiny"
+IC_FORMAT = "hdf5"
+SAVE_WHITE_NOISE = false
+
+COSMOLOGY = "Planck2018EE+BAO+SN"
+H0 = 70.0
+OMEGA_M = 0.3
+OMEGA_B = 0.05
+OMEGA_L = 0.7
+SPECTRUM = "camb"
+NONLINEAR = false
+
+UNIT_L_IN_CM = 3.085678e24
+UNIT_M_IN_G = 1.989e44
+UNIT_V_IN_KMPS = 20.738652969844207
