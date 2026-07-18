@@ -181,7 +181,6 @@ KERNELS: Dict[str, Type[InterpolationKernel]] = {
     'tsc': TSCKernel,
 }
 
-
 def compensation_kernel(
     kvec: RealField,
     nvox: IntVec3,
@@ -374,6 +373,10 @@ class FieldInterpolator:
     >>> values = interp(field, particle_positions)
     '''
 
+    # Process at most 2**20 particles per interpolation pass; for the largest
+    # built-in 6-component float64/TSC case, this caps temporaries near 250 MiB.
+    _CHUNK_SIZE = 1 << 20
+
     def __init__(
         self, 
         kernel: str | InterpolationKernel,
@@ -410,18 +413,31 @@ class FieldInterpolator:
         '''
         field = np.asarray(field, dtype=self.dtype)
 
+        # Shape (N, ncomp)
+        result = np.zeros((x.shape[0], field.shape[0]), dtype=self.dtype)
+
+        for start in range(0, x.shape[0], self._CHUNK_SIZE):
+            sl = slice(start, start + self._CHUNK_SIZE)
+            self._eval_chunk(field, x[sl], result[sl])
+
+        return result.squeeze()
+
+    def _eval_chunk(
+            self,
+            field: RealField,
+            x: RealField,
+            result: RealField
+        ) -> None:
+        '''Accumulate interpolated values for one particle chunk into ``result``.'''
         # Convert positions to fractional grid coordinates
         g = self.geometry.pos_to_grid(x)  # (N, 3)
         g_int = np.floor(g).astype(np.int32, copy=False)
         g_frc = (g - g_int).astype(self.dtype, copy=False)
- 
+
         # Compute 1-D weights along each axis; shape (support, N)
         wx, wy, wz = (
             np.vstack(self.kernel.weights(g_frc[:, i])) for i in range(3)
         )
-
-        # Shape (N, ncomp)
-        result = np.zeros((x.shape[0], field.shape[0]), dtype=self.dtype)
 
         # Loop over all combinations of kernel offsets
         nvox = self.geometry.nvox
@@ -441,9 +457,8 @@ class FieldInterpolator:
 
                     w = wx[dx] * wy[dy] * wz[dz]    # shape (N,)
                     fvals = field[:, ix, iy, iz].T  # shape (N, ncomp)
-                    result += w[:, np.newaxis] * fvals
-
-        return result.squeeze()
+                    np.multiply(fvals, w[:, np.newaxis], out=fvals)
+                    result += fvals
     
 
 class FieldDepositor:

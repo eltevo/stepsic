@@ -45,7 +45,7 @@ class CosmoData:
         if id is None:
             id = np.arange(pos.shape[0], dtype=np.uint64)
         if vel is None:
-            vel = np.zeros_like(pos, dtype=np.float32)
+            vel = np.zeros(pos.shape, dtype=np.float32)
         if mass is None:
             mass = np.ones(pos.shape[0], dtype=np.float32)
         self.id = id      # Particle IDs
@@ -127,7 +127,9 @@ class CosmoData:
             self.Lbox = params['LBOX'][2]
             return
         elif params['GEOMETRY'] == 'spherical':
-            # in spherical (R^3) geometry, we only need to rescale the the glass to h-independent units, if the input snapshot is in h-dependent units.
+            # in spherical (R^3) geometry, we only need to rescale the
+            # the glass to h-independent units, if the input snapshot
+            # is in h-dependent units.
             if not params['HINDEPENDENT']:
                 self.pos *= params['H']
             return
@@ -143,7 +145,7 @@ class CosmoData:
         ----------
         params : dict
             Dictionary containing the cosmological parameters.
-        midx : int, optional; default=6
+        midx : int, optional; default = 6
             Index of the mass column in the data array.
         '''
         M_tot = np.sum(self.mass)

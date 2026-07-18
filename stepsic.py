@@ -39,6 +39,7 @@ from stepsic.cosmology import (
 )
 from stepsic.data import CosmoData
 from stepsic.field import (
+    _mass_interp_weights,
     create_grid,
     create_nres_mass_map,
     create_particles,
@@ -85,15 +86,23 @@ def main():
         )
     elif params['TYPE'] == 'grid':
         nvox, dk = cubic_voxels(params['NGRID'], params['LBOX'])
-        pos, _ = create_grid(nvox, dk)
-        ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
+        pos = create_grid(nvox, dk, dtype=params['DTYPE'], return_coords=False)
+        ic_orig = CosmoData(pos=pos)
+        del pos
     elif params['TYPE'] == 'random':
         pos = create_particles(
             npart=params['NPART'], boxsize=params['LBOX'], seed=params['SEED'])
         ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
     ic_orig.rescale_snapshot_mass(params)
     ic_orig.center_snapshot(params)
-    ic = copy.deepcopy(ic_orig)  # The output IC will be stored here
+    # The output IC will be stored here. The LPTORDER=0 and NMESH=0 paths
+    # mutate ic's arrays in place, so they need full copies; the single-grid
+    # LPT path rebinds ic.pos/ic.vel to fresh arrays and only reads the
+    # rest, so a shallow copy avoids duplicating every particle array.
+    if params['LPTORDER'] == 0 or params['NMESH'] == 0:
+        ic = copy.deepcopy(ic_orig)
+    else:
+        ic = copy.copy(ic_orig)
 
     if params['LPTORDER'] == 0:
         # No perturbations applied. The unperturbed particle load is
@@ -159,8 +168,10 @@ def main():
             nres_tab, mass_tab = create_nres_mass_map(
                 params['NMESHSAMPLES'], ic_orig.mass_list, ic_orig.M_box, params['LBOX'])
 
-            dis_field = np.zeros((params['NMESHSAMPLES'], ic_orig.N_part, 3), dtype=params['DTYPE'])
-            vel_field = np.zeros((params['NMESHSAMPLES'], ic_orig.N_part, 3), dtype=params['DTYPE'])
+            # Each particle linearly mixes the two samples bracketing its
+            # mass, so every sample's contribution can be applied as soon
+            # as its fields are computed.
+            j_lo, j_hi, w_hi = _mass_interp_weights(ic.mass, mass_tab)
 
             for si, (res, mass) in enumerate(zip(nres_tab, mass_tab)):
                 log.info(f"Generating sample {si+1}/{params['NMESHSAMPLES']}...")
@@ -185,15 +196,14 @@ def main():
                         method=params['INTERPOLATION'], compensate=params['COMPENSATE'])
                     log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='2LPT')
 
-                # Calculating the displacement field for every grid
-                dis_field[si, ...] = xpert - ic_orig.pos
-                vel_field[si, ...] = vpert - ic_orig.vel
-
-            log.info('Interpolating between the different resolutions...')
-            for i in range(0, ic.N_part):  # TODO: vectorize this!
-                for k in range(0, 3):
-                    ic.pos[i, k] += np.interp(ic.mass[i], mass_tab, dis_field[:, i, k])
-                    ic.vel[i, k] += np.interp(ic.mass[i], mass_tab, vel_field[:, i, k])
+                # Accumulate this sample's displacement and velocity
+                # contribution for the particles whose mass it brackets
+                coeff = (np.where(j_lo == si, 1.0 - w_hi, 0.0)
+                         + np.where(j_hi == si, w_hi, 0.0))
+                sel = coeff != 0.0
+                cw = coeff[sel, None]
+                ic.pos[sel] += cw * (xpert[sel] - ic_orig.pos[sel])
+                ic.vel[sel] += cw * (vpert[sel] - ic_orig.vel[sel])
         else:
             # If the number of mesh points is specified, the script will
             # generate a single IC with a grid of the specified resolution.
@@ -203,6 +213,8 @@ def main():
             # White noise field for complete reproducibility
             field = white_noise(nvox=nvox, seed=params['SEED'], dtype=params['DTYPE'])
             delta_k = generate_delta_k(kh, pk, nvox, dk, field=field, dtype=params['DTYPE'])
+            if not params['SAVE_WHITE_NOISE']:
+                del field  # only read again when saving the white noise
 
             lpt_kwargs = dict(
                 delta_k=delta_k, nvox=nvox, dk=dk, g1=g1, aHf1=aHf1,
@@ -219,6 +231,11 @@ def main():
                 log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='2LPT')
             ic.pos = xpert
             ic.vel = vpert
+            # LPT is done, so drop the unperturbed load and the Fourier-space
+            # inputs (lpt_kwargs pins delta_k) unless they are saved below.
+            del ic_orig, lpt_kwargs
+            if not params['SAVE_WHITE_NOISE']:
+                del delta_k
 
         # Prepare the IC for final output
         ic.vel /= params['H']  # Convert to [km/s] in all cases

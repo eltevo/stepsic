@@ -49,9 +49,12 @@ def log_lpt(
     title : str, optional
         Label prefix for log messages (e.g. ``'1LPT'``).
     '''
-    xabs, vabs = np.abs(xpert - x), np.abs(vpert)
+    xabs = np.abs(xpert - x)
     xmax, xavg = np.max(xabs, axis=0), np.mean(xabs, axis=0)
+    del xabs
+    vabs = np.abs(vpert)
     vmax, vavg = np.max(vabs, axis=0), np.mean(vabs, axis=0)
+    del vabs
     for i, xi in enumerate(('x', 'y', 'z')):
         log.info(
             f"{title} '{xi}' displacements: "
@@ -137,18 +140,22 @@ def lpt1(
 
     # Build the displacement field one axis at a time using the identity
     #       psi_i(k) = -i k_i phi(k).
+    # One complex buffer is reused for all three axes
     disp_field = np.empty((3, *nvox), dtype=dtype)
+    psi_i = np.empty_like(phi_k)
     for i in range(3):
-        psi_i = (-1j * K[i]) * phi_k
+        np.multiply(phi_k, -1j * K[i], out=psi_i)
         if compensate:
             psi_i *= wx[:, None, None]
             psi_i *= wy[None, :, None]
             psi_i *= wz[None, None, :]
         disp_field[i] = scipy.fft.irfftn(
             psi_i, s=nvox, axes=(0, 1, 2), workers=-1)
+    del phi_k, psi_i, k2
     disp_field_interp = interpolate_field(
         x=x, field=disp_field, boxsize=boxsize,
         origin=-boxsize / 2, method=method, vox_offset=0.5, periodic=True, dtype=dtype)
+    del disp_field
     xpert = x + g1 * disp_field_interp  # Bernardeau et al. 2002, eq. 98
     vpert = g1 * aHf1 * disp_field_interp  # Bernardeau et al. 2002, eq. 99
     return xpert, vpert
@@ -247,9 +254,11 @@ def lpt2(
     disp_field2 = disp_field[3:]
 
     # -- 1. First-order displacement (Psi^(1)) --------------------------------
+    # One complex buffer is reused for every -i k_i phi(k) product below
     phi1_k = -delta_k / k2  # gravitational potential; inherits delta_k complex dtype
+    psi_i = np.empty_like(phi1_k)
     for i in range(3):
-        psi_i = (-1j * K[i]) * phi1_k  # -i k_i phi(k)
+        np.multiply(phi1_k, -1j * K[i], out=psi_i)  # -i k_i phi(k)
         if compensate:  # pre-sharpen before interpolation
             psi_i *= wx[:, None, None]
             psi_i *= wy[None, :, None]
@@ -271,23 +280,27 @@ def lpt2(
     dPxx, dPyy, dPzz = _dP(0, 0), _dP(1, 1), _dP(2, 2)
     S = dPxx * dPyy + dPxx * dPzz + dPyy * dPzz
     del dPxx, dPyy, dPzz
-    S -= _dP(0, 1)**2  # (d Psi_x/dy)^2
-    S -= _dP(0, 2)**2  # (d Psi_x/dz)^2
-    S -= _dP(1, 2)**2  # (d Psi_y/dz)^2
+    for i, j in ((0, 1), (0, 2), (1, 2)):
+        dPij = _dP(i, j)
+        np.square(dPij, out=dPij)
+        S -= dPij  # (d Psi_i/dx_j)^2
+    del dPij, phi1_k
     S_k = scipy.fft.rfftn(S, workers=-1)
     del S
 
     # -- 3. Second-order displacement (Psi^(2)) -------------------------------
     # Poisson equation for the source: phi2(k) = -S(k) / |k|^2.
     phi2_k = -S_k / k2  # inherits S_k complex dtype
+    del S_k, k2
     for i in range(3):
-        psi_i = (-1j * K[i]) * phi2_k
+        np.multiply(phi2_k, -1j * K[i], out=psi_i)
         if compensate:
             psi_i *= wx[:, None, None]
             psi_i *= wy[None, :, None]
             psi_i *= wz[None, None, :]
         disp_field2[i] = scipy.fft.irfftn(
             psi_i, s=nvox, axes=(0, 1, 2), workers=-1)
+    del phi2_k, psi_i
 
     # -- 4. Interpolate and update particle positions and velocities ----------
     # For each spatial axis, interpolate the displacement fields (both
@@ -297,9 +310,18 @@ def lpt2(
     disp_interp = interpolate_field(
         x=x, field=disp_field, boxsize=boxsize,
         origin=-boxsize / 2, method=method, vox_offset=0.5, periodic=True, dtype=dtype)
+    del disp_field, disp_field1, disp_field2  # disp_field1/2 are views pinning the grid
     disp_field1_interp = disp_interp[:, :3]
     disp_field2_interp = disp_interp[:, 3:]
 
-    xpert = x + g1 * disp_field1_interp + g2 * disp_field2_interp
-    vpert = g1 * aHf1 * disp_field1_interp + g2 * aHf2 * disp_field2_interp
+    # Hack: in-place, per-axis accumulation of the trailing term. Numpy
+    # evaluates `a + b + c` as `(a + b) + c` elementwise, so this gives
+    # bit-identical values while the largest temporary is one column
+    # instead of a full (N, 3) array (float64 for vpert, as the aHf
+    # prefactors promote it).
+    xpert = x + g1 * disp_field1_interp
+    vpert = g1 * aHf1 * disp_field1_interp
+    for k in range(3):
+        xpert[:, k] += g2 * disp_field2_interp[:, k]
+        vpert[:, k] += g2 * aHf2 * disp_field2_interp[:, k]
     return xpert, vpert

@@ -49,7 +49,12 @@ def wrap(x: RealField, boxsize: FloatVec3) -> RealField:
     return np.mod(x+boxsize/2, boxsize)
 
 
-def create_grid(nvox: FloatVec3, dk: float) -> tuple[RealField, RealField]:
+def create_grid(
+        nvox: FloatVec3,
+        dk: float,
+        dtype: np.dtype = np.float64,
+        return_coords: bool = True
+) -> tuple[RealField, RealField] | RealField:
     '''
     Create a regular grid for the simulation box.
 
@@ -61,6 +66,15 @@ def create_grid(nvox: FloatVec3, dk: float) -> tuple[RealField, RealField]:
         The uniform step size in each dimension, calculated as the length
         of the shortest dimension divided by the number of voxels in
         that dimension.
+    dtype : np.dtype
+        The data type of the returned particle positions. The grid axes
+        are always computed in float64 and cast on assignment, so
+        ``dtype=np.float32`` gives values identical to casting the
+        float64 result.
+    return_coords : bool
+        If `True` (default), also build and return the full 3D coordinate
+        array. Pass `False` to skip that allocation when only the
+        particle positions are needed.
 
     Returns
     -------
@@ -69,12 +83,26 @@ def create_grid(nvox: FloatVec3, dk: float) -> tuple[RealField, RealField]:
         number of particles (voxels).
     coords : ndarray of shape (3, Nx, Ny, Nz)
         The grid coordinates in each dimension, where Nx, Ny, Nz are the
-        number of voxels in each dimension.
+        number of voxels in each dimension. Only returned when
+        ``return_coords`` is `True`.
     '''
     mesh = tuple(np.arange(-(n-1)*dk/2, n*dk/2, dk) for n in nvox)
-    xx, yy, zz = np.meshgrid(*mesh, indexing='ij')
-    particles = np.stack([xx.ravel(), yy.ravel(), zz.ravel()], axis=1)
-    return particles, np.array((xx, yy, zz))
+    shape = tuple(m.size for m in mesh)
+    bcast = (
+        mesh[0][:, None, None],
+        mesh[1][None, :, None],
+        mesh[2][None, None, :],
+    )
+    grid = np.empty((*shape, 3), dtype=dtype)
+    for i in range(3):
+        grid[..., i] = bcast[i]
+    particles = grid.reshape(-1, 3)
+    if not return_coords:
+        return particles
+    coords = np.empty((3, *shape), dtype=np.float64)
+    for i in range(3):
+        coords[i] = bcast[i]
+    return particles, coords
 
 
 def create_particles(npart: int, boxsize: FloatVec3, seed: Seed = None) -> RealField:
@@ -376,12 +404,15 @@ def generate_delta_k(
     if np.any(mask):
         ktarget_log = np.log(kmod[mask])
         pk_grid[mask] = np.exp(spline(ktarget_log))
+        del ktarget_log
+    del kmod, mask
 
     if field is None:
         field = white_noise(nvox=nvox, seed=seed, dtype=dtype)
 
     # Sirko 2005; Bagla & Padmanabhan 1997; Klypin & Holtzman 1997
-    target_A = np.sqrt(pk_grid / dk**3, dtype=dtype)
+    np.divide(pk_grid, dk**3, out=pk_grid)
+    target_A = np.sqrt(pk_grid, out=pk_grid)
     if fixed:
         # Flips phase and sets amplitude to 1 for every mode.
         # Angulo & Pontzen 2016
@@ -397,6 +428,50 @@ def generate_delta_k(
     if paired:
         delta_k = -delta_k
     return delta_k
+
+
+def _mass_interp_weights(
+        mass: RealField,
+        mass_tab: RealField
+) -> tuple[np.ndarray, np.ndarray, RealField]:
+    '''
+    Bracketing sample indices and weights for linear interpolation in mass.
+
+    Parameters
+    ----------
+    mass : ndarray of shape (N,)
+        Particle masses.
+    mass_tab : ndarray of shape (S,)
+        Sample masses ordered from the largest to the smallest, as
+        produced by :func:`create_nres_mass_map`.
+
+    Returns
+    -------
+    j_lo, j_hi : ndarray of shape (N,) of int
+        Indices into ``mass_tab`` of the two samples bracketing each
+        particle's mass.
+    w_hi : ndarray of shape (N,) of float
+        Weight of the ``j_hi`` sample, such that
+        ``(1 - w_hi) * samples[j_lo] + w_hi * samples[j_hi]`` reproduces
+        ``np.interp`` on the ascending mass axis (linear inside the
+        table, constant extrapolation outside).
+    '''
+    mass = np.asarray(mass, dtype=np.float64)
+    mass_tab = np.asarray(mass_tab, dtype=np.float64)
+    nsamp = mass_tab.size
+    if nsamp == 1:
+        zeros = np.zeros(mass.shape, dtype=np.intp)
+        return zeros, zeros, np.zeros(mass.shape)
+
+    asc = mass_tab[::-1]  # ascending masses
+    hi = np.clip(np.searchsorted(asc, mass, side='right'), 1, nsamp - 1)
+    lo = hi - 1
+    span = asc[hi] - asc[lo]
+    # A zero span only occurs for duplicated table masses;
+    # -> weight 0 then selects the lower duplicate.
+    w_hi = np.where(span > 0, (mass - asc[lo]) / np.where(span > 0, span, 1.0), 0.0)
+    w_hi = np.clip(w_hi, 0.0, 1.0)  # constant extrapolation outside the table
+    return nsamp - 1 - lo, nsamp - 1 - hi, w_hi
 
 
 def create_nres_mass_map(
