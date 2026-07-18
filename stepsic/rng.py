@@ -23,6 +23,12 @@ from stepsic._typing import Seed
 _UINT64_MASK = (1 << 64) - 1
 _UINT32_MASK = np.uint64((1 << 32) - 1)
 
+# Philox is counter-based: StePS puts mode coordinates in the counter
+# and uses (seed, 0) as the key to select a reproducible independent
+# mapping. These here are the published Philox4x64 constants, not seeds.
+# M0/M1 are odd multipliers chosen by Random123's search and TestU01
+# testing for strong diffusion; W0/W1 are Weyl key increments from the
+# 64-bit golden-ratio and sqrt(3)-1 fractions.
 _PHILOX_M0 = 0xD2E7470EE14C6C93
 _PHILOX_M1 = 0xCA5A826395121157
 _PHILOX_W0 = 0x9E3779B97F4A7C15
