@@ -10,11 +10,11 @@ set -euo pipefail
 #  Pipeline steps:
 #    1. preglass      - cylindrical pre-glass IC  (stepsic, LPTORDER=0)
 #    2. glass_param   - compute softening + write StePS glass parameter file
-#    3. build_glass   - compile StePS binary  (PERIODIC_Z + GLASS_MAKING + DOUBLE)
+#    3. build_glass   - compile StePS binary  (PERIODIC_Z + GLASS_MAKING)
 #    4. run_glass     - run glass relaxation
 #    5. ic_2lpt       - 2LPT cosmological IC from glass
 #    6. ic_1lpt       - 1LPT cosmological IC from glass (for LPT order comparison)
-#    7. build_sim     - compile StePS LCDM binary  (PERIODIC_Z + DOUBLE)
+#    7. build_sim     - compile StePS LCDM binary  (PERIODIC_Z)
 #    8. run_sim_2lpt  - run 2LPT LCDM simulation  (z_init → z=0)
 #    9. run_sim_1lpt  - run 1LPT LCDM simulation  (z_init → z=0)
 #   10. plot          - randoms + P(k) + validation figures
@@ -52,6 +52,7 @@ set -euo pipefail
 #    GLASS_ACC_PARAM, GLASS_STEP_MIN, GLASS_STEP_MAX
 #    SIM_IS_PERIODIC, SIM_ACC_PARAM, SIM_STEP_MIN, SIM_STEP_MAX
 #    SIM_TIME_LIMIT_MIN, SIM_RADIAL_FORCE_ACCURACY, SIM_RADIAL_FORCE_TABLE_SIZE
+#    STEPS_PRECISION  (double | single; default double)
 #    PK_NMESH, PK_P0, PK_NRADIAL_BINS, PK_NFKP_RADIAL_BINS
 #    PK_RANDOMS_NFACTOR, PK_RANDOMS_SEED
 #
@@ -100,15 +101,22 @@ SIM_A_START="$(awk "BEGIN {printf \"%.15f\", 1.0 / (1.0 + ${SIM_Z_INIT})}")"
 export EDS_H0
 EDS_H0="$(vlib::cosmology::eds_h0 "${COSMO_H0}" "${COSMO_OMEGA_M}")"
 
+# Precision build flag (empty for the default double)
+STEPS_PRECISION_FLAGS="$(vlib::steps::precision_flags)"
+# Binary names carry the precision suffix so that switching STEPS_PRECISION
+# triggers a rebuild instead of silently reusing the other precision's binary.
+GLASS_BIN="${BUILD_DIR}/StePS_glass_cylindrical$(vlib::steps::precision_suffix)"
+SIM_BIN="${BUILD_DIR}/StePS_cylindrical$(vlib::steps::precision_suffix)"
+
 # -- List steps --------------------------------------------------------------
 if (( VLIB_LIST_STEPS )); then
     vlib::step_check "preglass"    "${PREGLASS_DIR}/ic.hdf5"               || :
     vlib::step_check "glass_param" "${PARAM_DIR}/glass.param"              || :
-    vlib::step_check "build_glass" "${BUILD_DIR}/StePS_glass_cylindrical"  || :
+    vlib::step_check "build_glass" "${GLASS_BIN}"                          || :
     vlib::step_check "run_glass"                                            || :
     vlib::step_check "ic_2lpt"     "$(vlib::breadcrumb_get IC_2LPT)"       || :
     vlib::step_check "ic_1lpt"     "$(vlib::breadcrumb_get IC_1LPT)"       || :
-    vlib::step_check "build_sim"   "${BUILD_DIR}/StePS_cylindrical"         || :
+    vlib::step_check "build_sim"   "${SIM_BIN}"                             || :
     vlib::step_check "run_sim_2lpt"                                         || :
     vlib::step_check "run_sim_1lpt"                                         || :
     vlib::step_check "plot"        "${OUTPUT}/cylinder_pk.pdf"              || :
@@ -201,48 +209,6 @@ _shuffle_ic() {
     fi
 }
 
-# Cache StePS Ewald lookup tables across runs.
-#
-# StePS's file_exist() (StePS/src/inputoutput.cc) does not check stat()'s
-# return value, so a missing Ewald table is sometimes misreported as present
-# (uninitialized stack memory hitting the S_IFREG bit). When that happens,
-# StePS takes the load path and aborts with an HDF5 open error instead of
-# falling back to recomputing the table. Staging a real cached table into
-# OUT_DIR before each run sidesteps the bug by ensuring the file is genuinely
-# there. The table content depends only on (mode, IS_PERIODIC, L, R_3D), so
-# one cached file is reused across glass/2lpt/1lpt and across --force re-runs.
-_ewald_cache_path() {
-    local mode="${1}" is_periodic="${2}"
-    echo "${EWALD_DIR}/S1R2_Ewald_table_${mode}_IS${is_periodic}_R${R_3D}_Lz${LZ}.hdf5"
-}
-
-# Copy table from sim_dir into the cache if it's there and the cache lacks it.
-# Run both before clearing sim_dir (to salvage tables from prior runs) and
-# after a successful StePS run (to cache the freshly-computed table).
-_save_ewald_to_cache() {
-    local sim_dir="${1}" mode="${2}" is_periodic="${3}"
-    local src="${sim_dir}/S1R2_Ewald_table_${mode}.hdf5"
-    local dst; dst="$(_ewald_cache_path "${mode}" "${is_periodic}")"
-    if [[ -f "${src}" && ! -f "${dst}" ]]; then
-        mkdir -p "${EWALD_DIR}"
-        cp "${src}" "${dst}"
-        echo "  Cached Ewald table -> ${dst}"
-    fi
-}
-
-# Copy cached table into sim_dir under StePS's expected filename. Run after
-# clear_dir, before launching StePS.
-_stage_ewald_from_cache() {
-    local sim_dir="${1}" mode="${2}" is_periodic="${3}"
-    local src; src="$(_ewald_cache_path "${mode}" "${is_periodic}")"
-    local dst="${sim_dir}/S1R2_Ewald_table_${mode}.hdf5"
-    if [[ -f "${src}" ]]; then
-        mkdir -p "${sim_dir}"
-        cp "${src}" "${dst}"
-        echo "  Staged Ewald table from cache -> ${dst}"
-    fi
-}
-
 # Write the simulation output-redshift list.
 _write_outredshifts() {
     cat > "${PARAM_DIR}/outredshifts.txt" <<'EOF'
@@ -260,6 +226,11 @@ EOF
 # _write_lcdm_param <name> <ic_file> <out_dir>
 _write_lcdm_param() {
     local name="${1}" ic_file="${2}" out_dir="${3}"
+    # StePS reads R_SIM in physical Mpc: H_INDEPENDENT_UNITS=1 converts L_BOX and
+    # PARTICLE_RADII from [Mpc/h] but not Rsim (see vlib::cosmology::eds_h0), so
+    # convert R_3D [Mpc/h] here or the PERIODIC_Z mass check fails with 1/h^2.
+    local r_sim_mpc
+    r_sim_mpc="$(awk "BEGIN {printf \"%.10f\", ${R_3D} * 100.0 / ${COSMO_H0}}")"
     cat > "${PARAM_DIR}/lcdm_${name}.param" <<EOF
 Cosmological parameters:
 ------------------------
@@ -277,7 +248,7 @@ COSMOLOGY       1
 IS_PERIODIC     ${SIM_IS_PERIODIC}
 COMOVING_INTEGRATION    1
 L_BOX           ${LZ}
-R_SIM           ${R_3D}
+R_SIM           ${r_sim_mpc}
 IC_FILE         ${ic_file}
 IC_FORMAT       2
 OUT_DIR         ${out_dir}/
@@ -350,9 +321,9 @@ IC_PREGLASS="${IC_PREGLASS:-$(vlib::breadcrumb_get IC_PREGLASS)}"
 PARTICLE_RADII="${PARTICLE_RADII:-$(vlib::breadcrumb_get PARTICLE_RADII)}"
 
 # -- Step 3: build_glass -----------------------------------------------------
-if vlib::step_check "build_glass" "${BUILD_DIR}/StePS_glass_cylindrical"; then
+if vlib::step_check "build_glass" "${GLASS_BIN}"; then
     vlib::steps::detect_toolchain
-    vlib::steps::build "StePS_glass_cylindrical" PERIODIC_Z GLASS_MAKING DOUBLE
+    vlib::steps::build "$(basename "${GLASS_BIN}")" PERIODIC_Z GLASS_MAKING ${STEPS_PRECISION_FLAGS}
     vlib::step_done "build_glass"
 fi
 
@@ -366,11 +337,11 @@ vlib::steps::write_glass_param \
 
 # -- Step 4: run_glass -------------------------------------------------------
 if vlib::step_check "run_glass"; then
-    _save_ewald_to_cache "${GLASS_DIR}" "higres" 4
+    vlib::steps::recover_ewald_cache "${GLASS_DIR}" "${EWALD_DIR}"
     vlib::clear_dir "${GLASS_DIR}"
-    _stage_ewald_from_cache "${GLASS_DIR}" "higres" 4
-    vlib::steps::run_binary "${BUILD_DIR}/StePS_glass_cylindrical" "${PARAM_DIR}/glass.param"
-    _save_ewald_to_cache "${GLASS_DIR}" "higres" 4
+    vlib::steps::run_binary_with_ewald_cache \
+        "${GLASS_BIN}" "${PARAM_DIR}/glass.param" \
+        "${GLASS_DIR}" "${EWALD_DIR}" "run_glass" "higres"
     GLASS_SNAP="$(vlib::find_last_snap "${GLASS_DIR}")"
     if [[ -z "${GLASS_SNAP}" ]]; then
         echo "ERROR: Glass relaxation produced no snapshots." >&2
@@ -416,9 +387,9 @@ fi
 IC_1LPT="${IC_1LPT:-$(vlib::breadcrumb_get IC_1LPT)}"
 
 # -- Step 7: build_sim -------------------------------------------------------
-if vlib::step_check "build_sim" "${BUILD_DIR}/StePS_cylindrical"; then
+if vlib::step_check "build_sim" "${SIM_BIN}"; then
     vlib::steps::detect_toolchain
-    vlib::steps::build "StePS_cylindrical" PERIODIC_Z DOUBLE
+    vlib::steps::build "$(basename "${SIM_BIN}")" PERIODIC_Z ${STEPS_PRECISION_FLAGS}
     vlib::step_done "build_sim"
 fi
 
@@ -430,13 +401,13 @@ if vlib::step_check "run_sim_2lpt"; then
     if [[ -z "${PARTICLE_RADII:-}" ]]; then
         echo "ERROR: PARTICLE_RADII not set; run from step 2 or earlier." >&2; exit 1
     fi
-    _save_ewald_to_cache "${SIM_2LPT_DIR}" "medres" "${SIM_IS_PERIODIC}"
-    vlib::clear_dir "${SIM_2LPT_DIR}"
-    _stage_ewald_from_cache "${SIM_2LPT_DIR}" "medres" "${SIM_IS_PERIODIC}"
     _write_outredshifts
     _write_lcdm_param "2lpt" "${IC_2LPT}" "${SIM_2LPT_DIR}"
-    vlib::steps::run_binary "${BUILD_DIR}/StePS_cylindrical" "${PARAM_DIR}/lcdm_2lpt.param"
-    _save_ewald_to_cache "${SIM_2LPT_DIR}" "medres" "${SIM_IS_PERIODIC}"
+    vlib::steps::recover_ewald_cache "${SIM_2LPT_DIR}" "${EWALD_DIR}"
+    vlib::clear_dir "${SIM_2LPT_DIR}"
+    vlib::steps::run_binary_with_ewald_cache \
+        "${SIM_BIN}" "${PARAM_DIR}/lcdm_2lpt.param" \
+        "${SIM_2LPT_DIR}" "${EWALD_DIR}" "run_sim_2lpt" "medres"
     SNAP_2LPT="$(vlib::find_last_snap "${SIM_2LPT_DIR}")"
     if [[ -z "${SNAP_2LPT}" ]]; then
         echo "ERROR: 2LPT simulation produced no snapshots." >&2; exit 1
@@ -455,13 +426,13 @@ if vlib::step_check "run_sim_1lpt"; then
     if [[ -z "${PARTICLE_RADII:-}" ]]; then
         echo "ERROR: PARTICLE_RADII not set; run from step 2 or earlier." >&2; exit 1
     fi
-    _save_ewald_to_cache "${SIM_1LPT_DIR}" "medres" "${SIM_IS_PERIODIC}"
-    vlib::clear_dir "${SIM_1LPT_DIR}"
-    _stage_ewald_from_cache "${SIM_1LPT_DIR}" "medres" "${SIM_IS_PERIODIC}"
     _write_outredshifts
     _write_lcdm_param "1lpt" "${IC_1LPT}" "${SIM_1LPT_DIR}"
-    vlib::steps::run_binary "${BUILD_DIR}/StePS_cylindrical" "${PARAM_DIR}/lcdm_1lpt.param"
-    _save_ewald_to_cache "${SIM_1LPT_DIR}" "medres" "${SIM_IS_PERIODIC}"
+    vlib::steps::recover_ewald_cache "${SIM_1LPT_DIR}" "${EWALD_DIR}"
+    vlib::clear_dir "${SIM_1LPT_DIR}"
+    vlib::steps::run_binary_with_ewald_cache \
+        "${SIM_BIN}" "${PARAM_DIR}/lcdm_1lpt.param" \
+        "${SIM_1LPT_DIR}" "${EWALD_DIR}" "run_sim_1lpt" "medres"
     SNAP_1LPT="$(vlib::find_last_snap "${SIM_1LPT_DIR}")"
     if [[ -z "${SNAP_1LPT}" ]]; then
         echo "ERROR: 1LPT simulation produced no snapshots." >&2; exit 1

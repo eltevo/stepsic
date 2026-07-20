@@ -476,9 +476,30 @@ vlib::steps::detect_toolchain() {
     HDF5_LIBS="${HDF5_LIBS:--L${conda_prefix}/lib -lhdf5}"
 }
 
+# StePS force-calculation precision, selected via the STEPS_PRECISION env var.
+vlib::steps::precision_flags() {
+    case "${STEPS_PRECISION:-double}" in
+        double) ;;                                # StePS default: no flag
+        single) printf 'USE_SINGLE_PRECISION' ;;
+        *)
+            echo "ERROR: STEPS_PRECISION must be 'single' or 'double' (got '${STEPS_PRECISION}')." >&2
+            exit 1
+            ;;
+    esac
+}
+
+# Binary-name suffix matching the selected precision
+vlib::steps::precision_suffix() {
+    case "${STEPS_PRECISION:-double}" in
+        single) printf '_single' ;;
+        *) ;;
+    esac
+}
+
 # Compile a StePS binary with the given compile-time feature flags.
 # Usage: vlib::steps::build <binary_name> <FLAG1> [FLAG2 ...]
 # The binary is installed to ${BUILD_DIR}/<binary_name>.
+# Flags must exist in the Makefile template; unknown flags are hard errors
 # Requires: vlib::steps::detect_toolchain already called; STEPS_SRC, BUILD_DIR set.
 vlib::steps::build() {
     local binary_name="${1}"
@@ -503,9 +524,11 @@ EOF
     local flag
     for flag in "${flags[@]+"${flags[@]}"}"; do
         script+=$'\n'
-        script+="if ! grep -qE '^#OPT .*-D${flag}\\b' Makefile; then"
+        script+="if ! grep -qE '^#?OPT \\+= -D${flag}\\b' Makefile; then"
         script+=$'\n'
-        script+="    echo 'WARNING: Flag -D${flag} not found in Makefile template.' >&2"
+        script+="    echo 'ERROR: Unknown StePS build flag -D${flag} (absent from Makefile template).' >&2"
+        script+=$'\n'
+        script+="    exit 1"
         script+=$'\n'
         script+="fi"
         script+=$'\n'
@@ -552,6 +575,96 @@ mpirun -np "${N_MPI}" "${binary}" "${param}" "${N_GPU}"
 EOF
 )"
     vlib::run_shell_in_env "${STEPS_ENV}" "${script}"
+}
+# Run the validation-owned Ewald cache helper inside the stepsic environment.
+# Arguments are passed structurally; no caller-provided path is evaluated as shell code.
+vlib::steps::_ewald_cache_helper() {
+    local helper_dir
+    helper_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    vlib::run_in_env "${STEPSIC_ENV}" python \
+        "${helper_dir}/ewald_cache.py" "$@"
+}
+
+# Recover a table left by an interrupted StePS run using only that run's
+# prewritten provenance manifest. Unmanifested legacy tables are not adopted.
+vlib::steps::recover_ewald_cache() {
+    local stage_dir="${1}"
+    local cache_root="${2}"
+    vlib::steps::_ewald_cache_helper recover \
+        --stage-dir "${stage_dir}" \
+        --cache-root "${cache_root}"
+}
+
+# Run StePS with validated S^1 x R^2 Ewald staging, durable attempt logs, and
+# a narrowly-scoped retry for StePS's missing-file false-positive.
+# Usage: vlib::steps::run_binary_with_ewald_cache \
+#   <binary> <param> <stage_dir> <cache_root> <stage_name> <mode>
+vlib::steps::run_binary_with_ewald_cache() {
+    local binary="${1}"
+    local param="${2}"
+    local stage_dir="${3}"
+    local cache_root="${4}"
+    local stage_name="${5}"
+    local mode="${6}"
+    local table="${stage_dir}/S1R2_Ewald_table_${mode}.hdf5"
+
+    vlib::steps::_ewald_cache_helper prepare \
+        --binary "${binary}" \
+        --param "${param}" \
+        --mode "${mode}" \
+        --stage-dir "${stage_dir}" \
+        --cache-root "${cache_root}" \
+        --stage-name "${stage_name}"
+
+    local log_root="${cache_root}/logs/${stage_name}"
+    mkdir -p "${log_root}"
+    local log_dir
+    log_dir="$(mktemp -d "${log_root}/$(date -u '+%Y%m%dT%H%M%SZ')-$$-XXXXXX")"
+
+    local attempt run_status promote_status
+    local -a pipeline_status
+    for attempt in 1 2 3 4 5; do
+        local attempt_log="${log_dir}/attempt-${attempt}.log"
+        echo "  StePS attempt ${attempt}/5 (log: ${attempt_log})"
+        if vlib::steps::run_binary "${binary}" "${param}" 2>&1 | tee "${attempt_log}"; then
+            pipeline_status=("${PIPESTATUS[@]}")
+        else
+            pipeline_status=("${PIPESTATUS[@]}")
+        fi
+        run_status="${pipeline_status[0]}"
+        if (( pipeline_status[1] != 0 )); then
+            echo "ERROR: Failed to write StePS attempt log ${attempt_log}." >&2
+            return "${pipeline_status[1]}"
+        fi
+
+        promote_status=0
+        vlib::steps::_ewald_cache_helper promote \
+            --stage-dir "${stage_dir}" \
+            --cache-root "${cache_root}" \
+            --attempt-log "${attempt_log}" \
+            || promote_status=$?
+
+        if (( run_status == 0 )); then
+            if (( promote_status != 0 )); then
+                echo "ERROR: StePS succeeded but its Ewald table could not be preserved." >&2
+                return "${promote_status}"
+            fi
+            return 0
+        fi
+
+        if (( promote_status != 0 && promote_status != 3 )); then
+            echo "WARNING: The failed StePS run's Ewald table was not cacheable." >&2
+        fi
+
+        if (( attempt < 5 )) \
+        && vlib::steps::_ewald_cache_helper check-missing-error \
+            --log "${attempt_log}" --table "${table}"; then
+            echo "  Retrying after StePS misreported the absent Ewald table as present."
+            continue
+        fi
+        return "${run_status}"
+    done
+    return "${run_status}"
 }
 
 # Compute gravitational softening from a StePS snapshot via Python.

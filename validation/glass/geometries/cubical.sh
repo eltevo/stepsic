@@ -25,6 +25,10 @@ if ! [[ "${START_STEP}" =~ ^[1-4]$ ]]; then
     exit 1
 fi
 
+# Precision build flag (empty for the default double)
+STEPS_PRECISION_FLAGS="$(vlib::steps::precision_flags)"
+GLASS_BIN_NAME="StePS_glass_periodic$(vlib::steps::precision_suffix)"
+
 echo ""
 echo "--------------------------------------------------------------------"
 echo "  Cubical (T^3) glass pipeline - starting from step ${START_STEP}"
@@ -106,9 +110,9 @@ if (( START_STEP <= 3 )); then
     echo "-- Step 3: Compiling StePS periodic glass binary --"
 
     vlib::steps::detect_toolchain
-    vlib::clear_files "${BUILD_DIR}" "StePS_glass_periodic"
+    vlib::clear_files "${BUILD_DIR}" "${GLASS_BIN_NAME}"
 
-    vlib::steps::build "StePS_glass_periodic" PERIODIC GLASS_MAKING
+    vlib::steps::build "${GLASS_BIN_NAME}" PERIODIC GLASS_MAKING ${STEPS_PRECISION_FLAGS}
 fi
 
 # Always rewrite the param file so env-var overrides (e.g. GLASS_TIME_LIMIT_MIN)
@@ -128,7 +132,7 @@ if (( START_STEP <= 4 )); then
 
     vlib::clear_dir "${CUBIC_RANDOM_DIR}/glass"
 
-    vlib::steps::run_binary "${BUILD_DIR}/StePS_glass_periodic" \
+    vlib::steps::run_binary "${BUILD_DIR}/${GLASS_BIN_NAME}" \
         "${PARAM_DIR}/cubic_random.param"
 fi
 

@@ -23,13 +23,19 @@ if ! [[ "${START_STEP}" =~ ^[1-4]$ ]]; then
     exit 1
 fi
 
+# Precision build flag (empty for the default double)
+STEPS_PRECISION_FLAGS="$(vlib::steps::precision_flags)"
+GLASS_BIN_NAME="StePS_glass_cylindrical$(vlib::steps::precision_suffix)"
+
 echo ""
 echo "--------------------------------------------------------------------"
 echo "  Cylindrical (S^1 x R^2) glass pipeline - starting from step ${START_STEP}"
 echo "--------------------------------------------------------------------"
 
 CYLINDRICAL_DIR="${OUTDIR}/cylindrical"
-mkdir -p "${CYLINDRICAL_DIR}/preglass" "${CYLINDRICAL_DIR}/glass"
+CYLINDRICAL_EWALD_DIR="${CYLINDRICAL_DIR}/ewald"
+mkdir -p "${CYLINDRICAL_DIR}/preglass" "${CYLINDRICAL_DIR}/glass" \
+    "${CYLINDRICAL_EWALD_DIR}"
 
 # -- Step 1: Generate pre-glass IC -----------------------------------------
 if (( START_STEP <= 1 )); then
@@ -84,9 +90,9 @@ if (( START_STEP <= 3 )); then
     echo "-- Step 3: Compiling StePS cylindrical glass binary --"
 
     vlib::steps::detect_toolchain
-    vlib::clear_files "${BUILD_DIR}" "StePS_glass_cylindrical"
+    vlib::clear_files "${BUILD_DIR}" "${GLASS_BIN_NAME}"
 
-    vlib::steps::build "StePS_glass_cylindrical" PERIODIC_Z GLASS_MAKING DOUBLE
+    vlib::steps::build "${GLASS_BIN_NAME}" PERIODIC_Z GLASS_MAKING ${STEPS_PRECISION_FLAGS}
 fi
 
 # Always rewrite the param file so env-var overrides (e.g. GLASS_TIME_LIMIT_MIN)
@@ -103,10 +109,14 @@ if (( START_STEP <= 4 )); then
     echo ""
     echo "-- Step 4: Running cylindrical glass relaxation --"
 
+    vlib::steps::recover_ewald_cache \
+        "${CYLINDRICAL_DIR}/glass" "${CYLINDRICAL_EWALD_DIR}"
     vlib::clear_dir "${CYLINDRICAL_DIR}/glass"
 
-    vlib::steps::run_binary "${BUILD_DIR}/StePS_glass_cylindrical" \
-        "${PARAM_DIR}/cylindrical.param"
+    vlib::steps::run_binary_with_ewald_cache \
+        "${BUILD_DIR}/${GLASS_BIN_NAME}" "${PARAM_DIR}/cylindrical.param" \
+        "${CYLINDRICAL_DIR}/glass" "${CYLINDRICAL_EWALD_DIR}" \
+        "run_glass_cylindrical" "higres"
 fi
 
 echo ""
