@@ -431,7 +431,18 @@ vlib::cosmology::eds_h0() {
 #   STEPS_SRC     - path to StePS source tree
 #   STEPS_ENV     - conda env name for StePS
 #   BUILD_DIR     - where compiled binaries are installed
+#   STEPS_BACKEND - cuda (default) or bh
 #   N_MPI, N_GPU, OMP_NUM_THREADS
+
+vlib::steps::validate_backend() {
+    case "${STEPS_BACKEND:-cuda}" in
+        cuda|bh) ;;
+        *)
+            echo "ERROR: STEPS_BACKEND must be 'cuda' or 'bh' (got '${STEPS_BACKEND}')." >&2
+            return 2
+            ;;
+    esac
+}
 
 # Detect compiler/library paths from the StePS conda env.
 # Idempotent: only runs once per shell session.
@@ -505,10 +516,23 @@ vlib::steps::build() {
     local binary_name="${1}"
     shift
     local flags=("$@")
+    local build_product using_cuda
+
+    vlib::steps::validate_backend || return
+    case "${STEPS_BACKEND:-cuda}" in
+        cuda)
+            build_product="StePS_CUDA"
+            using_cuda="YES"
+            ;;
+        bh)
+            build_product="StePS"
+            using_cuda="NO"
+            ;;
+    esac
 
     echo ""
     echo "----------------------------------------------------------------"
-    echo "  Building ${binary_name}  (CUDA=YES, flags: ${flags[*]:-none})"
+    echo "  Building ${binary_name}  (backend=${STEPS_BACKEND:-cuda}, flags: ${flags[*]:-none})"
     echo "----------------------------------------------------------------"
 
     mkdir -p "${BUILD_DIR}"
@@ -539,8 +563,8 @@ EOF
 
 rm -rf build/
 make -r \\
-    "build/StePS_CUDA" \\
-    "USING_CUDA=YES" \\
+    "build/${build_product}" \\
+    "USING_CUDA=${using_cuda}" \\
     "CXX=${CXX}" \\
     "CUDA_PATH=${CUDA_PATH}" \\
     "MPI_INC=${MPI_INC}" \\
@@ -549,12 +573,12 @@ make -r \\
     "HDF5_LIBS=${HDF5_LIBS}" \\
     "CUDAFLAGS=-Xcompiler -fopenmp -lineinfo --std=c++17 -Xcompiler -Wall -O3 -Xcompiler -pthread"
 
-if [[ ! -f "build/StePS_CUDA" ]]; then
-    echo "ERROR: Build failed - build/StePS_CUDA not found." >&2
+if [[ ! -f "build/${build_product}" ]]; then
+    echo "ERROR: Build failed - build/${build_product} not found." >&2
     exit 1
 fi
 mkdir -p "${BUILD_DIR}"
-cp "build/StePS_CUDA" "${BUILD_DIR}/${binary_name}"
+cp "build/${build_product}" "${BUILD_DIR}/${binary_name}"
 echo "  -> Installed: ${BUILD_DIR}/${binary_name}"
 EOF
 )"
@@ -562,16 +586,24 @@ EOF
     vlib::run_shell_in_env "${STEPS_ENV}" "${script}"
 }
 
-# Run a StePS binary with MPI + GPU dispatch inside the StePS conda env.
+# Run a StePS binary with MPI + backend-specific worker dispatch inside the StePS conda env.
 # Usage: vlib::steps::run_binary <binary_path> <param_path>
 vlib::steps::run_binary() {
     local binary="${1}"
     local param="${2}"
+    local parallel_count
     local script
+
+    vlib::steps::validate_backend || return
+    case "${STEPS_BACKEND:-cuda}" in
+        cuda) parallel_count="${N_GPU}" ;;
+        bh)   parallel_count="${OMP_NUM_THREADS}" ;;
+    esac
+
     script="$(cat <<EOF
 set -euo pipefail
 export OMP_NUM_THREADS="${OMP_NUM_THREADS}"
-mpirun -np "${N_MPI}" "${binary}" "${param}" "${N_GPU}"
+mpirun -np "${N_MPI}" "${binary}" "${param}" "${parallel_count}"
 EOF
 )"
     vlib::run_shell_in_env "${STEPS_ENV}" "${script}"

@@ -44,7 +44,7 @@ set -euo pipefail
 #
 #  Configuration (edit config.env or export before running):
 #    STEPS_SRC, STEPSIC_SRC, STEPSIC_PY, STEPS_ENV, STEPSIC_ENV
-#    N_MPI, N_GPU, OMP_NUM_THREADS
+#    STEPS_BACKEND, N_MPI, N_GPU, OMP_NUM_THREADS
 #    R_3D, D_4D, RCRIT, LZ, NRBINS, NSHELL, BIN_MODE
 #    SIM_Z_INIT, SIM_LPTORDER, SIM_NMESH
 #    COSMOLOGY_NAME, COSMO_H0, COSMO_OMEGA_M, COSMO_OMEGA_L, COSMO_OMEGA_B
@@ -72,6 +72,7 @@ source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
 vlib::source_config "${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+vlib::steps::validate_backend
 
 # -- Directory layout --------------------------------------------------------
 export VLIB_CACHE_DIR="${VLIB_CACHE_DIR:-${BASEDIR}/cache}"
@@ -103,10 +104,16 @@ EDS_H0="$(vlib::cosmology::eds_h0 "${COSMO_H0}" "${COSMO_OMEGA_M}")"
 
 # Precision build flag (empty for the default double)
 STEPS_PRECISION_FLAGS="$(vlib::steps::precision_flags)"
+STEPS_BACKEND_SUFFIX=""
+STEPS_BACKEND_FLAGS=()
+if [[ "${STEPS_BACKEND}" == "bh" ]]; then
+    STEPS_BACKEND_SUFFIX="_bh"
+    STEPS_BACKEND_FLAGS=("USE_BH=0.25" "RANDOMIZE_BH=123456")
+fi
 # Binary names carry the precision suffix so that switching STEPS_PRECISION
-# triggers a rebuild instead of silently reusing the other precision's binary.
-GLASS_BIN="${BUILD_DIR}/StePS_glass_cylindrical$(vlib::steps::precision_suffix)"
-SIM_BIN="${BUILD_DIR}/StePS_cylindrical$(vlib::steps::precision_suffix)"
+# or backend triggers a rebuild instead of silently reusing another binary.
+GLASS_BIN="${BUILD_DIR}/StePS_glass_cylindrical${STEPS_BACKEND_SUFFIX}$(vlib::steps::precision_suffix)"
+SIM_BIN="${BUILD_DIR}/StePS_cylindrical${STEPS_BACKEND_SUFFIX}$(vlib::steps::precision_suffix)"
 
 # -- List steps --------------------------------------------------------------
 if (( VLIB_LIST_STEPS )); then
@@ -323,7 +330,8 @@ PARTICLE_RADII="${PARTICLE_RADII:-$(vlib::breadcrumb_get PARTICLE_RADII)}"
 # -- Step 3: build_glass -----------------------------------------------------
 if vlib::step_check "build_glass" "${GLASS_BIN}"; then
     vlib::steps::detect_toolchain
-    vlib::steps::build "$(basename "${GLASS_BIN}")" PERIODIC_Z GLASS_MAKING ${STEPS_PRECISION_FLAGS}
+    vlib::steps::build "$(basename "${GLASS_BIN}")" \
+        PERIODIC_Z GLASS_MAKING "${STEPS_BACKEND_FLAGS[@]}" ${STEPS_PRECISION_FLAGS}
     vlib::step_done "build_glass"
 fi
 
@@ -389,7 +397,8 @@ IC_1LPT="${IC_1LPT:-$(vlib::breadcrumb_get IC_1LPT)}"
 # -- Step 7: build_sim -------------------------------------------------------
 if vlib::step_check "build_sim" "${SIM_BIN}"; then
     vlib::steps::detect_toolchain
-    vlib::steps::build "$(basename "${SIM_BIN}")" PERIODIC_Z ${STEPS_PRECISION_FLAGS}
+    vlib::steps::build "$(basename "${SIM_BIN}")" \
+        PERIODIC_Z "${STEPS_BACKEND_FLAGS[@]}" ${STEPS_PRECISION_FLAGS}
     vlib::step_done "build_sim"
 fi
 
