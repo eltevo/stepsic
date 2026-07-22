@@ -196,7 +196,10 @@ def test_lpt2__single_mode_second_order_source_is_null() -> None:
 
 
 def test_lpt2__matches_two_orthogonal_mode_solution() -> None:
-    """T2: Bouchet et al. (1995) quadratic source for orthogonal plane waves."""
+    """T2: standard 2LPT quadratic source for orthogonal plane waves.
+
+    The independent oracle uses laplacian(phi2)=S and Psi2=+grad(phi2).
+    """
     nvox = np.array([16, 16, 16])
     cell_size = 0.5
     boxsize = 8.0
@@ -222,9 +225,10 @@ def test_lpt2__matches_two_orthogonal_mode_solution() -> None:
     psi1 = np.zeros_like(positions)
     psi1[:, 0] = amplitude_x * np.sin(wave * positions[:, 0]) / wave
     psi1[:, 1] = amplitude_y * np.sin(wave * positions[:, 1]) / wave
-    # S=A_x A_y cos(kx)cos(ky); solving at |k|^2=2k^2 gives this gradient.
+    # S=A_x A_y cos(kx)cos(ky); solving laplacian(phi2)=S at
+    # |k|^2=2k^2 and taking Psi2=+grad(phi2) gives the positive prefactor below.
     psi2 = np.zeros_like(positions)
-    prefactor = -amplitude_x * amplitude_y / (2.0 * wave)
+    prefactor = amplitude_x * amplitude_y / (2.0 * wave)
     psi2[:, 0] = (
         prefactor
         * np.sin(wave * positions[:, 0])

@@ -185,7 +185,7 @@ def lpt2(
             + D_1 \mathbf{\Psi}^{(1)}
             + D_2 \mathbf{\Psi}^{(2)},
 
-    where :math:`\mathbf{\Psi}^{(2)} = -\nabla\phi^{(2)}` is sourced by
+    where :math:`\mathbf{\Psi}^{(2)} = \nabla\phi^{(2)}` is sourced by
     the quadratic invariant of the 1LPT deformation tensor:
 
     .. math::
@@ -290,10 +290,12 @@ def lpt2(
 
     # -- 3. Second-order displacement (Psi^(2)) -------------------------------
     # Poisson equation for the source: phi2(k) = -S(k) / |k|^2.
+    # The conventional negative g2 multiplies +grad(phi2), so using its
+    # negative here reverses the physical 2LPT correction.
     phi2_k = -S_k / k2  # inherits S_k complex dtype
     del S_k, k2
     for i in range(3):
-        np.multiply(phi2_k, -1j * K[i], out=psi_i)
+        np.multiply(phi2_k, 1j * K[i], out=psi_i)
         if compensate:
             psi_i *= wx[:, None, None]
             psi_i *= wy[None, :, None]
