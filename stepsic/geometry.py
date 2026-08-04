@@ -140,8 +140,18 @@ class SphericalBinner(ABC):
         if not np.all((y >= 0.0) & (y <= 2 * np.pi + 1e-10)):
             raise ValueError(f'y must be in [0, 2π], got y={y}')
 
-        # Better initial guess via Kepler equation starter
+        # Kepler-equation starter in the interior. Near either endpoint the
+        # derivative vanishes, so use x - sin(x) ~ x^3/6 (and its reflection)
+        # to keep the solver away from the flat endpoint.
         x0 = y + np.sin(y)
+        near_lower = y < 0.1
+        near_upper = y > 2 * np.pi - 0.1
+        x0 = np.where(near_lower, np.cbrt(6.0 * y), x0)
+        x0 = np.where(
+            near_upper,
+            2 * np.pi - np.cbrt(6.0 * (2 * np.pi - y)),
+            x0,
+        )
         x0 = np.clip(x0, 0.0, 2 * np.pi)
 
         sol = root(lambda x: x - np.sin(x) - y,

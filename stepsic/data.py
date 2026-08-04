@@ -81,9 +81,9 @@ class CosmoData:
 
     def from_internal_units(self, params):
         '''TODO'''
-        self.pos /= UNIT_L / params['UNIT_L_IN_CM']
-        self.vel /= UNIT_V / params['UNIT_V_IN_KMPS']
-        self.mass /= UNIT_M / params['UNIT_M_IN_G']
+        self.pos /= params['UNIT_L_IN_CM'] / UNIT_L
+        self.vel /= params['UNIT_V_IN_KMPS'] / UNIT_V
+        self.mass /= params['UNIT_M_IN_G'] / UNIT_M
 
     @classmethod
     def load_snapshot(cls, path: Path, **io_kwargs):
