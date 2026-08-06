@@ -38,8 +38,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
-from pathlib import Path
 
 import numpy as np
 from numpy.typing import NDArray
@@ -47,8 +45,6 @@ from numpy.typing import NDArray
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from stepsic.units import UNIT_V
 from stepsic.geometry import (
@@ -61,7 +57,7 @@ from stepsic.geometry import (
     _compute_rcrit_zones,
     shell_masses,
 )
-from validation import PLANCK2018, setup_matplotlib
+from validation import VALIDATION_COSMOLOGY, load_archive, setup_matplotlib
 
 
 AA_COL_WIDTH = 3.5
@@ -184,6 +180,57 @@ def _mass_profile(
     return masses
 
 
+def _compute_profiles(
+    D4D: float,
+    R3D: float,
+    nrbins: int,
+    nshell: int,
+    Lz: float,
+    omega_m: float,
+    r_crit: float | None,
+    rcrit_modes: set[str],
+) -> dict[str, dict[str, dict]]:
+    r_4d = D4D / 2.0
+    rho = _rho_mean(omega_m)
+    binners = {
+        "sph": _make_spherical_binners(r_4d, nrbins, R3D),
+        "cyl": _make_cylindrical_binners(r_4d, nrbins, R3D),
+    }
+    results: dict[str, dict[str, dict]] = {"sph": {}, "cyl": {}}
+    for geometry, geometry_binners in binners.items():
+        for mode, binner in geometry_binners.items():
+            critical_radius = r_crit if mode in rcrit_modes else None
+            cylinder_length = Lz if geometry == "cyl" else None
+            results[geometry][mode] = {
+                "masses": _mass_profile(
+                    binner, nrbins, nshell, rho,
+                    r_crit=critical_radius, Lz=cylinder_length,
+                ),
+                "edges": _bin_edges(binner, nrbins),
+            }
+    return results
+
+
+def _load_profiles(archive: str) -> dict[str, dict[str, dict]]:
+    data = load_archive(archive)
+    return {
+        "sph": {
+            mode: {
+                "masses": data[f"spherical_{mode}_mass_internal"],
+                "edges": data[f"spherical_{mode}_edges_mpc_h"],
+            }
+            for mode in ("omega", "volume")
+        },
+        "cyl": {
+            mode: {
+                "masses": data[f"cylindrical_{mode}_mass_internal"],
+                "edges": data[f"cylindrical_{mode}_edges_mpc_h"],
+            }
+            for mode in ("omega", "volume")
+        },
+    }
+
+
 def plot_shell_mass(
     *,
     D4D: float,
@@ -195,6 +242,7 @@ def plot_shell_mass(
     r_crit: float | None,
     rcrit_modes: set[str],
     output: str,
+    archive: str | None = None,
 ) -> None:
     r'''
     Compute shell masses and produce the two-panel validation figure.
@@ -226,46 +274,13 @@ def plot_shell_mass(
 
     setup_matplotlib()
 
-    r_4d = D4D / 2.0
-    rho = _rho_mean(omega_m)
-
-    # -- Build binners --------------------------------------------------------
-    sph_binners = _make_spherical_binners(r_4d, nrbins, R3D)
-    cyl_binners = _make_cylindrical_binners(r_4d, nrbins, R3D)
-
-    # -- Compute masses -------------------------------------------------------
-    # Each entry: (edges, masses) - always exactly two curves per panel.
-    results: dict[str, dict[str, dict]] = {'sph': {}, 'cyl': {}}
-
-    for label, binner in sph_binners.items():
-        rc = r_crit if label in rcrit_modes else None
-        masses = _mass_profile(binner, nrbins, nshell, rho, r_crit=rc)
-        edges = _bin_edges(binner, nrbins)
-        log.info(
-            'Spherical %-6s: mass range [%.4e, %.4e] Msol, '
-            'r range [%.2f, %.2f] Mpc/h  (RCRIT=%s)',
-            label,
-            masses[0] * MASS_TO_MSUN, masses[-1] * MASS_TO_MSUN,
-            edges[1], edges[-1],
-            f'{rc:.1f}' if rc is not None else 'off',
+    results = (
+        _load_profiles(archive)
+        if archive is not None
+        else _compute_profiles(
+            D4D, R3D, nrbins, nshell, Lz, omega_m, r_crit, rcrit_modes,
         )
-        results['sph'][label] = {'masses': masses, 'edges': edges}
-
-    for label, binner in cyl_binners.items():
-        rc = r_crit if label in rcrit_modes else None
-        masses = _mass_profile(
-            binner, nrbins, nshell, rho, r_crit=rc, Lz=Lz,
-        )
-        edges = _bin_edges(binner, nrbins)
-        log.info(
-            'Cylindrical %-6s: mass range [%.4e, %.4e] Msol, '
-            'r range [%.2f, %.2f] Mpc/h  (RCRIT=%s)',
-            label,
-            masses[0] * MASS_TO_MSUN, masses[-1] * MASS_TO_MSUN,
-            edges[1], edges[-1],
-            f'{rc:.1f}' if rc is not None else 'off',
-        )
-        results['cyl'][label] = {'masses': masses, 'edges': edges}
+    )
 
     # -- Plot -----------------------------------------------------------------
     fig, axes = plt.subplots(
@@ -359,7 +374,7 @@ def main() -> None:
              '(default: 200).',
     )
     parser.add_argument(
-        '--omega-m', type=float, default=PLANCK2018['OMEGA_M'],
+        '--omega-m', type=float, default=VALIDATION_COSMOLOGY['OMEGA_M'],
         help='Matter density parameter (default: Planck 2018).',
     )
     parser.add_argument(
@@ -372,6 +387,10 @@ def main() -> None:
         choices=['omega', 'volume'],
         help='Which binning methods receive the RCRIT treatment '
              '(default: omega only).',
+    )
+    parser.add_argument(
+        "--archive", type=str,
+        help="Typed shell-mass archive produced by measure.py.",
     )
     parser.add_argument(
         '-o', '--output', type=str,
@@ -390,6 +409,7 @@ def main() -> None:
         r_crit=args.rcrit,
         rcrit_modes=set(args.rcrit_modes),
         output=args.output,
+        archive=args.archive,
     )
 
 

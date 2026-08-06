@@ -46,7 +46,6 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (side-effect import)
 from numpy.typing import NDArray
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from validation import setup_matplotlib
 
 logging.basicConfig(level=logging.INFO)
@@ -238,7 +237,7 @@ def _draw_panel_2d(
         Slab thickness [Mpc/h]. Ignored when ``grid_layer`` is ``True``.
     grid_layer : bool
         If ``True`` (cubic grid panel), pick a single grid layer instead
-        of a slab so the regular lattice pattern is preserved.
+        of a slab so the regular lattice pattern is visible.
     geometry : {'spherical', 'cylindrical'} or None
         Enables mass-based marker sizing for the shell geometries.
 
@@ -432,7 +431,7 @@ def _set_cylinder_aspect(
     xy_centre: ArrayF,
     pad: float = 0.05,
 ) -> None:
-    '''Set 3D limits for a cylindrical geometry, preserving shape fidelity.
+    '''Set shape-faithful 3D limits for a cylindrical geometry.
 
     Parameters
     ----------
@@ -496,7 +495,7 @@ def plot_particle_loads(
         ``plot_2d`` is ``True``.
     slice_thickness : float
         Slab thickness along ``slice_axis`` [Mpc/h]. The ``cubic_grid``
-        panel ignores this and snaps to a single grid layer to preserve
+        panel ignores this and snaps to a single grid layer to show
         the regular lattice pattern.
     '''
     setup_matplotlib()

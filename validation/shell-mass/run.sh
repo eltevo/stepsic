@@ -28,7 +28,7 @@
 #    NRBINS        Number of radial bins                   (default: 224)
 #    NSHELL        Particles per shell                     (default: 12288)
 #    LZ            Cylinder height [Mpc/h]                 (default: 200)
-#    OMEGA_M       Matter density (empty = Planck default) (default: "")
+#    COSMO_OMEGA_M Matter density; overrides the common default if exported
 #    RCRIT         Critical radius for inner zone [Mpc/h]  (default: "")
 #    RCRIT_MODES   Binning methods receiving RCRIT         (default: omega)
 #    STEPSIC_ENV   Conda env for stepsic                   (default: stepsic)
@@ -39,20 +39,26 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-vlib::source_config "${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+vlib::source_config "${CONFIG_FILE}"
 
+vlib::declare_steps measure plot evaluate
+if (( VLIB_LIST_STEPS )); then
+    vlib::list_steps
+    exit 0
+fi
+vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
+
+VLIB_CACHE_DIR="${BASEDIR}/cache"
 OUTPUT="${BASEDIR}/output"
 
 if (( VLIB_CLEAN )); then
+    vlib::clear_dir "${VLIB_CACHE_DIR}"
     vlib::clear_dir "${OUTPUT}"
 fi
 
-mkdir -p "${OUTPUT}"
+mkdir -p "${VLIB_CACHE_DIR}" "${OUTPUT}"
 
-if (( VLIB_LIST_STEPS )); then
-    vlib::step_check "plot" "${OUTPUT}/shell-mass.pdf" || :
-    exit 0
-fi
 
 vlib::init_conda
 vlib::ensure_env "${STEPSIC_ENV}"
@@ -71,18 +77,28 @@ echo "  RCRIT:   ${RCRIT:-none}"
 echo "  output:  ${OUTPUT}/shell-mass.pdf"
 echo ""
 
-EXTRA_FLAGS=()
-if [[ -n "${OMEGA_M:-}" ]]; then
-    EXTRA_FLAGS+=(--omega-m "${OMEGA_M}")
-fi
+EXTRA_FLAGS=(--omega-m "${COSMO_OMEGA_M}")
 if [[ -n "${RCRIT:-}" ]]; then
     EXTRA_FLAGS+=(--rcrit "${RCRIT}")
     # shellcheck disable=SC2086
     EXTRA_FLAGS+=(--rcrit-modes ${RCRIT_MODES})
 fi
 
+if vlib::step_check "measure" "${VLIB_CACHE_DIR}/shell-mass.npz"; then
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/measure.py" \
+        --D4D "${D4D}" \
+        --R3D "${R3D}" \
+        --nrbins "${NRBINS}" \
+        --nshell "${NSHELL}" \
+        --Lz "${LZ}" \
+        "${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"}" \
+        -o "${VLIB_CACHE_DIR}/shell-mass.npz"
+    vlib::step_done "measure"
+fi
+
 if vlib::step_check "plot" "${OUTPUT}/shell-mass.pdf"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot.py" \
+        --archive "${VLIB_CACHE_DIR}/shell-mass.npz" \
         --D4D "${D4D}" \
         --R3D "${R3D}" \
         --nrbins "${NRBINS}" \
@@ -91,6 +107,14 @@ if vlib::step_check "plot" "${OUTPUT}/shell-mass.pdf"; then
         "${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"}" \
         -o "${OUTPUT}/shell-mass.pdf"
     vlib::step_done "plot"
+fi
+
+if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/evaluate.py" \
+        --archive "${VLIB_CACHE_DIR}/shell-mass.npz" \
+        --figure "${OUTPUT}/shell-mass.pdf" \
+        --output "${OUTPUT}/result.json"
+    vlib::step_done "evaluate"
 fi
 
 vlib::report_done

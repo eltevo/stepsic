@@ -51,7 +51,15 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-vlib::source_config "${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+vlib::source_config "${CONFIG_FILE}"
+
+vlib::declare_steps cubic_random cubic_grid spherical cylindrical plot plot_2d evaluate
+if (( VLIB_LIST_STEPS )); then
+    vlib::list_steps
+    exit 0
+fi
+vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 
 VLIB_CACHE_DIR="${BASEDIR}/cache"
 OUTPUT="${BASEDIR}/output"
@@ -71,15 +79,6 @@ IC_CYLINDRICAL="${VLIB_CACHE_DIR}/cylindrical"
 
 TOML_DIR="${VLIB_CACHE_DIR}/configs"
 
-if (( VLIB_LIST_STEPS )); then
-    vlib::step_check "cubic_random" "${IC_CUBIC_RANDOM}/ic.hdf5" || :
-    vlib::step_check "cubic_grid"   "${IC_CUBIC_GRID}/ic.hdf5"   || :
-    vlib::step_check "spherical"    "${IC_SPHERICAL}/ic.hdf5"     || :
-    vlib::step_check "cylindrical"  "${IC_CYLINDRICAL}/ic.hdf5"   || :
-    vlib::step_check "plot"         "${OUTPUT}/particle-load.pdf"    || :
-    vlib::step_check "plot_2d"      "${OUTPUT}/particle-load-2d.pdf" || :
-    exit 0
-fi
 
 vlib::init_conda
 vlib::ensure_env "${STEPSIC_ENV}"
@@ -110,7 +109,7 @@ LBOX_SQ="$((LBOX * 2))"  # 2*R_3D for non-periodic geometries
 
 # Write TOML configs (inline because LBOX/PERIODIC are arrays here)
 _write_toml_cubic_random() {
-    cat > "${TOML_DIR}/cubic_random.toml" <<EOF
+    vlib::atomic_text "${TOML_DIR}/cubic_random.toml" <<EOF
 GEOMETRY = "cubical"
 LBOX = [${LBOX}, ${LBOX}, ${LBOX}]
 PERIODIC = [1, 1, 1]
@@ -126,7 +125,7 @@ NSHELL = ${NSHELL}
 INPUT_GLASS = "none"
 IC_DIR = "${IC_CUBIC_RANDOM}"
 IC_PREFIX = "stepsic"
-COSMOLOGY = "${COSMOLOGY_TOML:-Planck2018EE+BAO}"
+COSMOLOGY = "${COSMOLOGY_NAME}"
 SPECTRUM = "camb"
 NONLINEAR = false
 HALOFIT = "mead2020"
@@ -155,7 +154,7 @@ EOF
 }
 
 _write_toml_cubic_grid() {
-    cat > "${TOML_DIR}/cubic_grid.toml" <<EOF
+    vlib::atomic_text "${TOML_DIR}/cubic_grid.toml" <<EOF
 GEOMETRY = "cubical"
 LBOX = [${LBOX}, ${LBOX}, ${LBOX}]
 PERIODIC = [1, 1, 1]
@@ -171,7 +170,7 @@ NSHELL = ${NSHELL}
 INPUT_GLASS = "none"
 IC_DIR = "${IC_CUBIC_GRID}"
 IC_PREFIX = "stepsic"
-COSMOLOGY = "${COSMOLOGY_TOML:-Planck2018EE+BAO}"
+COSMOLOGY = "${COSMOLOGY_NAME}"
 SPECTRUM = "camb"
 NONLINEAR = false
 HALOFIT = "mead2020"
@@ -200,7 +199,7 @@ EOF
 }
 
 _write_toml_spherical() {
-    cat > "${TOML_DIR}/spherical.toml" <<EOF
+    vlib::atomic_text "${TOML_DIR}/spherical.toml" <<EOF
 GEOMETRY = "spherical"
 LBOX = [${LBOX_SQ}, ${LBOX_SQ}, ${LBOX_SQ}]
 PERIODIC = [0, 0, 0]
@@ -217,7 +216,7 @@ NSHELL = ${NSHELL}
 INPUT_GLASS = "none"
 IC_DIR = "${IC_SPHERICAL}"
 IC_PREFIX = "stepsic"
-COSMOLOGY = "${COSMOLOGY_TOML:-Planck2018EE+BAO}"
+COSMOLOGY = "${COSMOLOGY_NAME}"
 SPECTRUM = "camb"
 NONLINEAR = false
 HALOFIT = "mead2020"
@@ -246,7 +245,7 @@ EOF
 }
 
 _write_toml_cylindrical() {
-    cat > "${TOML_DIR}/cylindrical.toml" <<EOF
+    vlib::atomic_text "${TOML_DIR}/cylindrical.toml" <<EOF
 GEOMETRY = "cylindrical"
 LBOX = [${LBOX_SQ}, ${LBOX_SQ}, ${LZ}]
 PERIODIC = [0, 0, 1]
@@ -263,7 +262,7 @@ NSHELL = ${NSHELL}
 INPUT_GLASS = "none"
 IC_DIR = "${IC_CYLINDRICAL}"
 IC_PREFIX = "stepsic"
-COSMOLOGY = "${COSMOLOGY_TOML:-Planck2018EE+BAO}"
+COSMOLOGY = "${COSMOLOGY_NAME}"
 SPECTRUM = "camb"
 NONLINEAR = false
 HALOFIT = "mead2020"
@@ -291,39 +290,51 @@ INPUT_SPECTRUM_UNIT_L_IN_CM = 3.085678e24
 EOF
 }
 
-if vlib::step_check "cubic_random" "${IC_CUBIC_RANDOM}/ic.hdf5"; then
+if vlib::step_check "cubic_random" "${IC_CUBIC_RANDOM}"; then
     _write_toml_cubic_random
     vlib::run_in_env "${STEPSIC_ENV}" python "${STEPSIC_PY}" \
         "${TOML_DIR}/cubic_random.toml"
     vlib::step_done "cubic_random"
 fi
 
-if vlib::step_check "cubic_grid" "${IC_CUBIC_GRID}/ic.hdf5"; then
+if vlib::step_check "cubic_grid" "${IC_CUBIC_GRID}"; then
     _write_toml_cubic_grid
     vlib::run_in_env "${STEPSIC_ENV}" python "${STEPSIC_PY}" \
         "${TOML_DIR}/cubic_grid.toml"
     vlib::step_done "cubic_grid"
 fi
 
-if vlib::step_check "spherical" "${IC_SPHERICAL}/ic.hdf5"; then
+if vlib::step_check "spherical" "${IC_SPHERICAL}"; then
     _write_toml_spherical
     vlib::run_in_env "${STEPSIC_ENV}" python "${STEPSIC_PY}" \
         "${TOML_DIR}/spherical.toml"
     vlib::step_done "spherical"
 fi
 
-if vlib::step_check "cylindrical" "${IC_CYLINDRICAL}/ic.hdf5"; then
+if vlib::step_check "cylindrical" "${IC_CYLINDRICAL}"; then
     _write_toml_cylindrical
     vlib::run_in_env "${STEPSIC_ENV}" python "${STEPSIC_PY}" \
         "${TOML_DIR}/cylindrical.toml"
     vlib::step_done "cylindrical"
 fi
 
+_configured_ic() {
+    local directory="${1}" token="${2}"
+    shopt -s nullglob
+    local matches=("${directory}"/*"${token}"*/ic.hdf5)
+    shopt -u nullglob
+    if [[ ${#matches[@]} -ne 1 ]]; then
+        echo "ERROR: expected one configured IC matching ${token} under ${directory}; found ${#matches[@]}." >&2
+        return 1
+    fi
+    printf '%s\n' "${matches[0]}"
+}
+
 _resolve_ic_paths() {
-    IC_CR="$(vlib::find_ic "${IC_CUBIC_RANDOM}")"
-    IC_CG="$(vlib::find_ic "${IC_CUBIC_GRID}")"
-    IC_SP="$(vlib::find_ic "${IC_SPHERICAL}")"
-    IC_CY="$(vlib::find_ic "${IC_CYLINDRICAL}")"
+    IC_CR="$(_configured_ic "${IC_CUBIC_RANDOM}" "_Np${NPART}_")"
+    IC_CG="$(_configured_ic "${IC_CUBIC_GRID}" "_Ng${NGRID}_")"
+    IC_SP="$(_configured_ic "${IC_SPHERICAL}" "_Nsh${NSHELL}_Nr${NRBINS}_")"
+    IC_CY="$(_configured_ic "${IC_CYLINDRICAL}" "_Nsh${NSHELL}_Nr${NRBINS}_")"
 }
 
 if vlib::step_check "plot" "${OUTPUT}/particle-load.pdf"; then
@@ -349,6 +360,24 @@ if vlib::step_check "plot_2d" "${OUTPUT}/particle-load-2d.pdf"; then
         --slice-thickness "${SLICE_THICKNESS}" \
         -o "${OUTPUT}/particle-load-2d.pdf"
     vlib::step_done "plot_2d"
+fi
+
+if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
+    _resolve_ic_paths
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/evaluate.py" \
+        --cubic-random "${IC_CR}" \
+        --cubic-grid "${IC_CG}" \
+        --spherical "${IC_SP}" \
+        --cylindrical "${IC_CY}" \
+        --box-size "${LBOX}" \
+        --grid-size "${NGRID}" \
+        --random-count "${NPART}" \
+        --radius "${R_3D}" \
+        --cylinder-length "${LZ}" \
+        --figure "${OUTPUT}/particle-load.pdf" \
+        --figure "${OUTPUT}/particle-load-2d.pdf" \
+        --output "${OUTPUT}/result.json"
+    vlib::step_done "evaluate"
 fi
 
 vlib::report_done
