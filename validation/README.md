@@ -1,135 +1,128 @@
-# Validation Suite
+# Validation suite
 
-This directory contains the reproducible validation runs used to check `stepsic` particle loads, LPT fields, power-spectrum recovery, glass generation, and comparisons against external codes or downstream StePS simulations. Each validation is intended to be runnable on its own, but the directory is organized as one suite with a shared shell library, shared Python helpers, and a common command-line contract.
+This directory contains reproducible scientific campaigns for particle loads, LPT fields, power-spectrum recovery, glass quality, external-code comparisons, and evolved StePS simulations. Each campaign exposes a `run.sh` entrypoint and declares its flags, configuration variables, cache paths, numerical archives, and principal PDF outputs.
 
-Most validations generate cached numerical data first, then turn those cached products into publication-style PDF figures. The heavier end-to-end validations also generate `stepsic` ICs, compile StePS binaries, run StePS, and then plot diagnostics.
+## Scientific pipeline contract
 
-## Directory layout
+A campaign has three visible responsibilities, in this order:
 
-Top-level files:
+1. **Measure** scientific quantities into a typed numerical archive (`.npz` or HDF5).
+2. **Plot** those archived quantities. Plot code presents evidence; axis limits and shaded visual guides do not decide correctness.
+3. **Evaluate** documented claims, after figures exist, and atomically write `output/result.json` (or a campaign-specific output directory for keyed, diagnostic, or evolved runs).
 
-- `_common/lib.sh`: shared Bash library used by every `run.sh` driver.
-- `validation.py`: shared Python utilities for cosmology setup, LPT field generation, archive loading, plotting style, and common CLI arguments.
-- `hdf5inspect.py`: helper for inspecting HDF5 files during debugging.
-- `smoke-test.sh`: small-parameter smoke test that calls all eight main validation pipelines.
-- `viz/`: standalone rendering utilities for validation artwork; this is not part of the standard `run.sh` pipeline set.
+Evaluation writes the result after plotting. A failed required check makes a normal full run exit nonzero, with the result and figures available for diagnosis. A result contains:
 
-Each main validation directory follows the same general shape:
+- `campaign` and `status`;
+- resolved parameters and archive/command provenance;
+- named metrics with explicit units;
+- checks with the observed value, comparison, derived limit, rationale, source, and pass/fail decision;
+- paths to the numerical archive and generated figures.
 
-- `run.sh`: the top-level controller for that validation run.
-- `config.env`: default parameters. Override these by exporting environment variables or by passing `--config=PATH`.
-- `scripts/`: Python scripts for numerical work and plotting, when needed.
-- Generated directories such as `cache/`, `output/`, `configs/`, `params/`, or `builds/`: intermediate data, figures, generated configuration files, and compiled binaries. These are run products, not hand-maintained source.
+Evaluators are small Python modules beside each campaign. Their gates use analytic identities, floating-point bounds, sampling distributions, convergence arguments, matched controls, or independent reference ensembles. Campaign output, plot bands, and axes are not gates. A scientific check is required only when its claim and derivation are encoded in the evaluator.
 
-## Common run model
+## Completion, judgment, and inspection
 
-The validation drivers all use `validation/_common/lib.sh`. A typical driver:
+These are different outcomes:
 
-1. Finds its own base directory.
-2. Sources `_common/lib.sh`.
-3. Parses common command-line options with `vlib::parse_args`.
-4. Sources `config.env` or the file passed with `--config=PATH`.
-5. Creates `cache/` and `output/` directories.
-6. Checks required conda environments.
-7. Runs numbered steps through `vlib::step_check`.
-8. Prints a completion banner with `vlib::report_done`.
+- **Smoke completion** proves that the driver, dependencies, and artifact paths execute at reduced settings.
+- **Scientific pass/fail** is the machine-readable decision in `result.json` at the resolved settings.
+- **Human inspection** reviews the figures and numerical context, including failures and phenomena not represented by a required check.
 
-`vlib::step_check` is the most important control point. It assigns step numbers in the order they appear in `run.sh`, handles `--step`, `--plot-only`, `--force`, `--force-step`, `--list-steps`, and skips cached steps when all declared output paths already exist. This means file ordering is pipeline ordering: read each `run.sh` from top to bottom, and the `vlib::step_check` calls define the run.
+A successful smoke run does not imply scientific acceptance. A generated PDF does not imply either smoke success or scientific acceptance.
 
-Some longer pipelines also use breadcrumbs in `cache/state.env`. Breadcrumbs store discovered file paths, such as the latest StePS snapshot, so later steps and resumed runs can find products created by earlier steps.
+## Driver interface and cache behavior
 
-## How to run
-
-Run any validation from the root directory:
-
-```bash
-bash validation/grid/run.sh
-```
-
-List a validation's steps without running anything:
-
-```bash
-bash validation/grid/run.sh --list-steps
-```
-
-Show the driver's embedded help:
+Every top-level driver provides this interface:
 
 ```bash
 bash validation/grid/run.sh --help
+bash validation/grid/run.sh --list-steps
+bash validation/grid/run.sh
+bash validation/grid/run.sh --step=3
+bash validation/grid/run.sh --plot-only
+bash validation/grid/run.sh --force-step=evaluate
 ```
 
-Override parameters with environment variables:
+Standard flags are `--step=N`, `--plot-only`, `--force`, `--force-step=A,B`, `--clean`, `--config=PATH`, `--list-steps`, and `--help`. Each driver header documents its campaign-specific flags.
+
+Step order is declared once in each driver and consumed by listing, execution, and contract tests. A step is cached only when its stored manifest matches its resolved arguments, relevant configuration, declared inputs, implementation files, and outputs. Generated Python bytecode is ignored. Missing or stale manifests cause the step to run; existence alone is not a cache hit. Per-step locks coalesce concurrent runs, manifests and breadcrumbs are atomically replaced, and failed steps are not cached.
+
+`validation/_common/lib.sh` is the shell source facade for the runtime, cosmology, StePS, stepsic-configuration, and orchestration modules. Drivers use `vlib::run_python`, which exposes the repository-root `validation` package without script-local `sys.path` mutation. Direct development invocations use the same package entrypoint explicitly:
 
 ```bash
-NMESH=64 NSTEPS=3 bash validation/squish/run.sh
+PYTHONPATH="$PWD" conda run -n stepsic python validation/grid/scripts/evaluate.py --help
 ```
 
-Or use an alternate config file:
+All campaigns inherit the Planck 2018 EE+BAO best-fit parameters from `_common/cosmology/Planck2018EE+BAO.toml`. The shell drivers and Python validation helpers read this same file, and resolved values participate in step manifests. A campaign with a scientifically required deviation overrides only the affected variable in its `config.env`, preserving an exported value:
 
 ```bash
-bash validation/squish/run.sh --config=/path/to/my-squish.env
+COSMO_W0="${COSMO_W0:--0.9}"
 ```
 
-The standard options are:
+Unchanged cosmology values are not repeated in campaign configuration files.
 
-- `--step=N`: start at numbered step `N`; earlier steps are skipped.
-- `--plot-only`: skip non-plot steps and regenerate figures from cached data.
-- `--force`: rerun steps even when their declared outputs already exist.
-- `--force-step=A,B`: rerun named steps only.
-- `--clean`: delete run products before starting. Exact directories are driver-specific, usually `cache/` and `output/`.
-- `--config=PATH`: source a different config file instead of the local `config.env`.
-- `--list-steps`: print step names in execution order and exit.
-- `-h`, `--help`: print the header help from the selected `run.sh`.
+NumPy archives are loaded with `allow_pickle=False`. Glass diagnostic archives store ragged zone spectra as typed, NaN-padded arrays. Object-array archives are rejected.
 
-Drivers may add their own extra options. Examples include `glass/run.sh --run=spherical`, `glass/run.sh --no-clean`, `monofonic/run.sh --skip-build`, and `monofonic/run.sh --use-class`.
+## Layout and artifacts
 
-## What to expect
+Common source files:
 
-On startup, each driver prints a banner summarizing the key parameters, cache path, and output path. Each active step then prints a step header. Cached steps print `[cached]`, skipped steps print `[skip]`, and completed steps print an elapsed time.
+- `_common/lib.sh`: shell source facade.
+- `_common/runtime.sh`, `cosmology.sh`, `steps.sh`, `stepsic.sh`, and `orchestration.sh`: focused shell behavior.
+- `_common/result.py`: result model and atomic JSON serialization.
+- `_common/evaluation.py`: typed archive I/O and shared statistical derivations.
+- `_common/manifest.py`: content manifests.
+- `validation.py`: cosmology, LPT, plotting, and archive helpers exposed through the `validation` package.
+- `smoke-test.sh`: reduced local campaign runs.
 
-Common outputs:
+Campaign directories contain `run.sh`, `config.env`, `scripts/`, and generated `cache/`, `output/`, `configs/`, `params/`, or `builds/` directories. Numerical archives and HDF5 files are measurement evidence; PDFs are presentation; `result.json` is the machine contract.
 
-- `cache/*.npz`: cached numerical diagnostics used by plotting steps.
-- `cache/**/ic.hdf5`: generated initial conditions.
-- `output/*.pdf`: final validation figures.
-- `configs/*.toml` or `params/*.param`: generated input files for `stepsic` or StePS.
-- `builds/*`: compiled StePS binaries for the StePS-backed validations.
+## Campaigns
 
-The smaller validations usually require only the `STEPSIC_ENV` conda environment. The glass and cylinder validations also need a StePS source tree, a `STEPS_ENV` conda environment, MPI/GPU settings, and a working CUDA-capable StePS build toolchain. The monofonIC validation needs the monofonIC source or repository settings and `MONOFONIC_ENV`.
+| Campaign | Independent claim source |
+| --- | --- |
+| `shell-mass` | analytic spherical/cylindrical volume and configured boundary solution |
+| `field` | component isotropy sampling bound and histogram count conservation |
+| `grid`, `squish` | mode-counted Gaussian power variance |
+| `padding` | convergence of refined displacement error |
+| `slab` | missing-long-mode variance suppression |
+| `particle-load`, `glass` | analytic domain containment and exact cubic counts |
+| `sphere` IC | Gaussian component-variance sampling bound |
+| `glass/diagnose.sh` | matched Poisson-twin sub-particle-scale power |
+| `cylinder` | low-wavenumber 1LPT/2LPT convergence |
+| `monofonic` | mode-counted matched power comparison |
+| `reference-nbody` | periodic mode-counted 1LPT/2LPT control |
+| `sphere/evolved.sh` | matched-realization provenance and finite full-output spectra |
 
-## Shared python utilities
+`cylinder/reference/` contains two reference spectra for manuscript Fig. 7. Evaluators do not use them as acceptance thresholds.
 
-`validation/validation.py` is the common Python helper module. It provides:
+## Verification
 
-- Planck 2018 cosmological defaults.
-- CAMB and Colossus initialization through `init_cosmology`.
-- Growth-factor data in `GrowthData`.
-- Common LPT field generation through `run_lpt` and `generate_field`.
-- Shared parsing for box sizes and common cosmology/LPT CLI flags.
-- Matplotlib styling used by validation figures.
-- Small archive and histogram helpers.
-
-Most `scripts/run.py` files compute diagnostics and save `.npz` archives. Most `scripts/plot.py` files consume those archives and write PDFs. Prefer the top-level `run.sh` drivers for normal use, because they set paths, environments, cache behavior, and config defaults consistently.
-
-## Validation runs
-
-| Directory | Purpose | Steps |
-| --- | --- | --- |
-| `field/` | Displacement and velocity histogram validation for 3D and slab boxes. | `run_2lpt`, `run_1lpt`, `run_slab`, `plot_fields`, `plot_comparison`, `plot_slab` |
-| `grid/` | Four-panel periodic-cube P(k) recovery test: resolution, redshift, LPT order, and MAS scheme. | `panel_a`, `panel_b`, `panel_c`, `panel_d`, `plot` |
-| `squish/` | P(k) recovery as a cubic box is compressed into slab-like aspect ratios. | `run`, `plot` |
-| `particle-load/` | Visual validation of cubic random, cubic grid, spherical, and cylindrical particle loads at `LPTORDER=0`. | `cubic_random`, `cubic_grid`, `spherical`, `cylindrical`, `plot`, `plot_2d` |
-| `shell-mass/` | Analytic shell-mass distribution comparison for omega and constant-volume radial binning. | `plot` |
-| `glass/` | Glass generation controller for cubical, spherical, and cylindrical geometries, followed by a combined figure. | controller: `cubical`, `spherical`, `cylindrical`, `plot`; geometry sub-steps: `preglass`, `param`, `build`, `run` |
-| `cylinder/` | End-to-end cylindrical validation: preglass, glass relaxation, 1LPT/2LPT ICs, StePS simulations, and P(k) comparison. | `preglass`, `glass_param`, `build_glass`, `run_glass`, `ic_2lpt`, `ic_1lpt`, `build_sim`, `run_sim_2lpt`, `run_sim_1lpt`, `plot` |
-| `monofonic/` | Cross-validation against monofonIC using shared white noise and matched transfer functions. | `run_stepsic`, `build_monofonic`, `run_monofonic`, `compare`, `plot` |
-
-## Smoke test
-
-Run the full lightweight suite from the repository root:
+Run the local reduced suite from the repository root:
 
 ```bash
 bash validation/smoke-test.sh
 ```
 
-The smoke test calls all eight main pipelines with reduced sizes. It is useful for checking that drivers, environments, and plotting paths still work, but it does not replace the full validation settings in each `config.env`.
+The smoke suite checks that reduced pipelines complete and write inspectable artifacts. It deliberately does not enforce the scientific verdicts produced at reduced settings.
+
+Run the lean pytest calibration and infrastructure contracts with:
+
+```bash
+conda run -n stepsic pytest
+conda run -n stepsic pytest -m ""
+```
+
+These tests do not duplicate campaign science or presentation. They calibrate evaluator pass/fail decisions and protect critical safety, cache, conservation, matching, and fair-sample invariants.
+
+External campaigns require their configured toolchains. Environment-specific verification commands are:
+
+```bash
+bash validation/glass/diagnose.sh
+bash validation/cylinder/run.sh
+bash validation/monofonic/run.sh
+bash validation/reference-nbody/run.sh
+REFERENCE_MANIFEST=/path/to/pair-manifest.json \
+GEOM_GLASS=/path/to/spherical-glass.hdf5 \
+bash validation/sphere/evolved.sh
+```
