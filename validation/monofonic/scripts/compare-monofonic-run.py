@@ -26,17 +26,15 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
 import time
 from pathlib import Path
 from typing import TypeAlias
 
 import h5py
 import numpy as np
-from numpy.typing import NDArray
 
-# Ensure stepsic is importable.
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from validation._common.evaluation import atomic_savez
+from numpy.typing import NDArray
 
 from stepsic.field import cubic_voxels
 from stepsic.pk import measure_pk
@@ -450,7 +448,7 @@ def run_comparison(
     results['hist_vel_mag_monofonic'] = h_vel_m.astype(np.float64)
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
-    np.savez(output, **results)
+    atomic_savez(output, **results)
     dt = time.time() - t0
     log.info('Comparison written to %s (%d arrays, %.1f s)', output, len(results), dt)
 

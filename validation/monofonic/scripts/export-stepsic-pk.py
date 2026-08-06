@@ -34,19 +34,15 @@ Usage
 from __future__ import annotations
 
 import argparse
-import importlib.resources
 import logging
-import sys
-from pathlib import Path
 
 import camb
 import numpy as np
-import toml
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from stepsic.cosmology import CAMBCosmology
 
+from validation import VALIDATION_COSMOLOGY, VALIDATION_COSMOLOGY_NAME
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
@@ -70,23 +66,11 @@ _TRANSFER_COLUMNS = [
 ]
 
 
-def _load_cosmology(name: str, estimate: str = 'best') -> dict:
-    '''Load a named parameter set from stepsic's cosmology.toml.'''
-    with importlib.resources.path('stepsic.config', 'cosmology.toml') as p:
-        config = toml.load(p)
-    if name not in config:
-        raise KeyError(
-            f"Cosmology set '{name}' not found. "
-            f"Available: {list(config.keys())}"
-        )
-    raw = config[name]
-    params = {}
-    for key, val in raw.items():
-        if isinstance(val, dict):
-            params[key] = val[estimate]
-        else:
-            params[key] = val
-    return params
+def _load_cosmology(name: str) -> dict[str, float]:
+    '''Return the shared validation cosmology after checking its name.'''
+    if name != VALIDATION_COSMOLOGY_NAME:
+        raise ValueError(f'unsupported validation cosmology: {name}')
+    return VALIDATION_COSMOLOGY
 
 
 def export_transfer(
@@ -141,7 +125,7 @@ def export_transfer(
         raise RuntimeError(
             f'CAMB returned only {n_components_have} transfer components, '
             f'expected at least {n_components_want}. '
-            f'CAMB version may be too old.'
+            f'the required transfer components are unavailable.'
         )
 
     # Take the first 13 components in CAMB's native order. Drop k
@@ -183,8 +167,8 @@ def parse_args() -> argparse.Namespace:
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument('--cosmology', type=str, default='Planck2018EE+BAO',
-                   help='Cosmology set name from stepsic cosmology.toml.')
+    p.add_argument('--cosmology', type=str, default=VALIDATION_COSMOLOGY_NAME,
+                   help='Shared validation cosmology name.')
     p.add_argument('--lbox', type=float, default=1000.0,
                    help='Box side length [Mpc/h] (sets kmin floor).')
     p.add_argument('-o', '--output', type=str, required=True,

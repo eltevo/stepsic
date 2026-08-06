@@ -26,7 +26,7 @@ set -euo pipefail
 #    1. run_stepsic     - IC + white noise + CAMB P(k) export
 #    2. build_monofonic - clone (if needed) + cmake + compile
 #    3. run_monofonic   - write config + run monofonIC
-#    4. compare         - headless: P(k), Ψ, v → .npz archive
+#    4. compare         - headless: P(k), Ψ, v -> .npz archive
 #    5. plot            - 3-panel comparison figure
 #
 #  Usage:
@@ -60,7 +60,7 @@ set -euo pipefail
 #    # Skip monofonIC build (already compiled) and rerun from step 3
 #    bash run.sh --skip-build --step=3
 #
-#    # Replot from existing .npz archive
+#    # Replot from the cached .npz archive
 #    bash run.sh --plot-only
 # ============================================================================
 
@@ -68,7 +68,15 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-vlib::source_config "${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+vlib::source_config "${CONFIG_FILE}"
+
+vlib::declare_steps run_stepsic build_monofonic run_monofonic compare plot evaluate
+if (( VLIB_LIST_STEPS )); then
+    vlib::list_steps
+    exit 0
+fi
+vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 
 # Parse monofonic-specific flags from VLIB_EXTRA_ARGS.
 SKIP_BUILD=0
@@ -112,15 +120,6 @@ PLOT_OUTPUT="${OUTPUT}/validation-monofonic.pdf"
 
 mkdir -p "${CONFIGS_DIR}" "${OUTPUT}" "${STEPSIC_CACHE}" "${MONO_CACHE}"
 
-# -- List steps --------------------------------------------------------------
-if (( VLIB_LIST_STEPS )); then
-    vlib::step_check "run_stepsic"     "${STEPSIC_IC}"       || :
-    vlib::step_check "build_monofonic" "${MONOFONIC_BIN}"    || :
-    vlib::step_check "run_monofonic"   "${MONOFONIC_IC}"     || :
-    vlib::step_check "compare"         "${COMPARISON_NPZ}"   || :
-    vlib::step_check "plot"            "${PLOT_OUTPUT}"      || :
-    exit 0
-fi
 
 # -- Conda envs --------------------------------------------------------------
 vlib::init_conda
@@ -136,7 +135,11 @@ echo "  Box:         L = ${LBOX} Mpc/h  (cubic, fully periodic)"
 echo "  Mesh:        ${NMESH}^3, LPT order ${LPT_ORDER}"
 echo "  Redshift:    z = ${Z_INIT}"
 echo "  MAS (P(k)):  ${MAS_METHOD},  seed = ${SEED}"
-echo "  Transfer:    $(( USE_CLASS )) && echo 'CLASS (--use-class)' || echo 'CAMB_file (from stepsic export)'"
+if (( USE_CLASS )); then
+    echo "  Transfer:    CLASS (--use-class)"
+else
+    echo "  Transfer:    CAMB_file (from stepsic export)"
+fi
 echo "  Cosmology:   Planck 2018 EE+BAO (table 2.18)  H0=${COSMO_H0}"
 echo ""
 
@@ -145,7 +148,7 @@ echo ""
 # Write the stepsic TOML for the monofonic cross-validation.
 # Uses USE_DOUBLE=true and HINDEPENDENT=true (h-dependent units = Mpc/h).
 _write_stepsic_toml() {
-    cat > "${STEPSIC_TOML}" <<EOF
+    vlib::atomic_text "${STEPSIC_TOML}" <<EOF
 GEOMETRY = "cubical"
 LBOX = [${LBOX}, ${LBOX}, ${LBOX}]
 PERIODIC = [1, 1, 1]
@@ -163,8 +166,9 @@ INPUT_GLASS = "none"
 IC_DIR = "${STEPSIC_CACHE}"
 IC_PREFIX = "stepsic"
 IC_FORMAT = "hdf5"
+SAVE_WHITE_NOISE = true
 USE_DOUBLE = true
-COSMOLOGY = "Planck2018EE+BAO"
+COSMOLOGY = "${COSMOLOGY_NAME}"
 SPECTRUM = "camb"
 NONLINEAR = false
 HALOFIT = "mead2020"
@@ -189,59 +193,62 @@ INPUT_SPECTRUM_UNIT_L_IN_CM = 3.085678e24
 EOF
 }
 
-# Hotfix: grid_fft.cc calls this->reset() after setting n_[i], which zeroes
-# out the dimensions before allocate() runs, causing fftw_execute to segfault
-# when ConstraintFieldFile is used. Move reset() to before the dimension loop.
-_hotfix_monofonic_src() {
-    local _src="${MONOFONIC_DIR}/src/grid_fft.cc"
-    if [[ ! -f "${_src}" ]]; then
-        echo "  WARNING: hotfix target not found: ${_src}" >&2
+# Enforce the grid_fft.cc reset ordering required for valid FFT dimensions.
+_prepare_monofonic_source() {
+    local source_path="${MONOFONIC_DIR}/src/grid_fft.cc"
+    if [[ ! -f "${source_path}" ]]; then
+        echo "  WARNING: monofonIC source file not found: ${source_path}" >&2
         return 0
     fi
-    # Idempotent: skip if already patched (reset() line comes before the loop).
-    if python3 - "${_src}" <<'PYEOF'
-import sys, re
-text = open(sys.argv[1]).read()
-# Check if already patched: reset() directly precedes the n_[i] loop
-patched = bool(re.search(
-    r'this->reset\(\);\s*\n(\s*)for \(size_t i = 0; i < 3; \+\+i\)',
-    text))
-sys.exit(0 if patched else 1)
-PYEOF
-    then
-        echo "  hotfix already applied: ${_src}"
-        return 0
-    fi
-    python3 - "${_src}" <<'PYEOF'
-import sys, re
-path = sys.argv[1]
-text = open(path).read()
+    python3 - "${source_path}" <<\PYEOF
+import os
+from pathlib import Path
+import re
+import sys
+import tempfile
 
-# Move `this->reset();` from after the n_[i] loop to before it.
-# Before:
-#     for (size_t i ...) this->n_[i] = dimsize[i];
-#     this->space_ = rspace_id;
-#     [blank line]
-#     this->reset();
-#     this->allocate();
-# After:
-#     this->reset();
-#     for (size_t i ...) this->n_[i] = dimsize[i];
-#     this->space_ = rspace_id;
-#     [blank line]
-#     this->allocate();
-old = (r'([ \t]+)(for \(size_t i = 0; i < 3; \+\+i\)\n'
-       r'[ \t]+this->n_\[i\] = dimsize\[i\];\n'
-       r'[ \t]+this->space_ = rspace_id;\n'
-       r'\n)'
-       r'[ \t]+this->reset\(\);\n')
-new = r'\1this->reset();\n\1\2'
-patched, n = re.subn(old, new, text)
-if n != 1:
-    print(f'ERROR: expected 1 replacement, got {n}', file=sys.stderr)
-    sys.exit(1)
-open(path, 'w').write(patched)
-print(f'patched: {path}')
+source = Path(sys.argv[1])
+text = source.read_text()
+required_pattern = re.compile(
+    r"this->reset\(\);\s*\n(\s*)for \(size_t i = 0; i < 3; \+\+i\)"
+)
+if required_pattern.search(text):
+    print(f"source invariant satisfied: {source}")
+    raise SystemExit(0)
+
+source_pattern = (
+    r"([ \t]+)(for \(size_t i = 0; i < 3; \+\+i\)\n"
+    r"[ \t]+this->n_\[i\] = dimsize\[i\];\n"
+    r"[ \t]+this->space_ = rspace_id;\n"
+    r"\n)"
+    r"[ \t]+this->reset\(\);\n"
+)
+required_block = r"\1this->reset();\n\1\2"
+updated, count = re.subn(source_pattern, required_block, text)
+if count != 1:
+    raise RuntimeError(
+        f"expected one grid_fft reset-ordering target, found {count}"
+    )
+
+descriptor, temporary_name = tempfile.mkstemp(
+    prefix=f".{source.name}.tmp-", dir=source.parent,
+)
+temporary = Path(temporary_name)
+try:
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        stream.write(updated)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, source)
+    directory_fd = os.open(source.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+except BaseException:
+    temporary.unlink(missing_ok=True)
+    raise
+print(f"source prepared: {source}")
 PYEOF
 }
 
@@ -296,7 +303,7 @@ if vlib::step_check "run_stepsic" "${STEPSIC_IC}"; then
     if ! (( USE_CLASS )); then
         echo "  Exporting CAMB linear transfer function at z=0..."
         vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/export-stepsic-pk.py" \
-            --cosmology "Planck2018EE+BAO" \
+            --cosmology "${COSMOLOGY_NAME}" \
             --lbox "${LBOX}" \
             -o "${CAMB_PK_FILE}"
         echo "  -> ${CAMB_PK_FILE}"
@@ -318,10 +325,10 @@ elif vlib::step_check "build_monofonic" "${MONOFONIC_BIN}"; then
         echo "  Cloning monofonIC from ${MONOFONIC_REPO}..."
         git clone --recursive "${MONOFONIC_REPO}" "${MONOFONIC_DIR}"
     else
-        echo "  Using existing clone: ${MONOFONIC_DIR}"
+        echo "  Using clone: ${MONOFONIC_DIR}"
     fi
 
-    _hotfix_monofonic_src
+    _prepare_monofonic_source
     _ensure_monofonic_env
 
     echo "  Configuring with CMake..."
@@ -381,7 +388,7 @@ transfer_file   = ${_camb_abs}"
 
     vlib::clear_dir "${MONO_CACHE}"
 
-    cat > "${MONOFONIC_CONF}" <<EOF
+    vlib::atomic_text "${MONOFONIC_CONF}" <<EOF
 ########################################################################
 # monofonIC config for stepsic cross-validation
 # Auto-generated by validation/monofonic/run.sh
@@ -485,6 +492,15 @@ if vlib::step_check "plot" "${PLOT_OUTPUT}"; then
 
     echo "  -> ${PLOT_OUTPUT}"
     vlib::step_done "plot"
+fi
+
+# -- Step 6: evaluate --------------------------------------------------------
+if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/evaluate.py" \
+        --archive "${COMPARISON_NPZ}" \
+        --figure "${PLOT_OUTPUT}" \
+        --output "${OUTPUT}/result.json"
+    vlib::step_done "evaluate"
 fi
 
 vlib::report_done
