@@ -26,17 +26,16 @@ Usage
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import argparse
 import logging
 import time
 
 import numpy as np
+
+from validation._common.evaluation import atomic_savez
 from scipy.interpolate import CubicSpline
 
 from stepsic.field import create_grid, fourier_kmod, wrap
@@ -250,7 +249,7 @@ def run_squish_validation(
     dk = lz_min / nmesh  # [Mpc/h]
 
     log.info(
-        'Squish plan: L_cube = %.1f, L_z range = [%.1f, %.1f], '
+        'Squish sweep: L_cube = %.1f, L_z range = [%.1f, %.1f], '
         '%d steps, %dLPT, %s, z = %g, dk = %.6f (fixed)',
         l_cube, lz_values[0], lz_values[-1], nsteps,
         lpt_order, method.upper(), redshift, dk,
@@ -365,7 +364,7 @@ def run_squish_validation(
         )
 
     dt_total = time.time() - t_start
-    np.savez(output, **results)
+    atomic_savez(output, **results)
     log.info(
         'Results written to %s (%d arrays, %.1f s total)',
         output, len(results), dt_total,

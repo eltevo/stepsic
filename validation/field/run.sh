@@ -48,7 +48,15 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-vlib::source_config "${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+vlib::source_config "${CONFIG_FILE}"
+
+vlib::declare_steps run_2lpt run_1lpt run_slab plot_fields plot_comparison plot_slab evaluate
+if (( VLIB_LIST_STEPS )); then
+    vlib::list_steps
+    exit 0
+fi
+vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 
 VLIB_CACHE_DIR="${BASEDIR}/cache"
 OUTPUT="${BASEDIR}/output"
@@ -60,15 +68,6 @@ fi
 
 mkdir -p "${VLIB_CACHE_DIR}" "${OUTPUT}"
 
-if (( VLIB_LIST_STEPS )); then
-    vlib::step_check "run_2lpt"         "${VLIB_CACHE_DIR}/2lpt.npz" || :
-    vlib::step_check "run_1lpt"         "${VLIB_CACHE_DIR}/1lpt.npz" || :
-    vlib::step_check "run_slab"         "${VLIB_CACHE_DIR}/slab.npz" || :
-    vlib::step_check "plot_fields"      "${OUTPUT}/fields.pdf"        || :
-    vlib::step_check "plot_comparison"  "${OUTPUT}/comparison.pdf"    || :
-    vlib::step_check "plot_slab"        "${OUTPUT}/slab_anisotropy.pdf" || :
-    exit 0
-fi
 
 vlib::init_conda
 vlib::ensure_env "${STEPSIC_ENV}"
@@ -150,6 +149,16 @@ if vlib::step_check "plot_slab" "${OUTPUT}/slab_anisotropy.pdf"; then
         -i "${VLIB_CACHE_DIR}/slab.npz" \
         -o "${OUTPUT}/slab_anisotropy.pdf"
     vlib::step_done "plot_slab"
+fi
+
+if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/evaluate.py" \
+        --archive "${VLIB_CACHE_DIR}/2lpt.npz" \
+        --figure "${OUTPUT}/fields.pdf" \
+        --figure "${OUTPUT}/comparison.pdf" \
+        --figure "${OUTPUT}/slab_anisotropy.pdf" \
+        --output "${OUTPUT}/result.json"
+    vlib::step_done "evaluate"
 fi
 
 vlib::report_done

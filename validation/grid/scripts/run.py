@@ -7,7 +7,7 @@ combinations of mesh resolution, LPT order, target redshift, and
 mass-assignment scheme. Results are serialised to a ``.npz`` archive
 that a companion plotting script can consume.
 
-Optionally retains direct-field P(k) measurements for debugging
+Also records direct-field P(k) measurements for debugging
 (``--debug-field``); these are skipped by default in paired-fixed mode
 since they are trivially unity.
 
@@ -36,11 +36,8 @@ Usage
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import argparse
 import logging
@@ -48,6 +45,8 @@ import time
 from typing import Iterable
 
 import numpy as np
+
+from validation._common.evaluation import atomic_savez
 from scipy.interpolate import CubicSpline
 
 from stepsic.field import (
@@ -201,7 +200,7 @@ def run_validation(
 ) -> None:
     r'''Run LPT P(k) validation across all requested parameter combinations.
 
-    The outer loop order is:  redshift → nmesh → method → lpt_order.
+    The outer loop order is:  redshift -> nmesh -> method -> lpt_order.
     Cosmology (CAMB + growth factors) is computed once; grid setup
     (``create_grid``) once per nmesh; LPT + P(k) once per
     (method, lpt_order) combination.
@@ -275,7 +274,7 @@ def run_validation(
 
     n_combos = len(redshifts) * len(nmesh_list) * len(methods) * len(lpt_orders)
     log.info(
-        'Validation plan: %d redshift(s) | %d mesh(es) | %d method(s) '
+        'Validation sweep: %d redshift(s) | %d mesh(es) | %d method(s) '
         '| %d LPT order(s) = %d combinations, %d evaluations each',
         len(redshifts), len(nmesh_list), len(methods), len(lpt_orders),
         n_combos, n_total,
@@ -394,7 +393,7 @@ def run_validation(
                     )
 
     dt_total = time.time() - t_start
-    np.savez(output, **results)
+    atomic_savez(output, **results)
     log.info(
         'Results written to %s (%d arrays, %.1f s total)',
         output, len(results), dt_total,

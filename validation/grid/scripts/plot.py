@@ -33,11 +33,9 @@ import argparse
 import logging
 import re
 import sys
-from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Sequence, TypeAlias
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt

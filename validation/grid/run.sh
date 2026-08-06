@@ -49,7 +49,15 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-vlib::source_config "${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+vlib::source_config "${CONFIG_FILE}"
+
+vlib::declare_steps panel_a panel_b panel_c panel_d plot evaluate
+if (( VLIB_LIST_STEPS )); then
+    vlib::list_steps
+    exit 0
+fi
+vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 
 VLIB_CACHE_DIR="${BASEDIR}/cache"
 OUTPUT="${BASEDIR}/output"
@@ -61,14 +69,6 @@ fi
 
 mkdir -p "${VLIB_CACHE_DIR}" "${OUTPUT}"
 
-if (( VLIB_LIST_STEPS )); then
-    vlib::step_check "panel_a" "${VLIB_CACHE_DIR}/panel_a.npz" || :
-    vlib::step_check "panel_b" "${VLIB_CACHE_DIR}/panel_b.npz" || :
-    vlib::step_check "panel_c" "${VLIB_CACHE_DIR}/panel_c.npz" || :
-    vlib::step_check "panel_d" "${VLIB_CACHE_DIR}/panel_d.npz" || :
-    vlib::step_check "plot"    "${OUTPUT}/grid.pdf"             || :
-    exit 0
-fi
 
 vlib::init_conda
 vlib::ensure_env "${STEPSIC_ENV}"
@@ -167,6 +167,17 @@ if vlib::step_check "plot" "${OUTPUT}/grid.pdf"; then
         --ylim ${YLIM} \
         -o "${OUTPUT}/grid.pdf"
     vlib::step_done "plot"
+fi
+
+if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/evaluate.py" \
+        --archive "${VLIB_CACHE_DIR}/panel_a.npz" \
+        --archive "${VLIB_CACHE_DIR}/panel_b.npz" \
+        --archive "${VLIB_CACHE_DIR}/panel_c.npz" \
+        --archive "${VLIB_CACHE_DIR}/panel_d.npz" \
+        --figure "${OUTPUT}/grid.pdf" \
+        --output "${OUTPUT}/result.json"
+    vlib::step_done "evaluate"
 fi
 
 vlib::report_done

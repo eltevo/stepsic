@@ -42,7 +42,15 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-vlib::source_config "${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+vlib::source_config "${CONFIG_FILE}"
+
+vlib::declare_steps run plot evaluate
+if (( VLIB_LIST_STEPS )); then
+    vlib::list_steps
+    exit 0
+fi
+vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 
 VLIB_CACHE_DIR="${BASEDIR}/cache"
 OUTPUT="${BASEDIR}/output"
@@ -55,12 +63,6 @@ fi
 
 mkdir -p "${VLIB_CACHE_DIR}" "${OUTPUT}"
 
-# --list-steps: enumerate without running
-if (( VLIB_LIST_STEPS )); then
-    vlib::step_check "run"  "${VLIB_CACHE_DIR}/data.npz" || :
-    vlib::step_check "plot" "${OUTPUT}/squish.pdf" || :
-    exit 0
-fi
 
 vlib::init_conda
 vlib::ensure_env "${STEPSIC_ENV}"
@@ -113,6 +115,14 @@ if vlib::step_check "plot" "${OUTPUT}/squish.pdf"; then
         --title "" \
         -o "${OUTPUT}/squish.pdf"
     vlib::step_done "plot"
+fi
+
+if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/evaluate.py" \
+        --archive "${VLIB_CACHE_DIR}/data.npz" \
+        --figure "${OUTPUT}/squish.pdf" \
+        --output "${OUTPUT}/result.json"
+    vlib::step_done "evaluate"
 fi
 
 vlib::report_done

@@ -21,11 +21,8 @@ Usage
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import argparse
 import logging
@@ -34,6 +31,8 @@ import tempfile
 import time
 
 import numpy as np
+
+from validation._common.evaluation import atomic_savez
 
 from stepsic.field import create_grid, cubic_voxels
 
@@ -133,7 +132,7 @@ def run_fields(
     n_total = nreal * members_per_real
 
     log.info(
-        'Plan: %d realisation(s) * %d member(s) = %d evaluations',
+        'Workload: %d realisation(s) * %d member(s) = %d evaluations',
         nreal, members_per_real, n_total,
     )
 
@@ -313,7 +312,7 @@ def run_fields(
     results['stat_vel_median'] = np.float64(stat_vel_median)
     results['stat_vel_max'] = np.float64(stat_vel_max)
 
-    np.savez(output, **results)
+    atomic_savez(output, **results)
     log.info(
         'Results written to %s (%d arrays, %d evaluations, %.1f s total)',
         output, len(results), n_total, time.time() - t0,
