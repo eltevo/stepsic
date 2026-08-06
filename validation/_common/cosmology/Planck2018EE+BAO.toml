@@ -1,0 +1,24 @@
+# Planck 2018 TT,TE,EE+lowE+lensing+BAO best fit, Table 2.18.
+# Values match stepsic/config/cosmology.toml ["Planck2018EE+BAO"].
+#
+# Parsed by validation Python and shell helpers. Keep to KEY = numeric_value;
+# special campaigns override individual COSMO_<KEY> variables in config.env.
+# Units: H0 [km/s/Mpc], MNU [eV], TCMB [K], KPIVOT [1/Mpc]. Density
+# fractions, spectral indices, particle counts, and equations of state are unitless.
+
+H0      = 67.702
+OMEGA_M = 0.3106
+OMEGA_B = 0.048972
+OMEGA_L = 0.6894
+NS      = 0.96824
+AS      = 2.1073e-9
+SIGMA8  = 0.8110
+YHE     = 0.245425
+MNU     = 0.06
+NNU     = 3.046
+NUR     = 2.046
+ZREI    = 7.90
+TCMB    = 2.7255
+KPIVOT  = 0.05
+W0      = -1.0
+WA      = 0.0

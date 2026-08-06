@@ -8,7 +8,7 @@ Usage
 -----
 ::
 
-    from validation import PLANCK2018, GrowthData, init_cosmology
+    from validation import VALIDATION_COSMOLOGY, GrowthData, init_cosmology
 
     growth_table = init_cosmology([31.0, 15.0], lbox_max=500.0)
     gd = growth_table[31.0]
@@ -17,17 +17,16 @@ Usage
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import argparse
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Sequence, TypeAlias, Union
 
 import numpy as np
 from numpy.typing import NDArray
+import toml
 
 from stepsic.cosmology import (
     CAMBCosmology,
@@ -50,22 +49,14 @@ ArrayI: TypeAlias = NDArray[np.int64]
 ArrayC: TypeAlias = Union[NDArray[np.complex128], NDArray[np.complex64]]
 
 
-# Planck 2018 (TT,TE,EE+lowE+lensing, Table 2 of Aghanim et al. 2020)
-PLANCK2018: dict[str, float] = {
-    'H0':      67.742,
-    'OMEGA_M': 0.3099,
-    'OMEGA_B': 0.048891,
-    'OMEGA_L': 0.6901,
-    'NS':      0.96822,
-    'AS':      2.1064e-9,
-    'SIGMA8':  0.8105,
-    'YHE':     0.245421,
-    'MNU':     0.06,       # eV, total neutrino mass
-    'NNU':     3.046,      # effective number of neutrino species
-    'ZREI':    7.89,       # reionization redshift
-    'TCMB':    2.7255,     # K, CMB temperature
-    'W0':     -1.0,
-    'WA':      0.0,
+VALIDATION_COSMOLOGY_NAME = 'Planck2018EE+BAO'
+_VALIDATION_COSMOLOGY_PATH = (
+    Path(__file__).parent / '_common' / 'cosmology'
+    / f'{VALIDATION_COSMOLOGY_NAME}.toml'
+)
+VALIDATION_COSMOLOGY: dict[str, float] = {
+    key: float(value)
+    for key, value in toml.load(_VALIDATION_COSMOLOGY_PATH).items()
 }
 
 
@@ -133,15 +124,15 @@ def init_cosmology(
     npoints : int
         Number of k-samples in the CAMB output.
     cosmo : dict or None
-        Cosmological parameters. Defaults to :data:`PLANCK2018`.
+        Cosmological parameters. Defaults to :data:`VALIDATION_COSMOLOGY`.
 
     Returns
     -------
-    dict mapping float → GrowthData
+    dict mapping float -> GrowthData
         One entry per unique redshift.
     '''
     if cosmo is None:
-        cosmo = PLANCK2018
+        cosmo = VALIDATION_COSMOLOGY
 
     h = cosmo['H0'] / 100.0
 
@@ -364,9 +355,9 @@ def parse_boxsize(lbox_arg: list[float]) -> ArrayF:
 
 
 def load_archive(path: str) -> dict:
-    '''Load an ``.npz`` file and return a plain dict of arrays.'''
-    npz = np.load(path, allow_pickle=True)
-    return dict(npz)
+    '''Load a typed ``.npz`` file without permitting pickle payloads.'''
+    with np.load(path, allow_pickle=False) as archive:
+        return {name: archive[name].copy() for name in archive.files}
 
 
 def setup_matplotlib() -> None:
