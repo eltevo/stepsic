@@ -132,8 +132,9 @@ if (( START_STEP <= 4 )); then
 
     vlib::clear_dir "${CUBIC_RANDOM_DIR}/glass"
 
-    vlib::steps::run_binary "${BUILD_DIR}/${GLASS_BIN_NAME}" \
-        "${PARAM_DIR}/cubic_random.param"
+    vlib::steps::run_binary_with_fresh_ewald \
+        "${BUILD_DIR}/${GLASS_BIN_NAME}" "${PARAM_DIR}/cubic_random.param" \
+        "${CUBIC_RANDOM_DIR}/glass" "Ewald_table_medres.hdf5"
 fi
 
 echo ""

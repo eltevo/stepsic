@@ -19,18 +19,18 @@ Usage
 -----
 ::
 
-    python validate-glass-plot.py \\
-        --cubic-random output/glass/cubic_random/glass/snapshot_0001.hdf5 \\
-        --cubic-grid   output/glass/cubic_grid/preglass/ic.hdf5 \\
-        --spherical    output/glass/spherical/glass/snapshot_0001.hdf5 \\
-        --cylindrical  output/glass/cylindrical/glass/snapshot_0001.hdf5 \\
-        --target-radius 250.0 \\
+    PYTHONPATH="$PWD" conda run -n stepsic python validation/glass/scripts/plot.py \\
+        --cubic-random validation/glass/cubic_random/glass/snapshot_0001.hdf5 \\
+        --cubic-grid   validation/glass/cubic_grid/preglass/ic.hdf5 \\
+        --spherical    validation/glass/spherical/glass/snapshot_0001.hdf5 \\
+        --cylindrical  validation/glass/cylindrical/glass/snapshot_0001.hdf5 \\
+        --target-radius 500.0 \\
         --slice-thickness 10.0 \\
-        -o output/glass/validation-glass.pdf
+        -o validation/glass/output/glass.pdf
 
 Any subset of panels can be omitted; missing panels are left blank.
-The ``--target-radius`` value must match ``R_3D`` in ``validation-glass.sh``
-(default 250 Mpc).
+The ``--target-radius`` value must match ``R_3D`` in ``validation/glass/config.env``
+(default 500 Mpc).
 '''
 
 from __future__ import annotations
@@ -46,7 +46,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from validation import setup_matplotlib
 
 logging.basicConfig(level=logging.INFO)
@@ -109,7 +108,7 @@ def rescale_to_radius(
         Particle positions (modified in-place, also returned).
     target_radius : float
         Desired half-extent after rescaling [Mpc]. Pass the same value as
-        ``R_3D`` in ``validation-glass.sh``.
+        ``R_3D`` in ``validation/glass/config.env``.
         For spherical: applied to all three axes.
         For cylindrical: applied to x and y only (z is periodic and correct).
     geometry : str
@@ -313,7 +312,7 @@ def plot_glasses(
     target_radius : float
         Physical radius [Mpc] used to rescale spherical and cylindrical
         glass back to their intended domain after StePS expansion.
-        Must match ``R_3D`` in ``validation-glass.sh``.
+        Must match ``R_3D`` in ``validation/glass/config.env``.
     slice_thickness : float
         Thickness of the Y-slab [Mpc] for the X-Z cut.
         Ignored for the cubical-grid panel which always picks a single
@@ -411,9 +410,9 @@ def parse_args() -> argparse.Namespace:
         help='HDF5 snapshot of the cylindrical glass.',
     )
     p.add_argument(
-        '--target-radius', type=float, default=250.0,
+        '--target-radius', type=float, default=500.0,
         help='Physical radius [Mpc] of the sphere/cylinder domain. '
-             'Must match R_3D in validation-glass.sh.',
+             'Must match R_3D in validation/glass/config.env.',
     )
     p.add_argument(
         '--slice-thickness', type=float, default=10.0,
@@ -426,7 +425,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         '-o', '--output', type=str, default=None,
-        help='Output figure path (e.g. validation-glass.pdf). '
+        help='Output figure path (e.g. glass.pdf). '
              'Shows interactively if omitted.',
     )
     return p.parse_args()

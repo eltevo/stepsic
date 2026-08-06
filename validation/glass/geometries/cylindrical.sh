@@ -33,9 +33,7 @@ echo "  Cylindrical (S^1 x R^2) glass pipeline - starting from step ${START_STEP
 echo "--------------------------------------------------------------------"
 
 CYLINDRICAL_DIR="${OUTDIR}/cylindrical"
-CYLINDRICAL_EWALD_DIR="${CYLINDRICAL_DIR}/ewald"
-mkdir -p "${CYLINDRICAL_DIR}/preglass" "${CYLINDRICAL_DIR}/glass" \
-    "${CYLINDRICAL_EWALD_DIR}"
+mkdir -p "${CYLINDRICAL_DIR}/preglass" "${CYLINDRICAL_DIR}/glass"
 
 # -- Step 1: Generate pre-glass IC -----------------------------------------
 if (( START_STEP <= 1 )); then
@@ -109,14 +107,11 @@ if (( START_STEP <= 4 )); then
     echo ""
     echo "-- Step 4: Running cylindrical glass relaxation --"
 
-    vlib::steps::recover_ewald_cache \
-        "${CYLINDRICAL_DIR}/glass" "${CYLINDRICAL_EWALD_DIR}"
     vlib::clear_dir "${CYLINDRICAL_DIR}/glass"
 
-    vlib::steps::run_binary_with_ewald_cache \
+    vlib::steps::run_binary_with_fresh_ewald \
         "${BUILD_DIR}/${GLASS_BIN_NAME}" "${PARAM_DIR}/cylindrical.param" \
-        "${CYLINDRICAL_DIR}/glass" "${CYLINDRICAL_EWALD_DIR}" \
-        "run_glass_cylindrical" "higres"
+        "${CYLINDRICAL_DIR}/glass" "S1R2_Ewald_table_higres.hdf5"
 fi
 
 echo ""

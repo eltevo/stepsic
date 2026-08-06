@@ -40,7 +40,8 @@
 #    --run=GEOM[,…]    Run only the listed geometries.
 #                       Values: cubical, spherical, cylindrical, all
 #                       (default: all)
-#    --no-clean        Do not remove existing geometry outputs before running
+#    --no-clean        Keep geometry output directories for this run
+#    --plot-3d         Use the 3D scatter plot (default: 2D slice plot)
 #
 #  GEOM_START_STEP env var:
 #    Sets the intra-geometry start step (1=preglass, 2=param, 3=build, 4=run).
@@ -53,7 +54,7 @@
 #    # Rerun only spherical from compilation, then replot everything
 #    N_GPU=4 bash run.sh --run=spherical --step=3
 #
-#    # Just replot from existing snapshots
+#    # Replot cached snapshots
 #    bash run.sh --plot-only
 #
 #  Configuration (edit config.env or export before running):
@@ -76,19 +77,25 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-vlib::source_config "${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
+vlib::source_config "${CONFIG_FILE}"
+
+vlib::declare_steps cubical spherical cylindrical plot evaluate
+vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 
 # Parse glass-specific flags from VLIB_EXTRA_ARGS
 RUN_GEOMS="all"
 DO_CLEAN="yes"
+PLOT_MODE="2D"
 
 for arg in "${VLIB_EXTRA_ARGS[@]+"${VLIB_EXTRA_ARGS[@]}"}"; do
     case "${arg}" in
         --run=*)    RUN_GEOMS="${arg#--run=}" ;;
         --no-clean) DO_CLEAN="no" ;;
+        --plot-3d)  PLOT_MODE="3D" ;;
         *)
             echo "ERROR: Unknown argument '${arg}'." >&2
-            echo "Usage: $0 [--run=GEOM,...] [--step=N] [--plot-only] [--no-clean] ..." >&2
+            echo "Usage: $0 [--run=GEOM,...] [--step=N] [--plot-only] [--no-clean] [--plot-3d] ..." >&2
             exit 1
             ;;
     esac
@@ -153,20 +160,20 @@ export OUTDIR="${OUTDIR:-${BASEDIR}}"
 export TOML_DIR="${OUTDIR}/configs"
 export PARAM_DIR="${OUTDIR}/params"
 export BUILD_DIR="${OUTDIR}/builds"
+export VLIB_CACHE_DIR="${BASEDIR}/cache/controller"
 OUTPUT="${BASEDIR}/output"
 
 if (( VLIB_LIST_STEPS )); then
-    echo "  Geometry sub-steps (1-4, controlled by --step=N or GEOM_START_STEP):"
-    echo "     1. preglass    - generate pre-glass ICs via stepsic"
-    echo "     2. param       - write StePS parameter files"
-    echo "     3. build       - compile StePS GPU binary"
-    echo "     4. run         - run StePS glass relaxation"
+    echo "  Selected plot: ${PLOT_MODE}"
+    echo ""
+    echo "  Geometry sub-steps (controlled by --step=N or GEOM_START_STEP):"
+    echo "     - preglass    - generate pre-glass ICs via stepsic"
+    echo "     - param       - write StePS parameter files"
+    echo "     - build       - compile StePS GPU binary"
+    echo "     - run         - run StePS glass relaxation"
     echo ""
     echo "  Controller steps:"
-    echo "     cubical     - run cubical (T^3) geometry pipeline"
-    echo "     spherical   - run spherical (R^3) geometry pipeline"
-    echo "     cylindrical - run cylindrical (S^1×R^2) geometry pipeline"
-    echo "     plot        - generate 4-panel validation figure"
+    vlib::list_steps
     exit 0
 fi
 
@@ -189,52 +196,63 @@ echo "========================================================================"
 echo ""
 echo "  Target cosmology:  H0=${COSMO_H0}, Omega_m=${COSMO_OMEGA_M}"
 echo "  Glass-making EdS:  H0_EdS=${EDS_H0}, Omega_m=1.0"
-echo "  Scale factor:      a_start=${GLASS_A_START} → a_max=${GLASS_A_MAX}"
+echo "  Scale factor:      a_start=${GLASS_A_START} -> a_max=${GLASS_A_MAX}"
 echo "  Geometries:        cubical=${RUN_CUBICAL}  spherical=${RUN_SPHERICAL}  cylindrical=${RUN_CYLINDRICAL}"
 echo "  Geom start step:   ${GEOM_START_STEP}"
 echo ""
 
-# -- Selective cleanup ------------------------------------------------------
-if [[ "${DO_CLEAN}" == "yes" && ! (( VLIB_PLOT_ONLY )) ]]; then
-    echo "------------------------------------------------------------------------"
-    echo "  Cleaning selected geometry outputs"
-    echo "------------------------------------------------------------------------"
+# ``--step`` selects the intra-geometry start step. Controller steps use manifests.
+VLIB_START_STEP=1
 
+if vlib::step_check "cubical" "${OUTDIR}/cubic_random" "${OUTDIR}/cubic_grid"; then
     if [[ "${RUN_CUBICAL}" == "yes" ]]; then
-        echo "  Cleaning cubical..."
-        vlib::clear_files "${TOML_DIR}"  "cubic_random.toml" "cubic_grid.toml"
-        vlib::clear_files "${PARAM_DIR}" "cubic_random.param"
-        vlib::clear_files "${BUILD_DIR}" "StePS_glass_periodic"
-        vlib::clear_dir "${OUTDIR}/cubic_random/preglass"
-        vlib::clear_dir "${OUTDIR}/cubic_random/glass"
-        vlib::clear_dir "${OUTDIR}/cubic_grid/preglass"
+        if [[ "${DO_CLEAN}" == "yes" ]]; then
+            vlib::clear_files "${TOML_DIR}" "cubic_random.toml" "cubic_grid.toml"
+            vlib::clear_files "${PARAM_DIR}" "cubic_random.param"
+            vlib::clear_files "${BUILD_DIR}" "StePS_glass_periodic"
+            vlib::clear_dir "${OUTDIR}/cubic_random/preglass"
+            vlib::clear_dir "${OUTDIR}/cubic_random/glass"
+            vlib::clear_dir "${OUTDIR}/cubic_grid/preglass"
+        fi
+        bash "${BASEDIR}/geometries/cubical.sh"
+    else
+        mkdir -p "${OUTDIR}/cubic_random" "${OUTDIR}/cubic_grid"
     fi
-
-    if [[ "${RUN_SPHERICAL}" == "yes" ]]; then
-        echo "  Cleaning spherical..."
-        vlib::clear_files "${TOML_DIR}"  "spherical.toml"
-        vlib::clear_files "${PARAM_DIR}" "spherical.param"
-        vlib::clear_files "${BUILD_DIR}" "StePS_glass_spherical"
-        vlib::clear_dir "${OUTDIR}/spherical/preglass"
-        vlib::clear_dir "${OUTDIR}/spherical/glass"
-    fi
-
-    if [[ "${RUN_CYLINDRICAL}" == "yes" ]]; then
-        echo "  Cleaning cylindrical..."
-        vlib::clear_files "${TOML_DIR}"  "cylindrical.toml"
-        vlib::clear_files "${PARAM_DIR}" "cylindrical.param"
-        vlib::clear_files "${BUILD_DIR}" "StePS_glass_cylindrical"
-        vlib::clear_dir "${OUTDIR}/cylindrical/preglass"
-        vlib::clear_dir "${OUTDIR}/cylindrical/glass"
-    fi
+    vlib::step_done "cubical"
 fi
 
-# -- Dispatch geometry pipelines --------------------------------------------
-[[ "${RUN_CUBICAL}"     == "yes" ]] && bash "${BASEDIR}/geometries/cubical.sh"
-[[ "${RUN_SPHERICAL}"   == "yes" ]] && bash "${BASEDIR}/geometries/spherical.sh"
-[[ "${RUN_CYLINDRICAL}" == "yes" ]] && bash "${BASEDIR}/geometries/cylindrical.sh"
+if vlib::step_check "spherical" "${OUTDIR}/spherical"; then
+    if [[ "${RUN_SPHERICAL}" == "yes" ]]; then
+        if [[ "${DO_CLEAN}" == "yes" ]]; then
+            vlib::clear_files "${TOML_DIR}" "spherical.toml"
+            vlib::clear_files "${PARAM_DIR}" "spherical.param"
+            vlib::clear_files "${BUILD_DIR}" "StePS_glass_spherical"
+            vlib::clear_dir "${OUTDIR}/spherical/preglass"
+            vlib::clear_dir "${OUTDIR}/spherical/glass"
+        fi
+        bash "${BASEDIR}/geometries/spherical.sh"
+    else
+        mkdir -p "${OUTDIR}/spherical"
+    fi
+    vlib::step_done "spherical"
+fi
 
-# -- Plot step --------------------------------------------------------------
+if vlib::step_check "cylindrical" "${OUTDIR}/cylindrical"; then
+    if [[ "${RUN_CYLINDRICAL}" == "yes" ]]; then
+        if [[ "${DO_CLEAN}" == "yes" ]]; then
+            vlib::clear_files "${TOML_DIR}" "cylindrical.toml"
+            vlib::clear_files "${PARAM_DIR}" "cylindrical.param"
+            vlib::clear_files "${BUILD_DIR}" "StePS_glass_cylindrical"
+            vlib::clear_dir "${OUTDIR}/cylindrical/preglass"
+            vlib::clear_dir "${OUTDIR}/cylindrical/glass"
+        fi
+        bash "${BASEDIR}/geometries/cylindrical.sh"
+    else
+        mkdir -p "${OUTDIR}/cylindrical"
+    fi
+    vlib::step_done "cylindrical"
+fi
+
 echo ""
 echo "------------------------------------------------------------------------"
 echo "  Generating validation figure"
@@ -272,15 +290,32 @@ if [[ ${#PLOT_ARGS[@]} -eq 0 ]]; then
     exit 1
 fi
 
-PLOT_ARGS+=(
-    --target-radius "${R_3D}"
-    --slice-thickness 100
-    --fraction 1.0
-    -o "${OUTPUT}/glass.pdf"
-)
+PLOT_SCRIPT="${BASEDIR}/scripts/plot.py"
+PLOT_DIMENSION_ARGS=(--slice-thickness 100)
+if [[ "${PLOT_MODE}" == "3D" ]]; then
+    PLOT_SCRIPT="${BASEDIR}/scripts/plot-3d.py"
+    PLOT_DIMENSION_ARGS=()
+fi
 
-vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot.py" "${PLOT_ARGS[@]}"
+if vlib::step_check "plot" "${OUTPUT}/glass.pdf"; then
+    vlib::run_python "${STEPSIC_ENV}" "${PLOT_SCRIPT}" \
+        "${PLOT_ARGS[@]}" \
+        --target-radius "${R_3D}" \
+        "${PLOT_DIMENSION_ARGS[@]+"${PLOT_DIMENSION_ARGS[@]}"}" \
+        --fraction 1.0 \
+        -o "${OUTPUT}/glass.pdf"
+    vlib::step_done "plot"
+fi
 
-echo "  -> ${OUTPUT}/glass.pdf"
+if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/evaluate.py" \
+        "${PLOT_ARGS[@]}" \
+        --box-size "${LBOX}" \
+        --radius "${R_3D}" \
+        --cylinder-length "${LZ}" \
+        --figure "${OUTPUT}/glass.pdf" \
+        --output "${OUTPUT}/result.json"
+    vlib::step_done "evaluate"
+fi
 
 vlib::report_done
