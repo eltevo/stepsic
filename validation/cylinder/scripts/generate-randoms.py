@@ -14,7 +14,6 @@ Usage:
 """
 
 import argparse
-import sys
 
 import h5py
 import numpy as np
@@ -73,14 +72,18 @@ def main():
     annulus_vol = np.pi * (r_edges[1:]**2 - r_edges[:-1]**2) * Lz
 
     # PDF for radial sampling: proportional to particle count per bin
-    # (this preserves the n(r) profile that the FKP estimator needs)
+    # (this samples the n(r) profile used by the FKP estimator)
     pdf = count_per_bin.astype(float)
     pdf /= pdf.sum()
 
     # Mean mass per particle in each bin (for assigning masses to randoms)
-    mean_mass_per_bin = np.where(count_per_bin > 0,
-                                 mass_per_bin / count_per_bin,
-                                 0.0)
+    mean_mass_per_bin = np.zeros_like(mass_per_bin)
+    np.divide(
+        mass_per_bin,
+        count_per_bin,
+        out=mean_mass_per_bin,
+        where=count_per_bin > 0,
+    )
 
     # --- Generate random particles ---
     # Step 1: Draw radial bin for each random particle

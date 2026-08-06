@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -34,9 +33,8 @@ import numpy as np
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 # If running from the stepsic repo, use its matplotlib setup
-from validation import setup_matplotlib
+from validation import VALIDATION_COSMOLOGY, setup_matplotlib
 
 
 # A&A single-column width [inches]
@@ -52,7 +50,7 @@ def _derive_output_paths(
     ``base = 'dir/validation.pdf'`` yields:
       - ``dir/validation-measured.pdf``
       - ``dir/validation-reference.pdf``
-      - ``dir/validation.pdf``  (ratio, unchanged)
+      - ``dir/validation.pdf``  (ratio)
     '''
     p = Path(base)
     stem = p.stem
@@ -67,7 +65,7 @@ def _derive_output_paths(
 
 def load_pk_measured(path: str) -> tuple[np.ndarray, np.ndarray]:
     '''Load the k, P(k) columns from a StePS_Pk ASCII output file.'''
-    data = np.loadtxt(path, comments="#")
+    data = np.atleast_2d(np.loadtxt(path, comments="#"))
     k = data[:, 0]
     pk = data[:, 1]
     # Remove NaN and negative entries
@@ -87,17 +85,21 @@ def get_reference_pk_camb(z: float, kmax: float = 10.0) -> tuple[np.ndarray, np.
     '''
     import camb
 
-    # Planck 2018 parameters (must match stepsic config)
+    # Shared Planck 2018 EE+BAO parameters used by all validation campaigns.
+    cosmo = VALIDATION_COSMOLOGY
+    h = cosmo["H0"] / 100.0
     pars = camb.CAMBparams()
     pars.set_cosmology(
-        H0=67.66,
-        ombh2=0.04897 * 0.6766**2,
-        omch2=(0.3111 - 0.04897) * 0.6766**2,
+        H0=cosmo["H0"],
+        ombh2=cosmo["OMEGA_B"] * h**2,
+        omch2=(cosmo["OMEGA_M"] - cosmo["OMEGA_B"]) * h**2,
         omk=0.0,
-        mnu=0.06,
-        nnu=3.046,
+        mnu=cosmo["MNU"],
+        nnu=cosmo["NNU"],
+        YHe=cosmo["YHE"],
+        TCMB=cosmo["TCMB"],
     )
-    pars.InitPower.set_params(As=2.1064e-9, ns=0.9665, r=0)
+    pars.InitPower.set_params(As=cosmo["AS"], ns=cosmo["NS"], r=0)
     pars.set_matter_power(
         redshifts=[z],
         kmax=kmax,
@@ -111,7 +113,6 @@ def get_reference_pk_camb(z: float, kmax: float = 10.0) -> tuple[np.ndarray, np.
     )
     # kh is in [h/Mpc], pk is in [(Mpc/h)^3]
     # Convert to physical units [1/Mpc] and [Mpc^3]
-    h = 0.6766
     k_phys = kh * h        # h/Mpc -> 1/Mpc
     pk_phys = pk[0] / h**3  # (Mpc/h)^3 -> Mpc^3
 

@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
 from pathlib import Path
 
 from matplotlib.ticker import FormatStrFormatter, MultipleLocator
@@ -28,7 +27,6 @@ import numpy as np
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from validation import setup_matplotlib
 
 
@@ -52,7 +50,7 @@ def load_pk_measured(path: str) -> tuple[np.ndarray, np.ndarray]:
     pk : ndarray
         Power spectrum values (positive, finite entries only).
     '''
-    data = np.loadtxt(path, comments="#")
+    data = np.atleast_2d(np.loadtxt(path, comments="#"))
     k = data[:, 0]
     pk = data[:, 1]
     mask = np.isfinite(k) & np.isfinite(pk) & (k > 0) & (pk > 0)
@@ -109,15 +107,23 @@ def plot_pk_ratio(
     cut_2 = k_2 < k_max
     k_2, pk_2 = k_2[cut_2], pk_2[cut_2]
 
-    # Interpolate 2LPT onto 1LPT k-bins in log-log space
-    log_pk_2_interp = np.interp(
-        np.log(k_1), np.log(k_2), np.log(pk_2),
-        left=np.nan, right=np.nan,
-    )
-    pk_2_at_k1 = np.exp(log_pk_2_interp)
+    # Interpolate 2LPT onto 1LPT k-bins in log-log space.  A
+    # singleton grid cannot be interpolated, but matching bin centres can be
+    # compared directly.
+    if len(k_1) == 1 and len(k_2) == 1:
+        if not np.isclose(k_1[0], k_2[0], rtol=1e-3):
+            raise ValueError("singleton spectrum bins do not overlap")
+        ratio = pk_1 / pk_2
+    else:
+        log_pk_2_interp = np.interp(
+            np.log(k_1), np.log(k_2), np.log(pk_2),
+            left=np.nan, right=np.nan,
+        )
+        ratio = pk_1 / np.exp(log_pk_2_interp)
 
-    ratio = pk_1 / pk_2_at_k1
     valid = np.isfinite(ratio)
+    if not np.any(valid):
+        raise ValueError("power spectra have no overlapping finite bins")
 
     fig, ax = plt.subplots(1, 1, figsize=(AA_COL_WIDTH, 2.2))
 

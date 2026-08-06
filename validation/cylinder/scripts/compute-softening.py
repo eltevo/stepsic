@@ -11,7 +11,7 @@ Strategy:
      This is h-agnostic: the softening comes out in whatever coordinate units
      the file uses.
 
-Usage: python compute_softening.py <snapshot.hdf5>
+Usage: python compute-softening.py <snapshot.hdf5>
 """
 import sys
 import h5py
