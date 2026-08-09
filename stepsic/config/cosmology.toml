@@ -95,3 +95,60 @@ TCMB = 2.7255
 KPIVOT = 0.05
 W0 = -1.0
 WA = 0.0
+
+# DESI DR2 LCDM results [Table V.] 'DESI+CMB'
+# https://arxiv.org/pdf/2503.14738
+["LCDM-DESI-DR2+CMB"]
+H0 = {best = 68.17, mean = 68.17, error = 0.28}
+OMEGA_M = {best = 0.3027, mean = 0.3027, error = 0.0036}
+OMEGA_B = {best = 0.048891, mean = 0.04891, error = 0.00064}
+OMEGA_L = {best = 0.6973, mean = 0.6973, error = 0.0036}
+NS = {best = 0.96822, mean = 0.9668, error = 0.0037}
+AS = {best = 2.1064e-9, mean = 2.105e-9, error = 0.030e-9}
+SIGMA8 = {best = 0.8105, mean = 0.8100, error = 0.0060}
+YHE = {best = 0.245421, mean = 0.245418, error = 0.000054}
+MNU = 0.06
+NNU = 3.046
+ZREI = {best = 7.89, mean = 7.85, error = 0.70}
+TCMB = 2.7255
+KPIVOT = 0.05
+W0 = -1
+WA = 0
+
+# DESI DR2 wCDM results [Table V.] 'DESI+CMB+DESY5'
+# https://arxiv.org/pdf/2503.14738
+["WCDM-DESI-DR2+CMB+DESY5"]
+H0 = {best = 67.34, mean = 67.34, error = 0.54}
+OMEGA_M = {best = 0.3098, mean = 0.3098, error = 0.0050}
+OMEGA_B = {best = 0.048891, mean = 0.04891, error = 0.00064}
+OMEGA_L = {best = 0.6902, mean = 0.6902, error = 0.0050}
+NS = {best = 0.96822, mean = 0.9668, error = 0.0037}
+AS = {best = 2.1064e-9, mean = 2.105e-9, error = 0.030e-9}
+SIGMA8 = {best = 0.8105, mean = 0.8100, error = 0.0060}
+YHE = {best = 0.245421, mean = 0.245418, error = 0.000054}
+MNU = 0.06
+NNU = 3.046
+ZREI = {best = 7.89, mean = 7.85, error = 0.70}
+TCMB = 2.7255
+KPIVOT = 0.05
+W0 = {best = -0.971, mean=-0.971, error=0.021}
+WA = 0
+
+# DESI DR2 CPL (w0waCDM) results [Table V.] 'DESI+CMB+DESY5'
+# https://arxiv.org/pdf/2503.14738
+["CPL-DESI-DR2+CMB+DESY5"]
+H0 = {best = 66.74, mean = 66.74, error = 0.56}
+OMEGA_M = {best = 0.3191, mean = 0.3191, error = 0.0056}
+OMEGA_B = {best = 0.048891, mean = 0.04891, error = 0.00064}
+OMEGA_L = {best = 0.6809, mean = 0.6809, error = 0.0056}
+NS = {best = 0.96822, mean = 0.9668, error = 0.0037}
+AS = {best = 2.1064e-9, mean = 2.105e-9, error = 0.030e-9}
+SIGMA8 = {best = 0.8105, mean = 0.8100, error = 0.0060}
+YHE = {best = 0.245421, mean = 0.245418, error = 0.000054}
+MNU = 0.06
+NNU = 3.046
+ZREI = {best = 7.89, mean = 7.85, error = 0.70}
+TCMB = 2.7255
+KPIVOT = 0.05
+W0 = {best = -0.752, mean=-0.752, error=0.057}
+WA = {best = -0.86, mean=-0.86, error=0.23}
