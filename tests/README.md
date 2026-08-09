@@ -1,33 +1,47 @@
-# Test-suite code of conduct
+# Testing
 
-The pytest suite covers fast, deterministic unit and component correctness. Physics-scale, visual, cross-code (including monofonIC), and end-to-end pipeline checks belong in `validation/`, not in pytest.
+The pytest suite is the quick check you run while working: deterministic unit and component tests that finish in about a second. Work that needs physics-scale resolution, visual review, a comparison against another code, or a full end-to-end simulation belongs in `validation/`.
 
-## Evidence tiers
+## Running it
 
-Every test docstring names its evidence tier and the provenance of every expected value. Lower tiers are preferred.
+The default run skips the `slow` marker, so use it while working:
 
-1. **T1 - exact structural or symmetry invariant.** Examples include conservation, adjointness, determinism, symmetry, and round trips.
-2. **T2 - analytic closed-form oracle.** Include the derivation or cite the paper, textbook, or specification that supplies the result.
-3. **T3 - differential oracle.** Name the independent library oracle or keep a structurally independent brute-force reference in the test.
-4. **T4 - statistical oracle.** State the sampling distribution and derive the tolerance from the sample count at five sigma or more. Parametrize over all canonical seeds.
-5. **T5 - regression golden.** This is a last resort. Explain why T1-T4 cannot pin the behavior, store the file in `tests/goldens/`, provide a checked-in script in `tests/regen/`, and assert embedded provenance keys in the test.
+```bash
+conda run -n stepsic pytest
+```
 
-An expected number without stated provenance is a test defect. Never copy or transliterate a production formula into a test as its oracle; use an invariant, an analytic result, an external oracle, or a structurally independent method.
+An empty marker expression runs everything, slow tests included:
 
-## Numerical policy
+```bash
+conda run -n stepsic pytest -m ""
+```
 
-Use exact equality for integer, bit-level, and RNG behavior. Float64 identities may use `rtol <= 1e-13` only where non-associative arithmetic requires it. Discretization tolerances must follow a cited convergence order. Statistical tolerances must be derived from the number of samples at five sigma or more. Every non-exact tolerance needs a nearby justification comment. Never loosen a tolerance to make a failure green.
+Tests that call CAMB or Colossus carry the `camb` marker. They run by default because those packages are in the `stepsic` environment; if yours lacks them, use `-m "not camb"`.
 
-The canonical seeds are `SEEDS = (0, 42, 112358)` from `tests/conftest.py`. Statistical properties use at least those three seeds; seeds and tolerances may not be cherry-picked or tuned to one realization.
+Keep an unmarked test under two seconds, and mark it `slow` if it cannot be. Pytest is configured to turn warnings into errors, so a new warning will stop the run; if you have to allowlist one coming from an external package, leave a comment saying what upstream causes it.
 
-## Structure and speed
+## What a good test looks like
 
-Mirror one `stepsic/` module with one `tests/test_<module>.py` file. Put shared setup only in `tests/conftest.py`, and name tests `test_<unit>__<behavior>`. An unmarked test must take less than two seconds. Mark heavier tests `slow`; mark tests requiring CAMB or Colossus `camb`. The default suite excludes `slow` and must finish in under 30 seconds.
+Someone reading the test should see four things without reverse-engineering the implementation: the behavior or scientific claim under test, the inputs (including the boundary values that matter), the oracle that decides the expected result, and what a failure would mean.
 
-Warnings are errors. Any allowlisted external warning must have a comment that identifies the upstream cause.
+Choosing that oracle is the hard part. You can use an exact invariant, an analytic result, a published formula, an independent library such as Astropy or Colossus, or a brute-force reference implementation written out in the test. What you cannot do is copy the formula from `stepsic/` into the test, because then you have only shown that the code agrees with itself.
 
-## Golden files and AI-agent rules
+Put a short citation or derivation next to any expectation that is not self-evident; routine assertions do not need explanatory prose. Each test module mirrors one module in `stepsic/` (`tests/test_field.py` covers `stepsic/field.py`, `tests/test_util.py` covers `stepsic/_util.py`), and most tests are named `test_<unit>__<behavior>` so failures read as sentences.
 
-No golden may be committed without its regeneration script and embedded provenance (git commit, relevant package versions, and generation date). Goldens are never shortcuts for deriving an expected value.
+Within a module, start with what the function is mainly supposed to do, then move on to boundaries and error cases, then to numerical or statistical properties. Give unrelated behavior its own test, and parametrize only when the cases really do check the same thing. When you test a private helper you are describing how it behaves today, not promising anything to callers of the public API.
 
-AI agents and human contributors must observe every new test fail once for the intended reason by temporarily mutating the expectation or code under test. Never xfail, skip, delete an assertion, cherry-pick a seed, or weaken a tolerance to get green. Restore every deliberate mutation before committing.
+## Numbers and tolerances
+
+Compare integers, bit patterns, and RNG output with exact equality. When you need a floating-point tolerance, work it out from rounding behavior, from a convergence order you can cite, or from the sampling distribution, and write down where the number came from unless it is obvious from context. Decide what should happen to NaN and infinity as well, so that a bad value fails the test instead of quietly vanishing inside something like `np.nanmean`.
+
+`SEEDS = (0, 42, 112358)` in `conftest.py` is there for statistical properties that genuinely need several realizations. Never go looking for the seed or the tolerance that makes one observed output pass.
+
+## Shared configuration
+
+`conftest.py` holds the setup that would otherwise clutter many modules: `wn16` and `wn32` (session-scoped white-noise cubes at seed 42), `grid_geom` (a `GridGeometry` factory with keyword overrides), `tiny_params` (the parsed `data/tiny-config.toml`), `params_factory` (a geometry parameter dict with overrides), and `camb_cosmo` (a session-scoped `CAMBCosmology`). Build the rest inside the test, where a reader can see the inputs that matter.
+
+## Golden files
+
+Some results are supposed to come out the same no matter which version of CAMB or NumPy you happen to have installed, like the matter power spectrum CAMB returns for a fixed set of cosmological parameters, or the white-noise field `stepsic` builds from a given seed. We keep a copy of those under `goldens/`, and the test recomputes the value with your installed libraries and compares it against the stored copy. Only results of that kind belong there; anything you can derive, derive in the test.
+
+The scripts that write those files live in `regen/`. Each one saves the parameters it used along with the numbers, plus a note of where the file came from (git commit, package versions, date), so the test can read the parameters back and confirm the file is documented. When a stored value legitimately has to change, rerun its script and commit the new file.
