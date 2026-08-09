@@ -21,7 +21,7 @@ TARGET = ROOT / "tests" / "goldens" / "white_noise_portability.npz"
 
 
 def main() -> None:
-    """Regenerate the T5 cross-version white-noise portability fixture."""
+    """Regenerate the cross-version white-noise portability fixture."""
     TARGET.parent.mkdir(parents=True, exist_ok=True)
     commit = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True

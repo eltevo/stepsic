@@ -49,7 +49,7 @@ def _triple_loop_interpolate(field, x, geometry, method):
 @pytest.mark.parametrize("method", ["ngp", "cic", "tsc"])
 @pytest.mark.parametrize("seed", SEEDS)
 def test_kernel_weights__partition_unity(method, seed) -> None:
-    """T1: every one-dimensional mass-assignment stencil partitions unity."""
+    """every one-dimensional mass-assignment stencil partitions unity."""
     dx = np.random.default_rng(seed).uniform(size=64)
     total = np.sum(KERNELS[method]().weights(dx), axis=0)
     np.testing.assert_allclose(
@@ -72,7 +72,7 @@ def test_kernel_weights__partition_unity(method, seed) -> None:
 def test_kernel_weights__match_hockney_eastwood_spot_values(
     kernel, expected
 ) -> None:
-    """T2: Hockney & Eastwood (1988), section 5-3, at dx=1/4."""
+    """Hockney & Eastwood (1988), section 5-3, at dx=1/4."""
     actual = np.array(kernel.weights(np.array([0.25]))).ravel()
     np.testing.assert_array_equal(actual, expected)
 
@@ -87,7 +87,7 @@ def test_kernel_weights__match_hockney_eastwood_spot_values(
 def test_kernel_weights__satisfy_first_moment(
     kernel, offsets, centroid_shift
 ) -> None:
-    """T2: Hockney-Eastwood CIC/TSC stencils reproduce their linear centroid."""
+    """Hockney-Eastwood CIC/TSC stencils reproduce their linear centroid."""
     dx = np.linspace(0.0, 1.0, 17, endpoint=False)
     weights = np.array(kernel.weights(dx))
     actual = offsets @ weights
@@ -104,7 +104,7 @@ def test_kernel_weights__satisfy_first_moment(
 def test_field_interpolator__matches_independent_triple_loop(
     method, grid_geom
 ) -> None:
-    """T3: an in-test scalar triple loop is the independent implementation."""
+    """an in-test scalar triple loop is the independent implementation."""
     geometry = grid_geom()
     rng = np.random.default_rng(42)
     field = rng.normal(size=(2, 8, 8, 8))
@@ -122,7 +122,7 @@ def test_field_interpolator__matches_independent_triple_loop(
 
 @pytest.mark.parametrize("method", ["ngp", "cic", "tsc"])
 def test_field_depositor__conserves_particle_mass(method, grid_geom) -> None:
-    """T1: partition of unity makes total deposited mass an invariant."""
+    """partition of unity makes total deposited mass an invariant."""
     geometry = grid_geom()
     rng = np.random.default_rng(42)
     positions = rng.uniform(0.0, 8.0, size=(100, 3))
@@ -138,7 +138,7 @@ def test_field_depositor__conserves_particle_mass(method, grid_geom) -> None:
 
 
 def test_field_depositor__ngp_matches_numpy_histogramdd(grid_geom) -> None:
-    """T3: np.histogramdd is the independent NGP binning oracle."""
+    """np.histogramdd is the independent NGP binning oracle."""
     geometry = grid_geom(vox_offset=0.0)
     rng = np.random.default_rng(112358)
     positions = rng.uniform(0.0, 8.0, size=(200, 3))
@@ -152,7 +152,7 @@ def test_field_depositor__ngp_matches_numpy_histogramdd(grid_geom) -> None:
 
 @pytest.mark.parametrize("method", ["ngp", "cic", "tsc"])
 def test_interpolate_deposit__are_adjoint(method, grid_geom) -> None:
-    """T1: <interpolate(f),m> = <f,deposit(m)> is the defining adjoint identity."""
+    """<interpolate(f),m> = <f,deposit(m)> is the defining adjoint identity."""
     geometry = grid_geom()
     rng = np.random.default_rng(0)
     field = rng.normal(size=(2, 8, 8, 8))
@@ -170,7 +170,7 @@ def test_interpolate_deposit__are_adjoint(method, grid_geom) -> None:
 
 
 def test_field_depositor__periodic_stencil_wraps_into_cell_zero(grid_geom) -> None:
-    """T1: a CIC stencil crossing the upper periodic face wraps to index zero."""
+    """a CIC stencil crossing the upper periodic face wraps to index zero."""
     geometry = grid_geom(nvox=(4, 4, 4), boxsize=(4.0, 4.0, 4.0))
     eps = np.finfo(np.float64).eps
     grid = FieldDepositor("cic", geometry)(
@@ -182,7 +182,7 @@ def test_field_depositor__periodic_stencil_wraps_into_cell_zero(grid_geom) -> No
 
 @pytest.mark.parametrize("method", ["ngp", "cic", "tsc"])
 def test_compensation_kernel__matches_hockney_eastwood_sinc(method) -> None:
-    """T2: Hockney & Eastwood (1988) section 5-3 supplies the sinc oracle."""
+    """Hockney & Eastwood (1988) section 5-3 supplies the sinc oracle."""
     nvox = np.array([4, 6, 8])
     boxsize = np.array([2.0, 3.0, 4.0])
     axes = [
@@ -210,7 +210,7 @@ def test_compensation_kernel__matches_hockney_eastwood_sinc(method) -> None:
 
 
 def test_grid_geometry_pos_to_grid__maps_boundary_coordinates(grid_geom) -> None:
-    """T2: the documented origin/cell-size/offset coordinate definition."""
+    """the documented origin/cell-size/offset coordinate definition."""
     geometry = grid_geom(
         nvox=(4, 4, 4),
         boxsize=(8.0, 8.0, 8.0),

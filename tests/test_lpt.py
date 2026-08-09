@@ -22,7 +22,7 @@ def _plane_density(
 
 @pytest.mark.parametrize("modes", [(1, 0, 0), (1, 1, 1)])
 def test_lpt1__matches_single_plane_wave_solution(modes) -> None:
-    """T2: Bernardeau et al. (2002), eq. 94, supplies the plane-wave oracle."""
+    """Bernardeau et al. (2002), eq. 94, supplies the plane-wave oracle."""
     nvox = np.array([16, 16, 16])
     cell_size = 0.5
     boxsize = nvox[0] * cell_size
@@ -65,7 +65,7 @@ def test_lpt1__matches_single_plane_wave_solution(modes) -> None:
 
 
 def test_lpt1__matches_direct_dft_reference_on_small_grid() -> None:
-    """T3: an explicit O(N^2) full-complex DFT is the independent oracle."""
+    """an explicit O(N^2) full-complex DFT is the independent oracle."""
     n = 8
     nvox = np.array([n, n, n])
     cell_size = 0.75
@@ -124,7 +124,7 @@ def test_lpt1__matches_direct_dft_reference_on_small_grid() -> None:
 
 
 def test_lpt1__shared_physical_mode_matches_across_resolutions() -> None:
-    """T1: the same represented physical mode gives equal LPT on shared sites."""
+    """the same represented physical mode gives equal LPT on shared sites."""
     low_nvox = np.array([16, 16, 16])
     high_nvox = np.array([32, 32, 32])
     cell_size = 1.0
@@ -159,7 +159,7 @@ def test_lpt1__shared_physical_mode_matches_across_resolutions() -> None:
 
 
 def test_lpt2__single_mode_second_order_source_is_null() -> None:
-    """T2: the 2LPT quadratic invariant vanishes for one plane wave."""
+    """the 2LPT quadratic invariant vanishes for one plane wave."""
     nvox = np.array([16, 16, 16])
     cell_size = 0.5
     positions, _ = create_grid(nvox, cell_size)
@@ -196,7 +196,7 @@ def test_lpt2__single_mode_second_order_source_is_null() -> None:
 
 
 def test_lpt2__matches_two_orthogonal_mode_solution() -> None:
-    """T2: standard 2LPT quadratic source for orthogonal plane waves.
+    """standard 2LPT quadratic source for orthogonal plane waves.
 
     The independent oracle uses laplacian(phi2)=S and Psi2=+grad(phi2).
     """
@@ -258,7 +258,7 @@ def test_lpt2__matches_two_orthogonal_mode_solution() -> None:
 @pytest.mark.slow
 @pytest.mark.parametrize("compensate", [False, True])
 def test_lpt1__cic_plane_wave_converges_at_second_order(compensate) -> None:
-    """T2: linear CIC has O(h^2) error for a smooth plane wave."""
+    """linear CIC has O(h^2) error for a smooth plane wave."""
     positions = np.random.default_rng(42).uniform(-0.5, 0.5, size=(128, 3))
     wave = 2.0 * np.pi
     expected = np.zeros_like(positions)

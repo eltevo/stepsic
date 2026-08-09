@@ -25,7 +25,7 @@ GOLDEN = Path(__file__).parent / "goldens" / "white_noise_portability.npz"
 
 
 def test_wrap__range_and_periodic_idempotence_at_boundaries() -> None:
-    """T1: modulo projection stays in-box and is invariant under box shifts."""
+    """modulo projection stays in-box and is invariant under box shifts."""
     length = 8.0
     eps = np.finfo(np.float64).eps * length
     x = np.array([-eps, 0.0, length, 2.0 * length, -length]).reshape(-1, 1)
@@ -43,7 +43,7 @@ def test_wrap__range_and_periodic_idempotence_at_boundaries() -> None:
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_create_grid__has_analytic_spacing_order_and_singleton(dtype) -> None:
-    """T2: expected coordinates are the hand-enumerated Cartesian product."""
+    """expected coordinates are the hand-enumerated Cartesian product."""
     expected = np.array(
         [
             [-0.25, 0.0, -0.25],
@@ -65,7 +65,7 @@ def test_create_grid__has_analytic_spacing_order_and_singleton(dtype) -> None:
 
 @pytest.mark.parametrize("voxelizer", [cubic_voxels, anisotropic_voxels])
 def test_voxelizers__cell_volumes_partition_box(voxelizer) -> None:
-    """T2: N_cells times the analytic cubic cell volume equals box volume."""
+    """N_cells times the analytic cubic cell volume equals box volume."""
     boxsize = np.array([4.0, 6.0, 8.0])
     nvox, cell_size = voxelizer(4, boxsize)
     np.testing.assert_allclose(
@@ -79,7 +79,7 @@ def test_voxelizers__cell_volumes_partition_box(voxelizer) -> None:
 
 @pytest.mark.parametrize("hermitian", [False, True])
 def test_fourier_helpers__match_numpy_frequency_and_norm_oracles(hermitian) -> None:
-    """T3: np.fft.fftfreq/rfftfreq and np.linalg.norm are external oracles."""
+    """np.fft.fftfreq/rfftfreq and np.linalg.norm are external oracles."""
     nvox = np.array([4, 6, 8])
     cell_size = 0.5
     actual = fourier_vectors(nvox, cell_size, hermitian=hermitian)
@@ -102,7 +102,7 @@ def test_fourier_helpers__match_numpy_frequency_and_norm_oracles(hermitian) -> N
 
 
 def test_white_noise__has_hermitian_dc_and_nyquist_structure(wn32) -> None:
-    """T1: rFFT Hermitian symmetry plus exact DC/Nyquist nulls are invariants."""
+    """rFFT Hermitian symmetry plus exact DC/Nyquist nulls are invariants."""
     n = 32
     np.testing.assert_array_equal(wn32[n // 2], 0.0)
     np.testing.assert_array_equal(wn32[:, n // 2], 0.0)
@@ -116,7 +116,7 @@ def test_white_noise__has_hermitian_dc_and_nyquist_structure(wn32) -> None:
 
 
 def test_white_noise__shared_modes_are_resolution_portable(wn16, wn32) -> None:
-    """T1: normalized shared integer modes are resolution-independent."""
+    """normalized shared integer modes are resolution-independent."""
     modes = [
         (ix, iy, iz)
         for ix in range(-7, 8)
@@ -139,7 +139,7 @@ def test_white_noise__shared_modes_are_resolution_portable(wn16, wn32) -> None:
 
 
 def test_white_noise__seed_and_dtype_are_deterministic() -> None:
-    """T1: seed identity and float32 casting are exact determinism promises."""
+    """seed identity and float32 casting are exact determinism promises."""
     first = white_noise((16, 16, 16), seed=42)
     second = white_noise((16, 16, 16), seed=42)
     different = white_noise((16, 16, 16), seed=43)
@@ -152,7 +152,7 @@ def test_white_noise__seed_and_dtype_are_deterministic() -> None:
 
 @pytest.mark.parametrize("seed", SEEDS)
 def test_white_noise__statistics_follow_derived_five_sigma_bounds(seed) -> None:
-    """T4: Gaussian sample mean/std/variance use N-derived five-sigma bounds."""
+    """Gaussian sample mean/std/variance use N-derived five-sigma bounds."""
     n = 32
     n_cells = n**3
     field = white_noise((n, n, n), seed=seed)
@@ -175,7 +175,7 @@ def test_white_noise__statistics_follow_derived_five_sigma_bounds(seed) -> None:
 
 
 def test_white_noise__matches_portability_golden_with_provenance() -> None:
-    """T5: bit portability cannot be pinned by T1-T4; regen script is the oracle."""
+    """bit portability is pinned by the checked-in regeneration artifact."""
     with np.load(GOLDEN, allow_pickle=False) as golden:
         required = {
             "w",
@@ -201,7 +201,7 @@ def test_white_noise__matches_portability_golden_with_provenance() -> None:
 
 
 def test_generate_delta_k__quadruple_power_doubles_amplitude() -> None:
-    """T1: the analytic amplitude-scaling identity delta[4P] = 2 delta[P]."""
+    """the analytic amplitude-scaling identity delta[4P] = 2 delta[P]."""
     kh = np.geomspace(1e-3, 1e2, 64)
     pk = 3.0 * kh**-1.25
     nvox = np.array([16, 16, 16])
@@ -219,7 +219,7 @@ def test_generate_delta_k__quadruple_power_doubles_amplitude() -> None:
 
 @pytest.mark.parametrize("seed", SEEDS)
 def test_generate_delta_k__mode_variance_matches_input_power(seed) -> None:
-    """T4: independent complex-mode powers are exponential with mean P."""
+    """independent complex-mode powers are exponential with mean P."""
     n = 32
     nvox = np.array([n, n, n])
     cell_size = 0.5
@@ -247,7 +247,7 @@ def test_generate_delta_k__mode_variance_matches_input_power(seed) -> None:
     ],
 )
 def test_mass_interp_weights__match_numpy_interp_boundaries(mass) -> None:
-    """T3: np.interp supplies the independent interior/extrapolation oracle."""
+    """np.interp supplies the independent interior/extrapolation oracle."""
     mass_tab = np.array([8.0, 4.0, 2.0, 1.0])
     j_lo, j_hi, w_hi = _mass_interp_weights(mass, mass_tab)
     actual = (1.0 - w_hi) * mass_tab[j_lo] + w_hi * mass_tab[j_hi]
@@ -256,7 +256,7 @@ def test_mass_interp_weights__match_numpy_interp_boundaries(mass) -> None:
 
 
 def test_mass_interp_weights__singleton_selects_only_sample() -> None:
-    """T1: a singleton lookup table has the sole exact partition of unity."""
+    """a singleton lookup table has the sole exact partition of unity."""
     mass = np.array([-1.0, 4.0, 10.0])
     j_lo, j_hi, w_hi = _mass_interp_weights(mass, np.array([4.0]))
     np.testing.assert_array_equal(j_lo, 0)
@@ -265,7 +265,7 @@ def test_mass_interp_weights__singleton_selects_only_sample() -> None:
 
 
 def test_create_nres_mass_map__conserves_analytic_box_mass(capsys) -> None:
-    """T2: cell mass M/N^3 times N^3 equals the hand-chosen box mass."""
+    """cell mass M/N^3 times N^3 equals the hand-chosen box mass."""
     box_mass = 4096.0
     mass_list = np.array([1.0, 8.0, 64.0])
     nres, mass = create_nres_mass_map(

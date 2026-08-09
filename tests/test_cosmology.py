@@ -13,7 +13,7 @@ GOLDEN = Path(__file__).parent / "goldens" / "camb_spectrum.npz"
 
 
 def test_hubble_a__matches_astropy_and_analytic_limits() -> None:
-    """T2/T3: Friedmann EdS/a=1 limits and Astropy FlatLambdaCDM are oracles."""
+    """Friedmann EdS/a=1 limits and Astropy FlatLambdaCDM are oracles."""
     scale = np.array([0.2, 0.5, 1.0])
     H0 = 70.0
     astropy_cosmo = FlatLambdaCDM(H0=H0, Om0=0.3, Tcmb0=0.0)
@@ -38,7 +38,7 @@ def test_hubble_a__matches_astropy_and_analytic_limits() -> None:
 @pytest.mark.camb
 @pytest.mark.parametrize("scale", [0.25, 0.5, 1.0])
 def test_F_omega__matches_colossus_log_growth_derivative(scale) -> None:
-    """T3: a centered numerical derivative of Colossus D+ is the oracle."""
+    """a centered numerical derivative of Colossus D+ is the oracle."""
     cosmo = ColossusCosmology(H0=70.0, Om0=0.3, Ob0=0.05, Ol0=0.7)
     step = 1e-4
     lower_a = scale * np.exp(-step)
@@ -56,7 +56,7 @@ def test_F_omega__matches_colossus_log_growth_derivative(scale) -> None:
 
 
 def test_F2_omega__has_exact_einstein_de_sitter_limit() -> None:
-    """T2: Bernardeau et al. (2002), eq. 101b gives F2=2 when Omega_m=1."""
+    """Bernardeau et al. (2002), eq. 101b gives F2=2 when Omega_m=1."""
     np.testing.assert_array_equal(
         F2_omega(np.array([0.1, 0.5, 1.0]), 1.0, 0.0),
         np.array([2.0, 2.0, 2.0]),
@@ -65,7 +65,7 @@ def test_F2_omega__has_exact_einstein_de_sitter_limit() -> None:
 
 @pytest.mark.camb
 def test_colossus_Dzplus0__is_normalized_and_monotone() -> None:
-    """T1: D+(0)/D+(0)=1 exactly and growth decreases with redshift."""
+    """D+(0)/D+(0)=1 exactly and growth decreases with redshift."""
     cosmo = ColossusCosmology()
     growth = np.array([cosmo.Dzplus0(z) for z in (0.0, 1.0, 3.0)])
     assert growth[0] == 1.0
@@ -75,7 +75,7 @@ def test_colossus_Dzplus0__is_normalized_and_monotone() -> None:
 
 @pytest.mark.camb
 def test_camb_sigma8_rescale__hits_requested_target(camb_cosmo) -> None:
-    """T1: rescaling As must return the requested sigma8 fixed point."""
+    """rescaling As must return the requested sigma8 fixed point."""
     target = 0.8105
     camb_cosmo.get_spectrum(
         z=0.0,
@@ -103,7 +103,7 @@ def test_camb_sigma8_rescale__hits_requested_target(camb_cosmo) -> None:
 
 @pytest.mark.camb
 def test_camb_spectrum__matches_external_oracle_golden(camb_cosmo) -> None:
-    """T5: CAMB solver output has no T1-T4 oracle; checked-in regen pins it."""
+    """CAMB solver portability is pinned by the checked-in regeneration artifact."""
     with np.load(GOLDEN, allow_pickle=False) as golden:
         required = {
             "kh",

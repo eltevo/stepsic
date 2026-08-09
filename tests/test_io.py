@@ -17,7 +17,7 @@ def _snapshot() -> CosmoData:
 
 
 def test_hdf5_save_load_round_trip_is_bit_identical(tmp_path):
-    """T1: lossless float32 HDF5 persistence requires array identity."""
+    """lossless float32 HDF5 persistence requires array identity."""
     data = _snapshot()
     path = tmp_path / "snapshot $(touch owned).hdf5"
 
@@ -28,12 +28,12 @@ def test_hdf5_save_load_round_trip_is_bit_identical(tmp_path):
     np.testing.assert_array_equal(positions, data.pos)
     np.testing.assert_array_equal(velocities, data.vel)
     np.testing.assert_array_equal(masses, data.mass)
-    # T1: pathlib/HDF5 receive the hostile-looking name as inert data, not shell input.
+    # pathlib/HDF5 receive the hostile-looking name as inert data, not shell input.
     assert not (tmp_path / "owned").exists()
 
 
 def test_collect_files_discovers_documented_multipart_names(tmp_path):
-    """T2: expected members follow the documented .N.ext/ext.N grammar."""
+    """expected members follow the documented .N.ext/ext.N grammar."""
     member_names = [
         "snap set.0.hdf5",
         "snap set.1.hdf5",
@@ -51,7 +51,7 @@ def test_collect_files_discovers_documented_multipart_names(tmp_path):
 
 
 def test_unknown_extension_is_rejected_before_io(tmp_path, monkeypatch):
-    """T1: unsupported formats fail before any path-triggered I/O side effect."""
+    """unsupported formats fail before any path-triggered I/O side effect."""
     monkeypatch.setattr("stepsic.io.glio", None)
     path = tmp_path / "untrusted $(touch owned).unknown"
 
@@ -63,7 +63,7 @@ def test_unknown_extension_is_rejected_before_io(tmp_path, monkeypatch):
 
 
 def test_get_box_size_reads_saved_hdf5_header(tmp_path):
-    """T1: a written scalar header value must be recovered exactly."""
+    """a written scalar header value must be recovered exactly."""
     path = tmp_path / "box.hdf5"
     CosmoIO.save_snapshot(path, _snapshot(), "hdf5", BoxSize=12.5)
 

@@ -22,7 +22,7 @@ TINY_CONFIG = Path(__file__).parent / "data" / "tiny-config.toml"
 def test_cosmo_parameters__derives_tiny_cosmology_by_independent_arithmetic(
     tiny_params,
 ) -> None:
-    """T2: Friedmann-density definitions and config literals supply expectations."""
+    """Friedmann-density definitions and config literals supply expectations."""
     h = 0.7  # H0=70 from tiny-config.toml, divided by 100 km/s/Mpc.
     unit_l = (1.0 * u.Mpc).to_value(u.cm)
     unit_m = (1e11 * u.Msun).to_value(u.g)
@@ -97,7 +97,7 @@ def _invalid_config(case: str) -> tuple[dict, str]:
 def test_cosmo_parameters__each_error_constraint_rejects_invalid_config(
     case, tmp_path
 ) -> None:
-    """T1: every declared error-level Constraint is exercised at its boundary."""
+    """every declared error-level Constraint is exercised at its boundary."""
     config, message = _invalid_config(case)
     path = tmp_path / f"{case}.toml"
     path.write_text(toml.dumps(config))
@@ -106,7 +106,7 @@ def test_cosmo_parameters__each_error_constraint_rejects_invalid_config(
 
 
 def test_validate_and_cast__casts_choices_arrays_and_h_scaled_values() -> None:
-    """T1: Param descriptor semantics define casting, choices, and h scaling."""
+    """Param descriptor semantics define casting, choices, and h scaling."""
     params = {"HINDEPENDENT": False, "H": 0.7, "METHOD": " CIC ", "L": 10}
     _validate_and_cast(
         Param("METHOD", ptype=PType.STRING, choices=("ngp", "cic", "tsc")),
@@ -131,13 +131,13 @@ def test_validate_and_cast__casts_choices_arrays_and_h_scaled_values() -> None:
 def test_validate_and_cast__rejects_boundary_type_and_shape_inputs(
     param, value, error
 ) -> None:
-    """T1: empty/whitespace, singleton, and boundary-length inputs follow Param."""
+    """empty/whitespace, singleton, and boundary-length inputs follow Param."""
     with pytest.raises(error):
         _validate_and_cast(param, {"X": value})
 
 
-def test_load_default_cosmology__preserves_user_keys_and_fills_bundled_values() -> None:
-    """T1/T2: setdefault preserves H0=99; Planck table 2.20 supplies Omega_m."""
+def test_load_default_cosmology__does_not_overwrite_user_keys() -> None:
+    """setdefault leaves explicit H0=99 unchanged; Planck table 2.20 supplies Omega_m."""
     params = CosmoParameters.__new__(CosmoParameters)
     params.P = {"H0": 99.0}
     params._load_default_cosmology(cosmology="Planck2018EE+BAO+SN")

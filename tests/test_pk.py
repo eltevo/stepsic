@@ -16,13 +16,13 @@ from stepsic.pk import (
 
 @pytest.mark.parametrize("nvox", [np.array([8, 8, 8]), np.array([7, 9, 11])])
 def test_weight_rfft_modes__sums_to_real_grid_cell_count(nvox) -> None:
-    """T1: rFFT pair weights exactly reconstruct the full Fourier grid."""
+    """rFFT pair weights exactly reconstruct the full Fourier grid."""
     shape = (int(nvox[0]), int(nvox[1]), int(nvox[2] // 2 + 1))
     assert _weight_rfft_modes(nvox, shape).sum() == np.prod(nvox)
 
 
 def test_build_k_bin_edges__matches_hand_arithmetic() -> None:
-    """T2: half-bin edges are hand-derived from kmin=1, kmax=3, dk=1/2."""
+    """half-bin edges are hand-derived from kmin=1, kmax=3, dk=1/2."""
     actual = _build_k_bin_edges(
         np.array([10.0, 10.0, 10.0]),
         1.0,
@@ -34,7 +34,7 @@ def test_build_k_bin_edges__matches_hand_arithmetic() -> None:
 
 
 def test_bin_isotropic_modes__matches_full_grid_numpy_histogram() -> None:
-    """T3: np.histogram on the unreduced full FFT grid is the oracle."""
+    """np.histogram on the unreduced full FFT grid is the oracle."""
     n = 8
     nvox = np.array([n, n, n])
     boxsize = np.array([8.0, 8.0, 8.0])
@@ -78,7 +78,7 @@ def test_bin_isotropic_modes__matches_full_grid_numpy_histogram() -> None:
 
 
 def test_measure_pk_from_delta_k__single_mode_shell_has_analytic_normalization() -> None:
-    """T2: Parseval normalization V|delta_k|^2/N_cells^2 is hand-derived."""
+    """Parseval normalization V|delta_k|^2/N_cells^2 is hand-derived."""
     n = 8
     nvox = np.array([n, n, n])
     boxsize = np.array([8.0, 8.0, 8.0])
@@ -107,7 +107,7 @@ def test_measure_pk_from_delta_k__single_mode_shell_has_analytic_normalization()
 
 @pytest.mark.parametrize("seed", SEEDS)
 def test_generate_measure_pk__recovers_constant_power_at_five_sigma(seed) -> None:
-    """T4: P(k)=7 k^0 shell means have Gaussian 5sqrt(2/Nmodes) errors."""
+    """P(k)=7 k^0 shell means have Gaussian 5sqrt(2/Nmodes) errors."""
     n = 32
     nvox = np.array([n, n, n])
     boxsize = np.array([32.0, 32.0, 32.0])
@@ -131,7 +131,7 @@ def test_generate_measure_pk__recovers_constant_power_at_five_sigma(seed) -> Non
 
 @pytest.mark.slow
 def test_measure_pk__interlacing_reduces_known_high_frequency_alias() -> None:
-    """T1: Sefusatti et al. (2016) interlacing suppresses the folded mode."""
+    """Sefusatti et al. (2016) interlacing suppresses the folded mode."""
     coarse = 16
     fine = 64
     boxsize = np.ones(3)

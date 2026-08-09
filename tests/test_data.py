@@ -17,7 +17,7 @@ def _sample_data():
 
 
 def test_unit_conversion_round_trip():
-    """T1: conversion to internal units and back is an algebraic inverse."""
+    """conversion to internal units and back is an algebraic inverse."""
     data = _sample_data()
     original = deepcopy(data)
     params = {
@@ -27,7 +27,7 @@ def test_unit_conversion_round_trip():
     }
 
     data.to_internal_units(params)
-    # T2: each explicit array is the input expressed in units 2x/3x/4x larger.
+    # each explicit array is the input expressed in units 2x/3x/4x larger.
     np.testing.assert_array_equal(
         data.pos,
         np.array([[2.0, 4.0, 6.0], [10.0, 12.0, 14.0]]),
@@ -45,7 +45,7 @@ def test_unit_conversion_round_trip():
 
 
 def test_rescale_size_matches_geometry_ratio():
-    """T2: hand-derived target/current length factors set both geometries."""
+    """hand-derived target/current length factors set both geometries."""
     cubical = _sample_data()
     cubical.Lbox = 2.0
     cubical.rescale_snapshot_size(
@@ -54,7 +54,7 @@ def test_rescale_size_matches_geometry_ratio():
             "LBOX": np.array([10.0, 10.0, 10.0]),
         },
     )
-    # T2: target/current extent is 10/2=5.
+    # target/current extent is 10/2=5.
     np.testing.assert_array_equal(
         cubical.pos,
         np.array([[5.0, 10.0, 15.0], [25.0, 30.0, 35.0]]),
@@ -69,7 +69,7 @@ def test_rescale_size_matches_geometry_ratio():
             "H": 0.7,
         },
     )
-    # T2: values are the inputs converted by h=0.7.
+    # values are the inputs converted by h=0.7.
     np.testing.assert_allclose(
         spherical.pos,
         np.array([[0.7, 1.4, 2.1], [3.5, 4.2, 4.9]]),
@@ -80,7 +80,7 @@ def test_rescale_size_matches_geometry_ratio():
 
 
 def test_rescale_mass_matches_mean_density():
-    """T2: total mass is rho_mean times the analytic box volume."""
+    """total mass is rho_mean times the analytic box volume."""
     data = _sample_data()
     params = {
         "GEOMETRY": "cubical",
@@ -92,15 +92,15 @@ def test_rescale_mass_matches_mean_density():
 
     data.rescale_snapshot_mass(params)
 
-    # T2: initial omega=12/(8*3)=0.5, so target omega=1 gives factor 2.
+    # initial omega=12/(8*3)=0.5, so target omega=1 gives factor 2.
     np.testing.assert_allclose(data.mass, np.array([6.0, 18.0]), rtol=0, atol=0)
     np.testing.assert_array_equal(data.mass_list, np.array([6.0, 18.0]))
-    # T2: rho_mean=3 and V=8, hence M_box=24.
+    # rho_mean=3 and V=8, hence M_box=24.
     assert data.M_box == 24.0
 
 
 def test_center_then_periodic_shift_respects_axis_policy():
-    """T1: centering and modulo wrapping are independently derived transforms."""
+    """centering and modulo wrapping are independently derived transforms."""
     data = CosmoData(
         pos=np.array([[7.0, 5.0, 1.0], [3.0, 1.0, 7.0]]),
         vel=np.zeros((2, 3)),
@@ -115,7 +115,7 @@ def test_center_then_periodic_shift_respects_axis_policy():
     data.center_snapshot(params)
     data.periodic_shift(params)
 
-    # T2 hand calculation: subtract half-box/COI, then wrap as (x + L/2) mod L.
+    # hand calculation: subtract half-box/COI, then wrap as (x + L/2) mod L.
     expected = np.array([[6.0, -1.0, 6.0], [2.0, -5.0, 4.0]])
     np.testing.assert_allclose(data.pos, expected, rtol=0, atol=0)
     assert np.all((data.pos[:, [0, 2]] >= 0) & (data.pos[:, [0, 2]] < 8))
@@ -123,7 +123,7 @@ def test_center_then_periodic_shift_respects_axis_policy():
 
 
 def test_deepcopy_is_independent():
-    """T1: Python deepcopy provides an independent particle-data snapshot."""
+    """Python deepcopy provides an independent particle-data snapshot."""
     original = _sample_data()
     copied = deepcopy(original)
 

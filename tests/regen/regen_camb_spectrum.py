@@ -21,7 +21,7 @@ TARGET = ROOT / "tests" / "goldens" / "camb_spectrum.npz"
 
 
 def main() -> None:
-    """Regenerate the T5 spectrum produced by the external CAMB oracle."""
+    """Regenerate the portable spectrum produced by the external CAMB oracle."""
     TARGET.parent.mkdir(parents=True, exist_ok=True)
     commit = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True

@@ -38,7 +38,7 @@ from stepsic.rng import RNG
     ],
 )
 def test_invert_x_minus_sin_x__round_trips_and_matches_brentq(y) -> None:
-    """T1/T3: algebraic round trip plus scipy.brentq's bracketed root oracle."""
+    """algebraic round trip plus scipy.brentq's bracketed root oracle."""
     actual = float(SphericalBinner.invert_x_minus_sin_x(y, tol=1e-10)[0])
     expected = brentq(
         lambda x: x - np.sin(x) - y,
@@ -64,13 +64,13 @@ def test_invert_x_minus_sin_x__round_trips_and_matches_brentq(y) -> None:
 
 @pytest.mark.parametrize("y", [-1.0, 2.0 * np.pi + 1.0])
 def test_invert_x_minus_sin_x__rejects_out_of_range_boundaries(y) -> None:
-    """T1: the documented closed domain rejects limit-minus/plus-one inputs."""
+    """the documented closed domain rejects limit-minus/plus-one inputs."""
     with pytest.raises(ValueError, match=r"must be in \[0, 2π\]"):
         SphericalBinner.invert_x_minus_sin_x(y)
 
 
 def test_shell_volume__matches_analytic_sphere_and_cylinder() -> None:
-    """T2: Euclidean shell volumes are 4pi/3(r1^3-r0^3) and pi(r1^2-r0^2)L."""
+    """Euclidean shell volumes are 4pi/3(r1^3-r0^3) and pi(r1^2-r0^2)L."""
     spherical = SphericalLinear(10.0, 8, 2.0)
     cylindrical = CylindricalLinear(10.0, 8, 2.0)
     index = 3
@@ -102,7 +102,7 @@ def test_shell_volume__matches_analytic_sphere_and_cylinder() -> None:
     ],
 )
 def test_centroid__matches_scipy_quadrature(binner_type, weight) -> None:
-    """T3: scipy.integrate.quad independently computes the radial first moment."""
+    """scipy.integrate.quad independently computes the radial first moment."""
     r0, r1 = 1.25, 3.75
     numerator = quad(lambda r: r * weight(r), r0, r1, epsabs=1e-13)[0]
     denominator = quad(weight, r0, r1, epsabs=1e-13)[0]
@@ -126,7 +126,7 @@ def test_centroid__matches_scipy_quadrature(binner_type, weight) -> None:
     ],
 )
 def test_binner_families__are_monotone_with_centroids_inside_bins(binner) -> None:
-    """T1: ordered edges and an in-bin mass centroid are structural invariants."""
+    """ordered edges and an in-bin mass centroid are structural invariants."""
     edges = np.array([binner.r_limit(i) for i in range(9)])
     assert np.all(np.diff(edges) > 0.0)
     centroids = np.array([binner.r_centroid(i) for i in range(8)])
@@ -152,7 +152,7 @@ def test_binner_families__are_monotone_with_centroids_inside_bins(binner) -> Non
 def test_constant_volume_binners__have_equal_compact_volume(
     binner, compact_measure
 ) -> None:
-    """T2: Racz (2018), eqs. 4-5, give equal compact-volume increments."""
+    """Racz (2018), eqs. 4-5, give equal compact-volume increments."""
     measures = np.array([compact_measure(binner.r_limit(i)) for i in range(9)])
     increments = np.diff(measures)
     np.testing.assert_allclose(
@@ -179,7 +179,7 @@ def test_constant_volume_binners__have_equal_compact_volume(
 def test_create_binner__dispatches_all_four_families(
     params, expected_type, params_factory
 ) -> None:
-    """T1: geometry/bin-mode pairs map to the specified concrete family."""
+    """geometry/bin-mode pairs map to the specified concrete family."""
     assert isinstance(create_binner(params_factory(**params)), expected_type)
 
 
@@ -191,7 +191,7 @@ def test_create_binner__dispatches_all_four_families(
     ],
 )
 def test_shell_masses__conserve_density_times_total_volume(binner, length) -> None:
-    """T1: particle masses sum exactly to rho times the represented volume."""
+    """particle masses sum exactly to rho times the represented volume."""
     rho_mean = 2.5
     n_per_shell = 32
     masses = shell_masses(binner, 8, n_per_shell, rho_mean, Lz=length)
@@ -209,7 +209,7 @@ def test_shell_masses__conserve_density_times_total_volume(binner, length) -> No
 
 
 def test_bin_index_for_radius__assigns_edge_to_outer_bin() -> None:
-    """T1: bins are left-closed/right-open at zero, edge-eps, and exact edge."""
+    """bins are left-closed/right-open at zero, edge-eps, and exact edge."""
     binner = SphericalLinear(10.0, 8, 2.0)
     edge = binner.r_limit(3)
     assert _bin_index_for_radius(binner, 0.0) == 0
@@ -221,7 +221,7 @@ def test_bin_index_for_radius__assigns_edge_to_outer_bin() -> None:
 def test_random_unit_vectors_sphere__have_unit_norm_and_rayleigh_isotropy(
     seed,
 ) -> None:
-    """T1/T4: exact unit norms and the chi-square Rayleigh resultant at 5 sigma."""
+    """exact unit norms and the chi-square Rayleigh resultant at 5 sigma."""
     count = 4096
     vectors = _random_unit_vectors_sphere(count, RNG(seed))
     np.testing.assert_allclose(
@@ -242,7 +242,7 @@ def test_random_unit_vectors_sphere__have_unit_norm_and_rayleigh_isotropy(
 def test_create_shells__counts_radii_and_seed_are_deterministic(
     geometry, params_factory
 ) -> None:
-    """T1: counts, shell membership, and same-seed output are invariants."""
+    """counts, shell membership, and same-seed output are invariants."""
     params = params_factory(
         GEOMETRY=geometry,
         BIN_MODE="volume",

@@ -39,13 +39,13 @@ def _numpy_philox_block(
 def test_philox4x64_10__matches_numpy_fixed_and_boundary_vectors(
     counter, key
 ) -> None:
-    """T3: NumPy's independently implemented Philox bit-generator is the oracle."""
+    """NumPy's independently implemented Philox bit-generator is the oracle."""
     actual = philox4x64_10(np.asarray(counter, dtype=np.uint64), key)
     np.testing.assert_array_equal(actual, _numpy_philox_block(counter, key))
 
 
 def test_philox4x64_10__matches_numpy_vectorized_counters() -> None:
-    """T3: every vectorized block is compared exactly with NumPy Philox."""
+    """every vectorized block is compared exactly with NumPy Philox."""
     oracle_rng = np.random.default_rng(20260717)
     counters = oracle_rng.integers(
         0, np.iinfo(np.uint64).max, size=(128, 4), dtype=np.uint64
@@ -58,7 +58,7 @@ def test_philox4x64_10__matches_numpy_vectorized_counters() -> None:
 
 
 def test_philox_complex_gaussian__is_deterministic_finite_and_vectorized() -> None:
-    """T1: identical counter/key inputs must give identical finite outputs."""
+    """identical counter/key inputs must give identical finite outputs."""
     counters = np.arange(32, dtype=np.uint64).reshape(8, 4)
     key = np.array([42, 0], dtype=np.uint64)
     first = philox_complex_gaussian(counters, key)
@@ -78,7 +78,7 @@ def test_philox_complex_gaussian__is_deterministic_finite_and_vectorized() -> No
     ],
 )
 def test_rng__same_seed_produces_same_stream(method, kwargs) -> None:
-    """T1: seeded stream identity is an exact determinism invariant."""
+    """seeded stream identity is an exact determinism invariant."""
     first = getattr(RNG(112358), method)(**kwargs)
     second = getattr(RNG(112358), method)(**kwargs)
     np.testing.assert_array_equal(first, second)
