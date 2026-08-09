@@ -482,60 +482,6 @@ def _random_unit_vectors_sphere(n: int, rng: RNG, seed: int | None = None) -> ND
     return vectors
 
 
-def _random_unit_vectors_cylinder(
-    n: int,
-    Lz: float,
-    rng: RNG,
-    seed: int | None = None,
-) -> NDArray:
-    r'''
-    Legacy function.
-
-    Generate ``n`` points uniformly distributed on the surface of a
-    unit-radius cylinder of height ``Lz``, for use as cylindrical shell
-    particles.
-
-    The (x, y) components are unit vectors on the circle (shell surface),
-    and the z component is uniform in :math:`[0, L_z]`.
-
-    Parameters
-    ----------
-    n : int
-        Number of points to generate.
-    Lz : float
-        Height of the cylinder (periodic z-direction).
-    rng : RNG
-        Random number generator instance.
-    seed : int or None
-        Optional seed override.
-
-    Returns
-    -------
-    ndarray of shape (n, 3)
-        Points with unit-radius (x, y) and z in [0, Lz].
-
-    Notes
-    -----
-    Legacy function to match the original cylindrical shell particle
-    generation in StePS_IC. Unused.
-    '''
-    vectors = np.empty((n, 3), dtype=np.float64)
-    filled = 0
-    while filled < n:
-        batch_size = min(2 * (n - filled), 100_000)
-        xy = rng.uniform(size=(batch_size, 2), seed=seed) - 0.5
-        radii = np.linalg.norm(xy, axis=1)
-        valid = radii <= 0.5
-        unit_xy = xy[valid] / radii[valid, np.newaxis]
-        take = min(unit_xy.shape[0], n - filled)
-        vectors[filled : filled + take, :2] = unit_xy[:take]
-        vectors[filled : filled + take, 2] = (
-            rng.uniform(size=(take,), seed=seed) * Lz
-        )
-        filled += take
-    return vectors
-
-
 def shell_masses(
     binner: SphericalBinner | CylindricalBinner,
     n_bins: int,
@@ -649,7 +595,7 @@ def _compute_rcrit_zones(
     Lz: float | None = None,
 ) -> _RcritZones:
     r'''
-    Plan the two-zone particle layout for a constant-resolution interior.
+    Compute the two-zone particle layout for a constant-resolution interior.
 
     Given a critical radius, this function determines how many particles
     go inside and outside, and what their masses are.
@@ -717,7 +663,7 @@ def _compute_rcrit_zones(
     n_outside = n_ext * n_per_shell
 
     log.info(
-        f'RCRIT zone plan: i_crit={i_crit}, '
+        f'RCRIT zone layout: i_crit={i_crit}, '
         f'r_boundary={r_boundary:.4f} Mpc/h, '
         f'N_inside={n_inside}, N_outside={n_outside}, '
         f'N_total={n_inside + n_outside}'

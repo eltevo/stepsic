@@ -46,6 +46,7 @@ dependencies = [
 
 [project.optional-dependencies]
 gadget = ["glio"]
+validation = ["healpy>=1.16"]
 test = ["pytest>=8"]
 
 [project.scripts]
