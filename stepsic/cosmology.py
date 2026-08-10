@@ -238,16 +238,12 @@ class CAMBCosmology:
         self.params.set_cosmology(
             H0=H0, ombh2=ombh2, omch2=omch2, omk=omk, mnu=mnu, nnu=nnu,
             YHe=YHe, TCMB=TCMB, zrei=zrei, **kwargs)
-        if w0 != -1.0 or wa != 0.0:
-            if wa == 0.0 and w0 >= -1.0:
-                log.info(f'Using single fluid dark energy model with w0={w0} and wa={wa}')
-                self.params.DarkEnergy = camb.dark_energy.DarkEnergyFluid()
-                self.params.DarkEnergy.set_params(w=w0, wa=wa)
-            else:
-                log.info(f'Parameterized Post-Friedmann (PPF) dark energy model with w0={w0} and wa={wa}')
-                #Note: This PFF model enables the use of phantom dark energy (w < -1) without instabilities.
-                self.params.DarkEnergy = camb.dark_energy.DarkEnergyPPF()
-                self.params.DarkEnergy.set_params(w=w0, wa=wa)
+        dark_energy_model = 'fluid' if not wa and w0 >= -1.0 else 'ppf'
+        log.info(
+            f'Using {dark_energy_model.upper()} dark energy model '
+            f'with w0={w0} and wa={wa}')
+        self.params.set_dark_energy(
+            w=w0, wa=wa, dark_energy_model=dark_energy_model)
 
         if nonlinear:
             log.info(f'Using non-linear corrections with Halofit model `{halofit_version}`')
