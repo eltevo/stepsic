@@ -61,6 +61,7 @@ vlib::stepsic::write_toml() {
     local COMPENSATE; COMPENSATE="$(_tv COMPENSATE false)"
     local SPHEREMODE; SPHEREMODE="$(_tv SPHEREMODE false)"
     local PAIRED_V; PAIRED_V="$(_tv PAIRED false)"
+    local FIXED_V;  FIXED_V="$(_tv FIXED false)"
     local NMS_V;    NMS_V="$(_tv NMESHSAMPLES 1)"
     local PHASE_SHIFT_V; PHASE_SHIFT_V="$(_tv PHASE_SHIFT 0.0)"
     local ROTATE_V; ROTATE_V="$(_tv ROTATE 0.0)"
@@ -112,6 +113,7 @@ INTERPOLATION = "${INTERP}"
 COMPENSATE = ${COMPENSATE}
 SPHEREMODE = ${SPHEREMODE}
 PAIRED = ${PAIRED_V}
+FIXED = ${FIXED_V}
 PHASE_SHIFT = ${PHASE_SHIFT_V}
 NMESHSAMPLES = ${NMS_V}
 ROTATE = ${ROTATE_V}
