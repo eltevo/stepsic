@@ -2,9 +2,11 @@
 # ============================================================================
 #  validation/glass/diagnose.sh - glass-quality diagnostics pipeline
 #
-#  Quantifies the quality of the glasses produced by run.sh: zoned P(k) vs shot noise, nearest-neighbour
-#  statistics, radial density profile with mass-bin interfaces, and
-#  residual forces measured directly by StePS (SAVE_ACCELERATIONS).
+#  Quantifies glasses produced by run.sh, with optional per-geometry snapshot
+#  overrides: zoned P(k) vs shot noise,
+#  nearest-neighbour statistics, radial density profile with mass-bin
+#  interfaces, and residual forces measured directly by StePS
+#  (SAVE_ACCELERATIONS).
 #  Every diagnostic is also run on a "Poisson twin" (same masses and
 #  radial structure, random positions) as the known-bad baseline it
 #  must discriminate against.
@@ -49,6 +51,13 @@ if (( VLIB_LIST_STEPS )); then
     vlib::list_steps
     exit 0
 fi
+for _snap_var in GLASS_SNAP_CUBICAL GLASS_SNAP_SPHERICAL GLASS_SNAP_CYLINDRICAL; do
+    _snap="${!_snap_var}"
+    if [[ -n "${_snap}" && ! -f "${_snap}" ]]; then
+        echo "ERROR: ${_snap_var} not found: ${_snap}" >&2
+        exit 1
+    fi
+done
 vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 vlib::steps::validate_backend
 
@@ -75,9 +84,20 @@ vlib::init_conda
 vlib::ensure_env "${STEPSIC_ENV}"
 
 # -- Locate available glass snapshots ---------------------------------------
-SNAP_CUBICAL="$(vlib::find_last_snap "${OUTDIR}/cubic_random/glass")"
-SNAP_SPHERICAL="$(vlib::find_last_snap "${OUTDIR}/spherical/glass")"
-SNAP_CYLINDRICAL="$(vlib::find_last_snap "${OUTDIR}/cylindrical/glass")"
+SNAP_CUBICAL="${GLASS_SNAP_CUBICAL:-$(vlib::find_last_snap "${OUTDIR}/cubic_random/glass")}"
+SNAP_SPHERICAL="${GLASS_SNAP_SPHERICAL:-$(vlib::find_last_snap "${OUTDIR}/spherical/glass")}"
+SNAP_CYLINDRICAL="${GLASS_SNAP_CYLINDRICAL:-$(vlib::find_last_snap "${OUTDIR}/cylindrical/glass")}"
+
+for _snap in "${SNAP_CUBICAL}" "${SNAP_SPHERICAL}" "${SNAP_CYLINDRICAL}"; do
+    if [[ -n "${_snap}" && -f "${_snap}" ]]; then
+        for _step in twins forces diagnose; do
+            vlib::manifest_input "${_step}" "${_snap}"
+        done
+    fi
+done
+if [[ -n "${SNAP_CUBICAL}" && -f "${SNAP_CUBICAL}" ]]; then
+    vlib::manifest_input rescale "${SNAP_CUBICAL}"
+fi
 
 echo ""
 echo "========================================================================"

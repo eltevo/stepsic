@@ -12,7 +12,8 @@
 #
 # Required inputs:
 #   REFERENCE_MANIFEST  matched-pair manifest from validation/reference-nbody/run.sh
-#   GEOM_GLASS          complete relaxed spherical StePS glass
+#   GLASS_SNAP          complete relaxed spherical StePS glass
+#                       (content hash included in consuming step manifests)
 #
 # Principal artifacts:
 #   evolved-cache/sphere/pair-contract.json
@@ -53,17 +54,19 @@ if (( VLIB_LIST_STEPS )); then
     vlib::list_steps
     exit 0
 fi
-vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
-vlib::steps::validate_backend
-
 if [[ -z "${REFERENCE_MANIFEST}" || ! -f "${REFERENCE_MANIFEST}" ]]; then
     echo "ERROR: REFERENCE_MANIFEST must name a periodic pair manifest." >&2
     exit 1
 fi
-if [[ -z "${GEOM_GLASS}" || ! -f "${GEOM_GLASS}" ]]; then
-    echo "ERROR: GEOM_GLASS must name a complete relaxed spherical glass." >&2
+if [[ -z "${GLASS_SNAP}" || ! -f "${GLASS_SNAP}" ]]; then
+    echo "ERROR: GLASS_SNAP must name a complete relaxed spherical glass." >&2
     exit 1
 fi
+vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
+vlib::steps::validate_backend
+vlib::manifest_input geom_ic "${GLASS_SNAP}"
+vlib::manifest_input pk_randoms "${GLASS_SNAP}"
+vlib::manifest_input pk_steps "${GLASS_SNAP}"
 
 export VLIB_CACHE_DIR="${EVOLVED_CACHE_DIR:-${BASEDIR}/evolved-cache/sphere}"
 PARAM_DIR="${BASEDIR}/evolved-configs/sphere"
@@ -139,7 +142,6 @@ CONTRACT_ARGS=(
     --compensate "${SIM_COMPENSATE}"
     --sphere-mode "${SIM_SPHEREMODE}"
     --paired "${SIM_PAIRED}"
-    --phase-shift-rad "${SIM_PHASE_SHIFT}"
     --nmesh-samples "${SIM_NMESHSAMPLES}"
     --use-double "${SIM_USE_DOUBLE}"
     --stepsic-revision "${STEPSIC_REVISION}"
@@ -165,7 +167,7 @@ if vlib::step_check "geom_ic" "$(vlib::breadcrumb_get GEOM_IC)"; then
         "NRBINS=${NRBINS}" \
         "TYPE=glass" \
         "NSHELL=${NSHELL}" \
-        "INPUT_GLASS=${GEOM_GLASS}" \
+        "INPUT_GLASS=${GLASS_SNAP}" \
         "IC_DIR=${IC_DIR}" \
         "H0=${COSMO_H0}" \
         "OMEGA_B=${COSMO_OMEGA_B}" \
@@ -182,7 +184,6 @@ if vlib::step_check "geom_ic" "$(vlib::breadcrumb_get GEOM_IC)"; then
         "COMPENSATE=${SIM_COMPENSATE}" \
         "SPHEREMODE=${SIM_SPHEREMODE}" \
         "PAIRED=${SIM_PAIRED}" \
-        "PHASE_SHIFT=${SIM_PHASE_SHIFT}" \
         "NMESHSAMPLES=${SIM_NMESHSAMPLES}" \
         "USE_DOUBLE=${SIM_USE_DOUBLE}" \
         "SAVE_WHITE_NOISE=true"
@@ -206,7 +207,7 @@ if [[ -z "${GEOM_SOFTENING}" ]]; then
     GEOM_SOFTENING="$(
         vlib::run_python "${STEPSIC_ENV}" \
             "${BASEDIR}/scripts/compute-evolved-softening.py" \
-            "${GEOM_GLASS}" --geometry spherical --radius "${RCRIT}" \
+            "${GLASS_SNAP}" --geometry spherical --radius "${RCRIT}" \
             --divisor "${SOFTENING_DIVISOR}"
     )"
 fi
@@ -312,7 +313,7 @@ fi
 if vlib::step_check "pk_randoms" "${PK_RANDOMS}"; then
     vlib::run_python "${STEPSIC_ENV}" \
         "${BASEDIR}/scripts/prepare-evolved-randoms.py" \
-        --glass "${GEOM_GLASS}" \
+        --glass "${GLASS_SNAP}" \
         --factor "${PK_RANDOM_FACTOR}" \
         --seed "${PK_RANDOM_SEED}" \
         --output "${PK_RANDOMS}"
@@ -323,7 +324,7 @@ if vlib::step_check "pk_steps" "${STEPS_PK_NATIVE}"; then
     vlib::run_python "${STEPSIC_ENV}" \
         "${BASEDIR}/scripts/run-evolved-fkp.py" \
         --snapshot "${GEOM_SNAPSHOT}" \
-        --glass "${GEOM_GLASS}" \
+        --glass "${GLASS_SNAP}" \
         --randoms "${PK_RANDOMS}" \
         --steps-pk "${STEPS_SRC}/tools/PowerSpectra/StePS_Pk.py" \
         --p0 "${PK_P0}" \

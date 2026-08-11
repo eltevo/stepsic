@@ -69,7 +69,7 @@ REFERENCE_RUN_KEY="$(
             "${REF_RUN_1LPT}" "${REF_SOFTENING_MPC_H}" \
             "${REF_SPECTRUM}" "${REF_NONLINEAR}" "${REF_HALOFIT}" \
             "${REF_INTERPOLATION}" "${REF_COMPENSATE}" \
-            "${REF_SPHEREMODE}" "${REF_PAIRED}" "${REF_PHASE_SHIFT}" \
+            "${REF_SPHEREMODE}" "${REF_PAIRED}" \
             "${REF_NMESHSAMPLES}" "${REF_USE_DOUBLE}" \
             "${COSMOLOGY_NAME}" "${COSMO_OMEGA_B}" "${COSMO_OMEGA_M}" \
             "${COSMO_OMEGA_L}" "${COSMO_H0}" \
@@ -230,7 +230,6 @@ _write_stepsic_ic() {
         "COMPENSATE=${REF_COMPENSATE}" \
         "SPHEREMODE=${REF_SPHEREMODE}" \
         "PAIRED=${REF_PAIRED}" \
-        "PHASE_SHIFT=${REF_PHASE_SHIFT}" \
         "NMESHSAMPLES=${REF_NMESHSAMPLES}" \
         "USE_DOUBLE=${REF_USE_DOUBLE}" \
         "SAVE_WHITE_NOISE=true"
@@ -390,7 +389,6 @@ if vlib::step_check "publish" "${PAIR_MANIFEST}"; then
         --compensate "${REF_COMPENSATE}" \
         --sphere-mode "${REF_SPHEREMODE}" \
         --paired "${REF_PAIRED}" \
-        --phase-shift-rad "${REF_PHASE_SHIFT}" \
         --nmesh-samples "${REF_NMESHSAMPLES}" \
         --use-double "${REF_USE_DOUBLE}" \
         --softening-mpc-h "${REF_SOFTENING_MPC_H}" \

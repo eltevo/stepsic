@@ -21,6 +21,9 @@ set -euo pipefail
 #   11. plot          - validation figures
 #   12. evaluate      - scientific result contract
 #
+#  When GLASS_SNAP is set, steps 1-4 are omitted and the pipeline starts at
+#  ic_2lpt. The glass content hash enters the IC and measurement manifests.
+#
 #  Glass-making uses EdS cosmology (Omega_m=1) with reversed gravity (GLASS_MAKING).
 #  H0_EdS = 100 km/s/Mpc (h_EdS = 1); see vlib::cosmology::eds_h0 in
 #  validation/_common/lib.sh.
@@ -47,6 +50,7 @@ set -euo pipefail
 #  Configuration (edit config.env or export before running):
 #    STEPS_SRC, STEPSIC_SRC, STEPSIC_PY, STEPS_ENV, STEPSIC_ENV
 #    STEPS_BACKEND, N_MPI, N_GPU, OMP_NUM_THREADS
+#    GLASS_SNAP
 #    R_3D, D_4D, RCRIT, LZ, NRBINS, NSHELL, BIN_MODE
 #    SIM_Z_INIT, SIM_LPTORDER, SIM_NMESH
 #    COSMOLOGY_NAME, COSMO_H0, COSMO_OMEGA_M, COSMO_OMEGA_L, COSMO_OMEGA_B
@@ -65,6 +69,9 @@ set -euo pipefail
 #    # Resume from step 5 (glass done, generate cosmological ICs)
 #    N_GPU=4 bash run.sh --step=5
 #
+#    # Use a pre-generated glass (pipeline starts at ic_2lpt)
+#    GLASS_SNAP=/path/to/glass.hdf5 bash run.sh
+#
 #    # Replot from cached simulation data
 #    bash run.sh --plot-only
 # ============================================================================
@@ -76,13 +83,26 @@ vlib::parse_args "$@"
 CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
 vlib::source_config "${CONFIG_FILE}"
 
-vlib::declare_steps preglass glass_param build_glass run_glass ic_2lpt ic_1lpt build_sim run_sim_2lpt run_sim_1lpt measure plot evaluate
+if [[ -n "${GLASS_SNAP}" ]]; then
+    vlib::declare_steps ic_2lpt ic_1lpt build_sim run_sim_2lpt run_sim_1lpt measure plot evaluate
+else
+    vlib::declare_steps preglass glass_param build_glass run_glass ic_2lpt ic_1lpt build_sim run_sim_2lpt run_sim_1lpt measure plot evaluate
+fi
 if (( VLIB_LIST_STEPS )); then
     vlib::list_steps
     exit 0
 fi
+if [[ -n "${GLASS_SNAP}" && ! -f "${GLASS_SNAP}" ]]; then
+    echo "ERROR: GLASS_SNAP not found: ${GLASS_SNAP}" >&2
+    exit 1
+fi
 vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 vlib::steps::validate_backend
+if [[ -n "${GLASS_SNAP}" ]]; then
+    vlib::manifest_input ic_2lpt "${GLASS_SNAP}"
+    vlib::manifest_input ic_1lpt "${GLASS_SNAP}"
+    vlib::manifest_input measure "${GLASS_SNAP}"
+fi
 
 # -- Directory layout --------------------------------------------------------
 export VLIB_CACHE_DIR="${VLIB_CACHE_DIR:-${BASEDIR}/cache}"
@@ -140,9 +160,22 @@ echo "========================================================================"
 echo ""
 echo "  Geometry:       R_3D=${R_3D} Mpc, D_4D=${D_4D} Mpc, Lz=${LZ} Mpc"
 echo "  Cosmology:      H0=${COSMO_H0}, Omega_m=${COSMO_OMEGA_M}, Omega_L=${COSMO_OMEGA_L}"
-echo "  Glass (EdS):    H0_EdS=${EDS_H0}, a=${GLASS_A_START} -> ${GLASS_A_MAX}"
+if [[ -n "${GLASS_SNAP}" ]]; then
+    echo "  Glass:          pre-generated ${GLASS_SNAP}"
+else
+    echo "  Glass (EdS):    H0_EdS=${EDS_H0}, a=${GLASS_A_START} -> ${GLASS_A_MAX}"
+fi
 echo "  Simulation:     z_init=${SIM_Z_INIT} (a=${SIM_A_START}), LPT orders: 1 + ${SIM_LPTORDER}"
 echo ""
+
+# Derive softening for a supplied glass before running the consuming steps.
+if [[ -n "${GLASS_SNAP}" ]]; then
+    if [[ -z "${PARTICLE_RADII:-}" ]]; then
+        PARTICLE_RADII="$(vlib::run_python "${STEPSIC_ENV}" \
+            "${BASEDIR}/scripts/compute-softening.py" "${GLASS_SNAP}")"
+    fi
+    echo "  PARTICLE_RADII: ${PARTICLE_RADII}"
+fi
 
 # -- Helpers -----------------------------------------------------------------
 
@@ -180,7 +213,6 @@ COMPENSATE = false
 SPHEREMODE = false
 PAIRED = false
 FIXED = false
-PHASE_SHIFT = 0.0
 NMESHSAMPLES = 1
 ROTATE = 0.0
 IC_FORMAT = "hdf5"
@@ -278,6 +310,9 @@ EOF
 # Steps
 # ============================================================================
 
+# Build a glass only when one was not supplied.
+if [[ -z "${GLASS_SNAP}" ]]; then
+
 # -- Step 1: preglass --------------------------------------------------------
 if vlib::step_check "preglass" "${PREGLASS_DIR}"; then
     vlib::clear_dir "${PREGLASS_DIR}"
@@ -356,6 +391,8 @@ if vlib::step_check "run_glass"; then
 fi
 
 GLASS_SNAP="${GLASS_SNAP:-$(vlib::breadcrumb_get GLASS_SNAP)}"
+
+fi
 
 # -- Step 5: ic_2lpt ---------------------------------------------------------
 if vlib::step_check "ic_2lpt" "${IC_2LPT_DIR}"; then
@@ -452,7 +489,7 @@ if (( VLIB_PLOT_ONLY )); then
     VLIB_PLOT_ONLY=0
 fi
 if vlib::step_check "measure" "${PK_DIR}/pk_1lpt.txt" "${PK_DIR}/pk_2lpt.txt"; then
-    for _req_var in IC_PREGLASS GLASS_SNAP SNAP_2LPT SNAP_1LPT; do
+    for _req_var in GLASS_SNAP SNAP_2LPT SNAP_1LPT; do
         if [[ -z "${!_req_var:-}" || ! -f "${!_req_var}" ]]; then
             echo "ERROR: ${_req_var} is not set or file not found." >&2
             exit 1

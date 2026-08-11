@@ -61,6 +61,17 @@ COSMO_W0="${COSMO_W0:--0.9}"
 
 Unchanged cosmology values are not repeated in campaign configuration files.
 
+## Glass snapshots
+
+The cylinder campaign generates its glass when `GLASS_SNAP` is empty. Set
+`GLASS_SNAP` to reuse a pre-generated StePS snapshot; the glass-generation steps
+are then omitted.
+
+The spherical evolved run requires `GLASS_SNAP`. The diagnostic campaign accepts
+independent `GLASS_SNAP_CUBICAL`, `GLASS_SNAP_SPHERICAL`, and
+`GLASS_SNAP_CYLINDRICAL` overrides and otherwise uses snapshots produced by the
+corresponding campaigns. Supplied paths must name existing files.
+
 NumPy archives are loaded with `allow_pickle=False`. Glass diagnostic archives store ragged zone spectra as typed, NaN-padded arrays. Object-array archives are rejected.
 
 ## Layout and artifacts
@@ -123,6 +134,6 @@ bash validation/cylinder/run.sh
 bash validation/monofonic/run.sh
 bash validation/reference-nbody/run.sh
 REFERENCE_MANIFEST=/path/to/pair-manifest.json \
-GEOM_GLASS=/path/to/spherical-glass.hdf5 \
+GLASS_SNAP=/path/to/spherical-glass.hdf5 \
 bash validation/sphere/evolved.sh
 ```

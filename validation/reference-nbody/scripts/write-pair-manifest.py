@@ -41,7 +41,6 @@ def main() -> None:
     parser.add_argument("--compensate", choices=("true", "false"), required=True)
     parser.add_argument("--sphere-mode", choices=("true", "false"), required=True)
     parser.add_argument("--paired", choices=("true", "false"), required=True)
-    parser.add_argument("--phase-shift-rad", type=float, required=True)
     parser.add_argument("--nmesh-samples", type=int, required=True)
     parser.add_argument("--use-double", choices=("true", "false"), required=True)
     parser.add_argument("--softening-mpc-h", type=float, required=True)
@@ -100,7 +99,6 @@ def main() -> None:
             "compensate": args.compensate == "true",
             "sphere_mode": args.sphere_mode == "true",
             "paired": args.paired == "true",
-            "phase_shift_rad": args.phase_shift_rad,
             "nmesh_samples": args.nmesh_samples,
             "use_double": args.use_double == "true",
         },
