@@ -149,7 +149,7 @@ The particle-count controls depend on `TYPE`: `NGRID` for a regular cubical grid
 The `NMESHSAMPLES` parameter sets the number of sampled mesh levels.
 `INTERPOLATION` chooses the grid-to-particle assignment kernel (`ngp`, `cic`, or `tsc`), and `COMPENSATE` applies the corresponding compensation kernel (Cloud-in-Cell does not need compensation).
 
-`SEED`, `PAIRED`, `FIXED`, and `PHASE_SHIFT` control random phases, amplitudes, and paired ICs for variance-reduction tests.
+`SEED`, `PAIRED`, and `FIXED` control the random phases and amplitudes for paired-and-fixed variance-reduction ICs.
 
 ### Cosmology, spectrum, units, and output
 

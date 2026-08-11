@@ -21,7 +21,6 @@ COMPENSATE = false
 SPHEREMODE = false
 PAIRED = false
 FIXED = false
-PHASE_SHIFT = 0.0
 
 IC_DIR = "tests/data"
 IC_PREFIX = "tiny"

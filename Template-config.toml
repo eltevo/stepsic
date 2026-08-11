@@ -112,7 +112,6 @@ COMPENSATE = true      # If `true`, the IC will be generated with a compensation
 SPHEREMODE = false     # If `true`, the IC will be generated in a spherical shell in k-space, otherwise it will be generated in a cubical box in k-space.
 PAIRED = false         # If `true`, the IC will have inverted phases.
 FIXED = false          # If `true`, the IC will have fixed amplitudes.
-PHASE_SHIFT = 0.0      # Phase shift to apply to the IC. This is useful for generating IC with a specific phase shift in the Fourier space, primarily to reduce the cosmic variance by pairing normal and antipodal simulations.
 
 # ** Adaptive multiscale (glass + NMESH=0) *****************************
 NMESHSAMPLES = 7       # Number of resolution levels for multiscale IC.

@@ -28,7 +28,6 @@ COMPENSATE    = false
 SPHEREMODE    = false
 PAIRED        = false
 FIXED         = false
-PHASE_SHIFT   = 0.0
 
 # -- 4. Output -------------------------------------------------------------
 IC_DIR     = "profiling/audit/output-small"

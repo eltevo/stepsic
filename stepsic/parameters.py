@@ -213,7 +213,6 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('COMOVING', ptype=PType.BOOL, label="Comoving IC"),
     Param('PAIRED', ptype=PType.BOOL, label="Paired IC", condition=lambda P: P.get('LPTORDER') > 0),
     Param('FIXED', ptype=PType.BOOL, label="Fixed-amplitude IC", condition=lambda P: P.get('LPTORDER') > 0),
-    Param('PHASE_SHIFT', label="Phase shift",  fmt=".2f", unit="degrees", condition=lambda P: P.get('LPTORDER') > 0),
     Param('HINDEPENDENT', ptype=PType.BOOL, label="H-independent units"),
     Param('SEED', ptype=PType.INT, label="Random seed"),
     Param('USE_DOUBLE', ptype=PType.BOOL, label="Double precision"),
