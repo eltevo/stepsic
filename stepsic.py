@@ -255,9 +255,8 @@ def main():
         params['D_4D'] /= params['H']
 
     if params['GEOMETRY'] == 'spherical':
-        box_center = params['LBOX'] / 2
-        log.info('Restoring the sphere to its center of interest in box coordinates...')
-        ic.pos += params['COI'] + box_center
+        log.info('Restoring the sphere to its center of interest...')
+        ic.pos += params['COI']
 
     if not params['COMOVING'] and params['LPTORDER'] > 0:
         log.info('Converting the IC to proper coordinates...')
