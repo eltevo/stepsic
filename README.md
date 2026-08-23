@@ -165,18 +165,18 @@ The [validation/](validation/) directory contains end-to-end pipelines that repr
 
 | Pipeline                                     | What it tests                                                       |
 | :------------------------------------------- | :------------------------------------------------------------------ |
-| [`grid/`](validation/grid/)                  | *P(k)* recovery vs. resolution, redshift, LPT order, MAS            |
-| [`squish/`](validation/squish/)              | Sub-percent *P(k)* recovery in anisotropic boxes up to 10:1         |
-| [`cylinder/`](validation/cylinder/)          | Full StePS *N*-body 1LPT vs. 2LPT in cylindrical $S^1 \times \mathbb{R}^2$ geometry     |
-| [`monofonic/`](validation/monofonic/)        | Cross-validation against `monofonic` using identical white noise    |
-| [`shell-mass/`](validation/shell-mass/)      | Radial particle-mass profile across binning modes                   |
-| [`particle-load/`](validation/particle-load/)| All four particle-load configurations visualised                    |
-| [`field/`](validation/field/)                | Displacement / velocity field histograms (including slab anisotropy)|
+| [`grid-power-recovery/`](validation/grid-power-recovery/) | *P(k)* recovery vs. resolution, redshift, LPT order, MAS |
+| [`slab-sampling/`](validation/slab-sampling/) | Anisotropic transfer and matched cube-cut fairness |
+| [`cylindrical-lpt/`](validation/cylindrical-lpt/) | Full StePS *N*-body cylindrical 1LPT vs. 2LPT |
+| [`monofonic-agreement/`](validation/monofonic-agreement/) | Cross-validation against `monofonic` using identical white noise |
+| [`shell-mass-profiles/`](validation/shell-mass-profiles/) | Radial particle-mass profile across binning modes |
+| [`particle-loads/`](validation/particle-loads/) | All four particle-load configurations visualised |
+| [`field-statistics/`](validation/field-statistics/) | Cubic displacement and velocity field statistics |
 
-Run all pipelines at minimal resolution to verify your install:
+Run the paper campaigns at minimal resolution to verify your install:
 
 ```bash
-bash validation/smoke-test.sh
+bash validation/run.sh --group=paper --size=small --evaluation=report
 ```
 
 ## Citation

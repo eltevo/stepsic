@@ -1,139 +1,61 @@
-# Validation suite
+# Validation campaigns
 
-This directory contains reproducible scientific campaigns for particle loads, LPT fields, power-spectrum recovery, glass quality, external-code comparisons, and evolved StePS simulations. Each campaign exposes a `run.sh` entrypoint and declares its flags, configuration variables, cache paths, numerical archives, and principal PDF outputs.
+`validation/` contains the scripts that reproduce the manuscript figures and supporting measurements. Pytest does not run these campaigns.
 
-## Scientific pipeline contract
+## Running campaigns
 
-A campaign has three visible responsibilities, in this order:
-
-1. **Measure** scientific quantities into a typed numerical archive (`.npz` or HDF5).
-2. **Plot** those archived quantities. Plot code presents evidence; axis limits and shaded visual guides do not decide correctness.
-3. **Evaluate** documented claims, after figures exist, and atomically write `output/result.json` (or a campaign-specific output directory for keyed, diagnostic, or evolved runs).
-
-Evaluation writes the result after plotting. A failed required check makes a normal full run exit nonzero, with the result and figures available for diagnosis. A result contains:
-
-- `campaign` and `status`;
-- resolved parameters and archive/command provenance;
-- named metrics with explicit units;
-- checks with the observed value, comparison, derived limit, rationale, source, and pass/fail decision;
-- paths to the numerical archive and generated figures.
-
-Evaluators are small Python modules beside each campaign. Their gates use analytic identities, floating-point bounds, sampling distributions, convergence arguments, matched controls, or independent reference ensembles. Campaign output, plot bands, and axes are not gates. A scientific check is required only when its claim and derivation are encoded in the evaluator.
-
-## Completion, judgment, and inspection
-
-These are different outcomes:
-
-- **Smoke completion** proves that the driver, dependencies, and artifact paths execute at reduced settings.
-- **Scientific pass/fail** is the machine-readable decision in `result.json` at the resolved settings.
-- **Human inspection** reviews the figures and numerical context, including failures and phenomena not represented by a required check.
-
-A successful smoke run does not imply scientific acceptance. A generated PDF does not imply either smoke success or scientific acceptance.
-
-## Driver interface and cache behavior
-
-Every top-level driver provides this interface:
+Run one campaign, a named group of campaigns, or every campaign:
 
 ```bash
-bash validation/grid/run.sh --help
-bash validation/grid/run.sh --list-steps
-bash validation/grid/run.sh
-bash validation/grid/run.sh --step=3
-bash validation/grid/run.sh --plot-only
-bash validation/grid/run.sh --force-step=evaluate
+bash validation/run.sh --campaign=particle-loads --size=small
+bash validation/run.sh --group=paper --size=medium --evaluation=gate
+bash validation/run.sh --all --size=small --evaluation=report
+bash validation/run.sh --list-campaigns
 ```
 
-Standard flags are `--step=N`, `--plot-only`, `--force`, `--force-step=A,B`, `--clean`, `--config=PATH`, `--list-steps`, and `--help`. Each driver header documents its campaign-specific flags.
+Groups are `paper`, `supplementary`, and `extended`. A command with no selection prints the usage text and exits without running anything. `--evaluation=gate` is the default at every size. `report` writes the same result but does not make the command fail when a scientific check fails. `skip` does not run the evaluator or write `result.json`.
 
-Step order is declared once in each driver and consumed by listing, execution, and contract tests. A step is cached only when its stored manifest matches its resolved arguments, relevant configuration, declared inputs, implementation files, and outputs. Generated Python bytecode is ignored. Missing or stale manifests cause the step to run; existence alone is not a cache hit. Per-step locks coalesce concurrent runs, manifests and breadcrumbs are atomically replaced, and failed steps are not cached.
+Each campaign supports `--size`, `--step`, `--plot-only`, `--force`, `--force-step`, `--clean`, `--config`, `--list-steps`, `--evaluation`, and `--help`. `--plot-only` still evaluates unless evaluation is explicitly skipped.
 
-`validation/_common/lib.sh` is the shell source facade for the runtime, cosmology, StePS, stepsic-configuration, and orchestration modules. Drivers use `vlib::run_python`, which exposes the repository-root `validation` package without script-local `sys.path` mutation. Direct development invocations use the same package entrypoint explicitly:
+`--config=PATH` selects a TOML file that contains one table for the chosen campaign and values for all of its size-dependent settings. It cannot be combined with `--size`. Custom runs write to `runs/custom/<profile-sha256>/`. Environment variables override the selected profile, and profile values override the defaults in `config.env`. Each run records the final values and where they came from in its `config/` directory and cache manifests.
 
-```bash
-PYTHONPATH="$PWD" conda run -n stepsic python validation/grid/scripts/evaluate.py --help
-```
+## Campaign catalog
 
-All campaigns inherit the Planck 2018 EE+BAO best-fit parameters from `_common/cosmology/Planck2018EE+BAO.toml`. The shell drivers and Python validation helpers read this same file, and resolved values participate in step manifests. A campaign with a scientifically required deviation overrides only the affected variable in its `config.env`, preserving an exported value:
+| Campaign | Role | Evidence |
+| --- | --- | --- |
+| `particle-loads` | paper | Fig. 1 particle-load views, with supplementary 3D views |
+| `shell-mass-profiles` | paper | Fig. 2 comparison with analytic shell masses |
+| `field-statistics` | supplementary | cubic LPT displacement and velocity statistics |
+| `slab-sampling` | paper | Figs. 3 and 5 slab anisotropy and comparison with a matching cut from a cube |
+| `grid-power-recovery` | paper | Fig. 4 recovered power spectrum with Fourier-mode counts |
+| `cylindrical-lpt` | paper | Figs. 6 and 7 cylindrical 1LPT and 2LPT convergence |
+| `monofonic-agreement` | paper | Fig. 8 comparison with monofonIC from the same white-noise field |
+| `periodic-embedding` | supplementary | convergence as padding increases and checks for radial drift |
+| `spherical-ic` | supplementary | comparison of spherical and periodic initial conditions |
+| `glass-quality` | supplementary | power below the Poisson level, force suppression by radius, and rescaling tests |
+| `periodic-lpt` | supplementary | periodic 1LPT and 2LPT comparison evolved with Gadget-4 |
+| `spherical-evolution` | extended | optional spectra from evolved spherical and periodic simulations |
 
-```bash
-COSMO_W0="${COSMO_W0:--0.9}"
-```
+`spherical-evolution` does not decide scientific pass or fail. It checks the required files, recorded inputs, array values, and matching epochs before producing spectra for inspection.
 
-Unchanged cosmology values are not repeated in campaign configuration files.
+## Profiles and outputs
 
-## Glass snapshots
+[`small.toml`](_profiles/small.toml) uses the smallest settings that still let every campaign and evaluator run. [`medium.toml`](_profiles/medium.toml) contains the settings for local publication runs and must stay below 48 GiB peak RSS. A campaign is ready for publication only after its medium run passes and someone inspects its figures. [`large.toml`](_profiles/large.toml) contains the approved settings for compute nodes; a campaign that has no large configuration stops before doing any computation. The cylindrical configuration used in the article and the 256³ periodic comparison are large runs.
 
-The cylinder campaign generates its glass when `GLASS_SNAP` is empty. Set
-`GLASS_SNAP` to reuse a pre-generated StePS snapshot; the glass-generation steps
-are then omitted.
+Every campaign has a `run.sh`, a `config.env`, and a `scripts/` directory. Generated files go under `runs/<profile>/{cache,config,build,output}`. Article figures are written directly to `output/`; other retained figures go to `output/supplementary/`.
 
-The spherical evolved run requires `GLASS_SNAP`. The diagnostic campaign accepts
-independent `GLASS_SNAP_CUBICAL`, `GLASS_SNAP_SPHERICAL`, and
-`GLASS_SNAP_CYLINDRICAL` overrides and otherwise uses snapshots produced by the
-corresponding campaigns. Supplied paths must name existing files.
+Each result records the campaign, selected profile, parameters, input and command information, measurements, checks, and paths to data and figures. Any failed check makes the scientific result fail. A missing or malformed output is an execution error instead.
 
-NumPy archives are loaded with `allow_pickle=False`. Glass diagnostic archives store ragged zone spectra as typed, NaN-padded arrays. Object-array archives are rejected.
+Before reusing a cached step, the runner compares its selected profile, configuration, direct inputs, implementation files, and earlier outputs with the values recorded in a manifest. It replaces outputs and manifests atomically. A per-step lock lets identical concurrent invocations share the completed work. Cleanup resolves the requested path and refuses to remove anything outside the current campaign's run directory.
 
-## Layout and artifacts
+`glass-quality`, `cylindrical-lpt`, and `spherical-evolution` use `GLASS_INPUT_MODE=generate|pre-generated`. Pre-generated mode requires explicit snapshot paths. Each campaign checks their geometry and metadata before computation and records their hashes in the manifests for steps that use them.
 
-Common source files:
+## Shared implementation
 
-- `_common/lib.sh`: shell source facade.
-- `_common/runtime.sh`, `cosmology.sh`, `steps.sh`, `stepsic.sh`, and `orchestration.sh`: focused shell behavior.
-- `_common/result.py`: result model and atomic JSON serialization.
-- `_common/evaluation.py`: typed archive I/O and shared statistical derivations.
-- `_common/manifest.py`: content manifests.
-- `validation.py`: cosmology, LPT, plotting, and archive helpers exposed through the `validation` package.
-- `smoke-test.sh`: reduced local campaign runs.
-
-Campaign directories contain `run.sh`, `config.env`, `scripts/`, and generated `cache/`, `output/`, `configs/`, `params/`, or `builds/` directories. Numerical archives and HDF5 files are measurement evidence; PDFs are presentation; `result.json` is the machine contract.
-
-## Campaigns
-
-| Campaign | Independent claim source |
-| --- | --- |
-| `shell-mass` | analytic spherical/cylindrical volume and configured boundary solution |
-| `field` | component isotropy sampling bound and histogram count conservation |
-| `grid`, `squish` | mode-counted Gaussian power variance |
-| `padding` | convergence of refined displacement error |
-| `slab` | missing-long-mode variance suppression |
-| `particle-load`, `glass` | analytic domain containment and exact cubic counts |
-| `sphere` IC | Gaussian component-variance sampling bound |
-| `glass/diagnose.sh` | matched Poisson-twin sub-particle-scale power |
-| `cylinder` | low-wavenumber 1LPT/2LPT convergence |
-| `monofonic` | mode-counted matched power comparison |
-| `reference-nbody` | periodic mode-counted 1LPT/2LPT control |
-| `sphere/evolved.sh` | matched-realization provenance and finite full-output spectra |
-
-`cylinder/reference/` contains two reference spectra for manuscript Fig. 7. Evaluators do not use them as acceptance thresholds.
-
-## Verification
-
-Run the local reduced suite from the repository root:
-
-```bash
-bash validation/smoke-test.sh
-```
-
-The smoke suite checks that reduced pipelines complete and write inspectable artifacts. It deliberately does not enforce the scientific verdicts produced at reduced settings.
-
-Run the lean pytest calibration and infrastructure contracts with:
-
-```bash
-conda run -n stepsic pytest
-conda run -n stepsic pytest -m ""
-```
-
-These tests do not duplicate campaign science or presentation. They calibrate evaluator pass/fail decisions and protect critical safety, cache, conservation, matching, and fair-sample invariants.
-
-External campaigns require their configured toolchains. Environment-specific verification commands are:
-
-```bash
-bash validation/glass/diagnose.sh
-bash validation/cylinder/run.sh
-bash validation/monofonic/run.sh
-bash validation/reference-nbody/run.sh
-REFERENCE_MANIFEST=/path/to/pair-manifest.json \
-GLASS_SNAP=/path/to/spherical-glass.hdf5 \
-bash validation/sphere/evolved.sh
-```
+- `_common/cosmology_fields.py`: cosmology and field generation
+- `_common/plotting.py`: shared figure style
+- `_common/artifacts.py`: NumPy archive helpers
+- `_common/result.py`: scientific results and atomic JSON writes
+- `_common/profiles.py`: campaign catalog and size profiles
+- `_common/snapshots.py`: snapshot I/O and geometry checks
+- `_common/runtime.sh` and `_common/orchestration.sh`: command-line options, cached steps, locks, and cleanup
