@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate padding convergence independently of plot limits."""
+"""Check whether displacement error decreases as padding grows."""
 
 from __future__ import annotations
 
@@ -25,9 +25,9 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
         rms_error = np.asarray(data["prof_rms_dx"], dtype=np.float64)
         reference_rms = np.asarray(data["ref_rms_psi"], dtype=np.float64)
         if alphas.ndim != 1 or alphas.size < 3 or np.any(np.diff(alphas) <= 0):
-            raise ValueError("padding factors must contain reference plus refinements")
+            raise ValueError("padding factors must contain at least two measurements followed by a larger reference box")
         if rms_error.shape[1] != alphas.size - 1:
-            raise ValueError("profile errors must omit only the reference padding")
+            raise ValueError("profile errors must contain one curve for every padding factor except the reference")
         relative = rms_error / reference_rms[:, None, :]
         finite = np.isfinite(relative)
         finite_counts = np.sum(finite, axis=(0, 2))
@@ -41,7 +41,7 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
             raise ValueError("relative displacement errors must be finite")
         convergence_ratio = float(mean_errors[-1] / mean_errors[0])
         return ValidationResult(
-            campaign="padding",
+            campaign="periodic-embedding",
             parameters=metadata_parameters(data),
             provenance=archive_provenance(archive),
             metrics={
@@ -62,10 +62,9 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
                     limit=1.0,
                     unit="dimensionless",
                     rationale=(
-                        "Increasing the Fourier embedding toward the reference "
-                        "must not increase the RMS displacement truncation error."
+                        "Increasing the Fourier box toward the reference size must not increase RMS displacement error."
                     ),
-                    source="nested-domain convergence argument",
+                    source="convergence as the Fourier box grows",
                 )
             ],
             numerical_archive=archive,
@@ -79,7 +78,7 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
         ZeroDivisionError,
     ) as error:
         return malformed_result(
-            campaign="padding",
+            campaign="periodic-embedding",
             archive=archive,
             figures=[figure],
             error=error,

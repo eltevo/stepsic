@@ -1,40 +1,24 @@
 #!/usr/bin/env python3
 '''
-Quantify periodic-embedding error as a function of bounding-box padding.
+Measure how Fourier-box padding affects a non-periodic domain.
 
-stepsic builds every geometry's Gaussian field and LPT solution on a
-periodic cuboid Fourier box; non-periodic domains (sphere, cylinder) are
-simply embedded in that box. This sweep measures the residual periodicity
-and boundary contamination as a function of the padding ratio
+stepsic builds Gaussian fields and LPT solutions on a periodic Fourier box, even for spherical and cylindrical domains. This script varies the padding ratio
 
     alpha = LBOX / (2 * R_3D)
 
-on the non-periodic axes, holding the voxel size and the *physical*
-stochastic source fixed.
+on the non-periodic axes while keeping voxel size and white noise inside the domain fixed.
 
-Shared-realization construction
--------------------------------
 ``stepsic.field.white_noise`` keys each Fourier mode's random draw to its
 integer mode triple, so calling it with the same seed on boxes of
 different physical size yields *stretched* realizations, not shared ones.
-To isolate embedding systematics from realization scatter, white noise is
-therefore drawn once per seed on the largest (reference) box, transformed
-to real space - where it is an iid unit-Gaussian per voxel - and the
-centred voxel-aligned sub-cube is cropped for each smaller alpha. A crop
-of iid noise is itself exactly valid white noise, and the stochastic
-source inside the domain is bit-for-bit identical across alpha. Two
-effects then separate every smaller box from the reference:
+White noise is therefore drawn once on the largest box and cropped on voxel boundaries for each smaller box. The crop remains valid white noise and is identical inside the measured domain. Smaller boxes then differ from the reference in two ways:
 
 * mode truncation - wavelengths longer than the small box do not exist;
 * image contamination - the periodic images of the domain sit closer.
 
-Both are genuine embedding error, so per-particle differences against the
-largest-alpha box measure periodic-embedding error. The reference box is itself periodic, so alpha_max must be
-generous (default 2.0); the measured error is the error *relative to*
-that best available embedding.
+Both effects contribute to the measured difference. The largest box is still periodic, so all errors are relative to that reference rather than to an infinite domain.
 
-Metrics (per alpha, per seed)
------------------------------
+For each padding ratio and seed, the archive records:
 * RMS and 99th-percentile displacement/velocity difference against the
   reference, in radial shells of the domain radius;
 * normalized antipodal boundary-shell displacement correlation (the
@@ -77,7 +61,7 @@ from stepsic.geometry import create_shell_particles
 from stepsic.pk import measure_pk
 from stepsic.units import UNIT_V
 
-from validation import (
+from validation._common.cosmology_fields import (
     ArrayF,
     ArrayI,
     GrowthData,

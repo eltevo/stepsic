@@ -1,28 +1,26 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  validation/padding/run.sh - periodic-embedding error vs bounding-box padding
+#  Measure how Fourier-box padding affects a non-periodic domain.
 #
-#  Sweeps the padding ratio alpha = LBOX/(2*R_3D) of the periodic Fourier
-#  box around a non-periodic (spherical or cylindrical) domain, holding
-#  the voxel size and the physical white-noise realization fixed (the
-#  smaller boxes crop the reference box's real-space noise). Measures,
-#  against the largest-alpha reference:
+#  The campaign varies alpha = LBOX/(2*R_3D) while keeping voxel size and
+#  white noise inside the domain fixed. It compares each box with the largest:
 #    - displacement/velocity error in radial shells,
-#    - antipodal boundary-shell correlation (periodic-image signature),
+#    - correlation between opposite sides of the boundary shell,
 #    - central-region mass-weighted P(k),
-#    - post-displacement monopole diagnostics (mass flux, boundary drift),
-#  ensembled over NSEEDS realizations.
+#    - mass remaining inside the domain and radial motion at its boundary.
+#  The reported values combine NSEEDS random fields.
 #
 #  Usage:
 #    bash run.sh [OPTIONS]
 #
 #  Options:
+#    --size=SIZE       small, medium (default), or approved large profile
 #    --step=N          Start from step N (default 1; steps: run, plot)
 #    --plot-only       Skip the run step; regenerate the PDF from cache
 #    --force           Re-run every step, ignoring cached outputs
 #    --force-step=A,B  Re-run only the named steps
 #    --clean           Delete cache/ and output/ before running
-#    --config=PATH     Source an alternative config.env
+#    --config=PATH     Select a typed custom TOML profile
 #    --list-steps      Print the step list and exit
 #    -h, --help        Print this help text and exit
 #
@@ -41,18 +39,22 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
-vlib::source_config "${CONFIG_FILE}"
+vlib::prepare_campaign periodic-embedding "${BASEDIR}" "${BASEDIR}/config.env"
 
 vlib::declare_steps run plot evaluate
+vlib::manifest_implementation run "${BASEDIR}/scripts/run.py"
+vlib::manifest_implementation plot "${BASEDIR}/scripts/plot.py"
+vlib::manifest_evaluator evaluate "${BASEDIR}/scripts/evaluate.py"
 if (( VLIB_LIST_STEPS )); then
+    vlib::profile_summary
     vlib::list_steps
     exit 0
 fi
 vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 
-VLIB_CACHE_DIR="${BASEDIR}/cache"
-OUTPUT="${BASEDIR}/output"
+VLIB_CACHE_DIR="${VLIB_RUN_ROOT}/cache"
+OUTPUT="${VLIB_RUN_ROOT}/output"
+FIGURES="${OUTPUT}/supplementary"
 
 # --clean: wipe cache and output before running
 if (( VLIB_CLEAN )); then
@@ -60,7 +62,7 @@ if (( VLIB_CLEAN )); then
     vlib::clear_dir "${OUTPUT}"
 fi
 
-mkdir -p "${VLIB_CACHE_DIR}" "${OUTPUT}"
+mkdir -p "${VLIB_CACHE_DIR}" "${FIGURES}"
 
 
 vlib::init_conda
@@ -75,7 +77,7 @@ echo "  geometry:    ${GEOMETRY}   R_3D: ${R_3D} Mpc/h   RCRIT: ${RCRIT}"
 echo "  ngrid0:      ${NGRID0}   alphas: ${ALPHAS}"
 echo "  lpt:         ${LPT}   z: ${Z}   seeds: ${SEED}+${NSEEDS}"
 echo "  cache:       ${VLIB_CACHE_DIR}"
-echo "  output:      ${OUTPUT}/padding.pdf"
+echo "  output:      ${FIGURES}/periodic-embedding.pdf"
 echo ""
 
 # --------------------------------------------------------------------------
@@ -106,17 +108,17 @@ if vlib::step_check "run" "${VLIB_CACHE_DIR}/data.npz"; then
 fi
 
 # --------------------------------------------------------------------------
-if vlib::step_check "plot" "${OUTPUT}/padding.pdf"; then
+if vlib::step_check "plot" "${FIGURES}/periodic-embedding.pdf"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot.py" \
         -i "${VLIB_CACHE_DIR}/data.npz" \
-        -o "${OUTPUT}/padding.pdf"
+        -o "${FIGURES}/periodic-embedding.pdf"
     vlib::step_done "plot"
 fi
 
 if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/evaluate.py" \
         --archive "${VLIB_CACHE_DIR}/data.npz" \
-        --figure "${OUTPUT}/padding.pdf" \
+        --figure "${FIGURES}/periodic-embedding.pdf" \
         --output "${OUTPUT}/result.json"
     vlib::step_done "evaluate"
 fi

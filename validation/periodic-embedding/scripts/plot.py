@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 '''
-Plot the periodic-embedding padding sweep from ``run.py`` archives.
+Plot how padding changes displacement, power, boundary correlation, and radial drift.
 
-Four panels (A&A two-column layout):
+The four panels show:
 
 (a) relative displacement error vs radius: RMS |x_a - x_ref| divided by
     the reference RMS displacement, one curve per alpha (seed mean, with
@@ -30,12 +30,13 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 
-from validation import setup_matplotlib, load_archive
+from validation._common.plotting import atomic_savefig, setup_matplotlib
+from validation._common.artifacts import load_archive
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-# Distinct linestyles cycled with the colour palette (house convention).
+# Cycle line styles as well as colours so overlapping curves remain visible.
 _LINESTYLES = ['-', '--', '-.', ':', (0, (3, 1, 1, 1, 1, 1))]
 
 
@@ -52,7 +53,7 @@ def plot_padding(data: dict, output: str | None = None) -> None:
     ax_a, ax_b, ax_c, ax_d = axes.ravel()
 
     # -- (a) relative displacement error vs radius ---------------------------
-    # Guard the ratio: shells can be empty at tiny smoke resolutions.
+    # Small runs may leave some radial shells empty.
     ref = np.where(data['ref_rms_psi'] > 0.0, data['ref_rms_psi'], np.nan)
     rel = data['prof_rms_dx'] / ref[:, None, :]      # [seed, alpha, shell]
     rel_mean = np.nanmean(rel, axis=0)
@@ -132,7 +133,7 @@ def plot_padding(data: dict, output: str | None = None) -> None:
 
     fig.tight_layout()
     if output:
-        fig.savefig(output, bbox_inches='tight')
+        atomic_savefig(fig, output, bbox_inches='tight')
         log.info('Figure saved to %s', output)
     else:
         plt.show()
