@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure the matched periodic 1LPT/2LPT Gadget-4 control."""
+"""Measure matched periodic 1LPT and 2LPT runs evolved with Gadget-4."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def atomic_savez(path: str, **arrays: np.ndarray) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Periodic Gadget-4 1LPT/2LPT power-spectrum control.",
+        description="Compare power from matched periodic 1LPT and 2LPT runs.",
     )
     parser.add_argument("--one-lpt", required=True)
     parser.add_argument("--two-lpt", required=True)

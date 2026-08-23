@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  Periodic Gadget-4 reference and matched 1LPT/2LPT control
+#  Evolve matched periodic 1LPT and 2LPT initial conditions with Gadget-4.
 #
 #  Usage:
 #    bash run.sh [OPTIONS]
 #
 #  Standard options:
-#    --step=N / --plot-only / --force / --force-step=A,B / --clean
+#    --size=SIZE / --step=N / --plot-only / --force / --force-step=A,B / --clean
 #    --config=PATH / --list-steps / -h / --help
 #
 #  Steps:
@@ -16,12 +16,12 @@
 #    4. build     - configuration-keyed Gadget-4 build
 #    5. run_2lpt  - evolve the reference to z=0
 #    6. run_1lpt  - evolve the matched control to z=0
-#    7. publish   - matched-pair manifest for the evolved spherical matched pair
+#    7. publish   - record the periodic run for the spherical comparison
 #    8. compare   - common periodic estimator for 1LPT and 2LPT
 #    9. plot      - control-ratio figure
 #
 #  The z=0 2LPT snapshot and unperturbed load are consumed by
-#  validation/sphere/evolved.sh. Units are Mpc/h, 1e11 Msun/h, km/s.
+#  validation/spherical-evolution/run.sh. Units are Mpc/h, 1e11 Msun/h, km/s.
 # ============================================================================
 set -euo pipefail
 
@@ -29,12 +29,18 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
-vlib::source_config "${CONFIG_FILE}"
+vlib::prepare_campaign periodic-lpt "${BASEDIR}" "${BASEDIR}/config.env"
 
 vlib::declare_steps \
     ic_load ic_2lpt ic_1lpt build run_2lpt run_1lpt publish compare plot evaluate
+vlib::manifest_implementation publish \
+    "${BASEDIR}/scripts/write-pair-manifest.py"
+vlib::manifest_implementation compare \
+    "${BASEDIR}/scripts/measure-control.py"
+vlib::manifest_implementation plot "${BASEDIR}/scripts/plot-control.py"
+vlib::manifest_evaluator evaluate "${BASEDIR}/scripts/evaluate.py"
 if (( VLIB_LIST_STEPS )); then
+    vlib::profile_summary
     vlib::list_steps
     exit 0
 fi
@@ -77,11 +83,12 @@ REFERENCE_RUN_KEY="$(
             "${GADGET_MAX_TIMESTEP}" "${PK_NMESH}" "${PK_KMAX_FRAC_NY}"
     } | sha256sum | cut -c1-16
 )"
-REFERENCE_CACHE_ROOT="${REFERENCE_CACHE_ROOT:-${BASEDIR}/cache}"
+REFERENCE_CACHE_ROOT="${REFERENCE_CACHE_ROOT:-${VLIB_RUN_ROOT}/cache}"
 export VLIB_CACHE_DIR="${REFERENCE_CACHE_ROOT}/${REFERENCE_RUN_KEY}"
-CONFIG_DIR="${BASEDIR}/configs/generated/${REFERENCE_RUN_KEY}"
-BUILD_DIR="${BASEDIR}/builds"
-OUTPUT="${BASEDIR}/output/${REFERENCE_RUN_KEY}"
+CONFIG_DIR="${VLIB_RUN_ROOT}/config/generated/${REFERENCE_RUN_KEY}"
+BUILD_DIR="${VLIB_RUN_ROOT}/build"
+OUTPUT="${VLIB_RUN_ROOT}/output"
+FIGURES="${OUTPUT}/supplementary"
 IC_LOAD_DIR="${VLIB_CACHE_DIR}/ic_load"
 IC_2LPT_DIR="${VLIB_CACHE_DIR}/ic_2lpt"
 IC_1LPT_DIR="${VLIB_CACHE_DIR}/ic_1lpt"
@@ -90,9 +97,9 @@ RUN_1LPT_DIR="${VLIB_CACHE_DIR}/run_1lpt"
 GADGET_RUNTIME_DIR="${VLIB_CACHE_DIR}/gadget_runtime"
 CONTROL_DATA="${VLIB_CACHE_DIR}/periodic-control.npz"
 PAIR_MANIFEST="${VLIB_CACHE_DIR}/pair-manifest.json"
-CONTROL_FIGURE="${OUTPUT}/periodic-control.pdf"
+CONTROL_FIGURE="${FIGURES}/periodic-control.pdf"
 
-mkdir -p "${CONFIG_DIR}" "${BUILD_DIR}" "${OUTPUT}" \
+mkdir -p "${CONFIG_DIR}" "${BUILD_DIR}" "${FIGURES}" \
     "${IC_LOAD_DIR}" "${IC_2LPT_DIR}" "${IC_1LPT_DIR}" \
     "${RUN_2LPT_DIR}" "${RUN_1LPT_DIR}" "${GADGET_RUNTIME_DIR}"
 

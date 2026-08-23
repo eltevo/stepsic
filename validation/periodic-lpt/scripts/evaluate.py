@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate the periodic 1LPT/2LPT Gadget-4 control."""
+"""Compare periodic 1LPT and 2LPT runs evolved with Gadget-4."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def evaluate(
             source="independent Gaussian Fourier-mode variance bound",
         )
         return ValidationResult(
-            campaign="reference-nbody",
+            campaign="periodic-lpt",
             parameters=metadata_parameters(data),
             provenance=archive_provenance(archive),
             metrics={"lpt_convergence_chi_square": metric},
@@ -44,7 +44,7 @@ def evaluate(
         )
     except (KeyError, OSError, TypeError, ValueError) as error:
         return malformed_result(
-            campaign="reference-nbody",
+            campaign="periodic-lpt",
             archive=archive,
             figures=[figure],
             error=error,

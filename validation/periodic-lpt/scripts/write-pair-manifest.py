@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Publish the periodic member of the evolved matched-pair contract."""
+"""Record the periodic run used by the spherical-evolution comparison."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-from validation.sphere.evolved import (
+from validation._common.pairing import (
     FIELD_HASH_ALGORITHM,
     PAIR_KIND,
     atomic_write_json,

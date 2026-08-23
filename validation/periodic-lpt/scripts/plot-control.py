@@ -4,37 +4,9 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
-import os
-from pathlib import Path
-import tempfile
-
 import numpy as np
 
-from validation import setup_matplotlib  # noqa: E402
-
-
-def atomic_savefig(figure, path: str) -> None:
-    output = Path(path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{output.name}.tmp-", dir=output.parent,
-    )
-    os.close(descriptor)
-    temporary = Path(temporary_name)
-    try:
-        figure.savefig(
-            temporary,
-            format=output.suffix.lstrip("."),
-            metadata={"CreationDate": datetime(2000, 1, 1, tzinfo=timezone.utc)},
-        )
-        with temporary.open("rb") as stream:
-            os.fsync(stream.fileno())
-        os.replace(temporary, output)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
-
+from validation._common.plotting import atomic_savefig, setup_matplotlib  # noqa: E402
 
 def main() -> None:
     parser = argparse.ArgumentParser()
