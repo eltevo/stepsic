@@ -1,22 +1,15 @@
 #!/usr/bin/env python3
 '''
-Plot particle load distributions for the stepsic paper.
+Plot the particle distributions generated for each geometry.
 
-Produces a 4-panel landscape figure (A&A double-column width)
-showing 3D scatter views of each particle load type generated
-by stepsic with LPTORDER=0:
+The four panels show loads generated with ``LPTORDER=0``:
 
     (a) Cubical, random (Poisson)
     (b) Cubical, grid (regular lattice)
     (c) Spherical shells
     (d) Cylindrical shells
 
-By default, each panel is rendered as a 3D scatter of a random
-subsample. Passing ``--plot-2d`` switches to 2D slice mode:
-particles within a thin slab perpendicular to the slice axis are
-projected onto the remaining two coordinates. For ``cubic_grid``,
-the slab is replaced by a single grid layer (the layer closest
-to the slice centre), regardless of the requested thickness.
+By default, each panel shows a random three-dimensional sample. ``--plot-2d`` instead projects a thin slice. A regular cubic grid uses only the layer nearest the slice centre so adjacent layers do not overlap.
 
 Usage
 -----
@@ -46,7 +39,7 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (side-effect import)
 from numpy.typing import NDArray
 
-from validation import setup_matplotlib
+from validation._common.plotting import atomic_savefig, setup_matplotlib
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -587,7 +580,7 @@ def plot_particle_loads(
     )
 
     if output:
-        fig.savefig(output, bbox_inches='tight', dpi=300)
+        atomic_savefig(fig, output, bbox_inches='tight', dpi=300)
         log.info('Figure saved to %s', output)
     else:
         plt.show()
@@ -595,8 +588,7 @@ def plot_particle_loads(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description='Plot 4-panel 3D particle load validation figure '
-                    'for the stepsic paper.',
+        description='Plot the particle distribution generated for each geometry.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument(

@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  validation/particle-load/run.sh - particle load 4-panel 3D scatter figure
+#  Generate and plot the particle load for each geometry.
 #
-#  Generates the four particle load types supported by stepsic at LPTORDER=0
-#  (no StePS glass relaxation) and plots them as a 4-panel 3D scatter figure.
+#  These loads use LPTORDER=0 and do not undergo StePS glass relaxation.
 #
 #    cubic_random  - uniformly random positions in a periodic cube
-#    cubic_grid    - regular SC lattice in a periodic cube
+#    cubic_grid    - regular simple-cubic lattice in a periodic cube
 #    spherical     - omega-binned shells in a non-periodic sphere
 #    cylindrical   - omega-binned shells in a non-periodic cylinder
 #
@@ -14,22 +13,23 @@
 #    bash run.sh [OPTIONS]
 #
 #  Options:
+#    --size=SIZE       small, medium (default), or approved large profile
 #    --step=N          Start from step N (default 1)
 #    --plot-only       Skip IC generation; regenerate the PDF from cached ICs
 #    --force           Re-run every step, ignoring cached outputs
 #    --force-step=A,B  Re-run only the named steps
 #    --clean           Delete cache/ and output/ before running
-#    --config=PATH     Source an alternative config.env
+#    --config=PATH     Select a typed custom TOML profile
 #    --list-steps      Print the step list and exit
 #    -h, --help        Print this help text and exit
 #
 #  Steps (in order):
-#    1. cubic_random - generate cubical random IC
-#    2. cubic_grid   - generate cubical grid IC
-#    3. spherical    - generate spherical shell IC
-#    4. cylindrical  - generate cylindrical shell IC
-#    5. plot         - 4-panel 3D scatter figure
-#    6. plot_2d      - 4-panel 2D slice figure (xy plane, z slab)
+#    1. cubic_random - generate random positions in a cube
+#    2. cubic_grid   - generate a regular grid in a cube
+#    3. spherical    - generate spherical shells
+#    4. cylindrical  - generate cylindrical shells
+#    5. plot         - plot three-dimensional samples
+#    6. plot_2d      - plot xy slices
 #
 #  Configuration (edit config.env or export before running):
 #    LBOX            Cubic box side [Mpc/h]       (default: 500)
@@ -51,25 +51,29 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
-vlib::source_config "${CONFIG_FILE}"
+vlib::prepare_campaign particle-loads "${BASEDIR}" "${BASEDIR}/config.env"
 
 vlib::declare_steps cubic_random cubic_grid spherical cylindrical plot plot_2d evaluate
+vlib::manifest_implementation plot "${BASEDIR}/scripts/plot.py"
+vlib::manifest_implementation plot_2d "${BASEDIR}/scripts/plot.py"
+vlib::manifest_evaluator evaluate "${BASEDIR}/scripts/evaluate.py"
 if (( VLIB_LIST_STEPS )); then
+    vlib::profile_summary
     vlib::list_steps
     exit 0
 fi
 vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 
-VLIB_CACHE_DIR="${BASEDIR}/cache"
-OUTPUT="${BASEDIR}/output"
+VLIB_CACHE_DIR="${VLIB_RUN_ROOT}/cache"
+OUTPUT="${VLIB_RUN_ROOT}/output"
+SUPPLEMENTARY="${OUTPUT}/supplementary"
 
 if (( VLIB_CLEAN )); then
     vlib::clear_dir "${VLIB_CACHE_DIR}"
     vlib::clear_dir "${OUTPUT}"
 fi
 
-mkdir -p "${VLIB_CACHE_DIR}" "${OUTPUT}"
+mkdir -p "${VLIB_CACHE_DIR}" "${OUTPUT}" "${SUPPLEMENTARY}"
 
 # IC output directories (each geometry gets its own subdir)
 IC_CUBIC_RANDOM="${VLIB_CACHE_DIR}/cubic_random"
@@ -77,7 +81,7 @@ IC_CUBIC_GRID="${VLIB_CACHE_DIR}/cubic_grid"
 IC_SPHERICAL="${VLIB_CACHE_DIR}/spherical"
 IC_CYLINDRICAL="${VLIB_CACHE_DIR}/cylindrical"
 
-TOML_DIR="${VLIB_CACHE_DIR}/configs"
+TOML_DIR="${VLIB_RUN_ROOT}/config/generated"
 
 
 vlib::init_conda
@@ -97,8 +101,8 @@ echo ""
 echo "  LBOX: ${LBOX}   R_3D: ${R_3D}   D_4D: ${D_4D}   RCRIT: ${RCRIT}"
 echo "  NGRID: ${NGRID}   NPART: ${NPART}   NSHELL: ${NSHELL}"
 echo "  cache:  ${VLIB_CACHE_DIR}"
-echo "  output: ${OUTPUT}/particle-load.pdf"
-echo "          ${OUTPUT}/particle-load-2d.pdf"
+echo "  output: ${OUTPUT}/particle-loads.pdf"
+echo "          ${SUPPLEMENTARY}/particle-loads-3d.pdf"
 echo ""
 
 mkdir -p "${TOML_DIR}" \
@@ -333,7 +337,7 @@ _resolve_ic_paths() {
     IC_CY="$(_configured_ic "${IC_CYLINDRICAL}" "_Nsh${NSHELL}_Nr${NRBINS}_")"
 }
 
-if vlib::step_check "plot" "${OUTPUT}/particle-load.pdf"; then
+if vlib::step_check "plot" "${SUPPLEMENTARY}/particle-loads-3d.pdf"; then
     _resolve_ic_paths
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot.py" \
         --cubic-random "${IC_CR}" \
@@ -341,11 +345,11 @@ if vlib::step_check "plot" "${OUTPUT}/particle-load.pdf"; then
         --spherical    "${IC_SP}" \
         --cylindrical  "${IC_CY}" \
         --fraction "${PLOT_FRACTION}" \
-        -o "${OUTPUT}/particle-load.pdf"
+        -o "${SUPPLEMENTARY}/particle-loads-3d.pdf"
     vlib::step_done "plot"
 fi
 
-if vlib::step_check "plot_2d" "${OUTPUT}/particle-load-2d.pdf"; then
+if vlib::step_check "plot_2d" "${OUTPUT}/particle-loads.pdf"; then
     _resolve_ic_paths
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot.py" \
         --cubic-random "${IC_CR}" \
@@ -354,7 +358,7 @@ if vlib::step_check "plot_2d" "${OUTPUT}/particle-load-2d.pdf"; then
         --cylindrical  "${IC_CY}" \
         --plot-2d \
         --slice-thickness "${SLICE_THICKNESS}" \
-        -o "${OUTPUT}/particle-load-2d.pdf"
+        -o "${OUTPUT}/particle-loads.pdf"
     vlib::step_done "plot_2d"
 fi
 
@@ -370,8 +374,8 @@ if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
         --random-count "${NPART}" \
         --radius "${R_3D}" \
         --cylinder-length "${LZ}" \
-        --figure "${OUTPUT}/particle-load.pdf" \
-        --figure "${OUTPUT}/particle-load-2d.pdf" \
+        --figure "${OUTPUT}/particle-loads.pdf" \
+        --figure "${SUPPLEMENTARY}/particle-loads-3d.pdf" \
         --output "${OUTPUT}/result.json"
     vlib::step_done "evaluate"
 fi

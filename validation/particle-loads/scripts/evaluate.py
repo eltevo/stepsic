@@ -82,7 +82,7 @@ def evaluate(
             abs(len(coordinates["cubic_random"]) - random_count),
         )
         return ValidationResult(
-            campaign="particle-load",
+            campaign="particle-loads",
             parameters={
                 "box_size_mpc_h": box_size_mpc_h,
                 "grid_size": grid_size,
@@ -120,7 +120,7 @@ def evaluate(
                     limit=0,
                     unit="particles",
                     rationale="A grid has NGRID³ points and random mode has NPART.",
-                    source="particle-load construction contract",
+                    source="particle-count formulas",
                 ),
             ],
             numerical_archive=Path(cubic_random).parent.parent,
@@ -130,7 +130,7 @@ def evaluate(
         from validation._common.evaluation import malformed_result
 
         return malformed_result(
-            campaign="particle-load",
+            campaign="particle-loads",
             archive=cubic_random,
             figures=figures,
             error=error,
