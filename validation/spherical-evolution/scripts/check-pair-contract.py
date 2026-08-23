@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check and publish the StePS/periodic matched-pair contract."""
+"""Check that the StePS and periodic runs use matching inputs and outputs."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from validation.sphere.evolved import (
+from evolved import (
     atomic_write_json,
     snapshot_diagnostics,
     validate_pair_configuration,

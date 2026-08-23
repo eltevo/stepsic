@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure the full periodic cube with the repository FFT estimator."""
+"""Measure power in the complete periodic cube with stepsic's FFT estimator."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import h5py
 import numpy as np
 
 from validation._common.evaluation import atomic_savez
-from validation.sphere.evolved import measure_full_periodic_pk
+from evolved import measure_full_periodic_pk
 
 
 def main() -> None:

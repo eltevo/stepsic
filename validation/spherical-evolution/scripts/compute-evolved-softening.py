@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compute core mean-spacing / divisor softening for either StePS geometry."""
+"""Compute softening from the mean particle spacing in the central region."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import argparse
 import numpy as np
 
 
-from validation._common.catalog import load_snapshot, region_mask  # noqa: E402
+from validation._common.snapshots import load_snapshot, region_mask  # noqa: E402
 
 
 def main() -> None:

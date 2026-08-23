@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assemble the angular and full-domain power comparison archive."""
+"""Combine the angular and full-domain power measurements for plotting."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import camb
 import numpy as np
 
 from validation._common.evaluation import atomic_savez, load_npz
-from validation.sphere.evolved import physical_pk_to_h_units
+from evolved import physical_pk_to_h_units
 
 
 def _text_spectrum(path: str | Path) -> tuple[np.ndarray, np.ndarray]:

@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""Plot full-domain spectra and diagnostics against common Halofit."""
+"""Plot full-domain power spectra against the same Halofit prediction."""
 
 from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
-import os
-from pathlib import Path
-import tempfile
 
 import numpy as np
 
-from validation import setup_matplotlib
+from validation._common.plotting import atomic_savefig, setup_matplotlib
 
 
 def main() -> None:
@@ -46,28 +43,14 @@ def main() -> None:
     axes[1].set_ylabel("ratio")
     axes[1].legend(frameon=False)
     figure.tight_layout()
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{output.name}.tmp-", dir=output.parent,
-    )
-    os.close(descriptor)
-    temporary = Path(temporary_name)
     try:
-        figure.savefig(
-            temporary,
-            format=output.suffix.lstrip("."),
+        atomic_savefig(
+            figure,
+            args.output,
             bbox_inches="tight",
             metadata={"CreationDate": datetime(2000, 1, 1, tzinfo=timezone.utc)},
         )
-        file_descriptor = os.open(temporary, os.O_RDONLY)
-        try:
-            os.fsync(file_descriptor)
-        finally:
-            os.close(file_descriptor)
-        os.replace(temporary, output)
     finally:
-        temporary.unlink(missing_ok=True)
         plt.close(figure)
 
 

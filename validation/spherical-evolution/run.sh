@@ -1,56 +1,77 @@
 #!/usr/bin/env bash
 # ==========================================================================
-# Evolve one spherical StePS realization and compare it with one matched
-# periodic realization using centered HEALPix shells and full-domain P(k).
+# Evolve one spherical StePS model and compare it with a periodic model using centred HEALPix shells and full-domain P(k).
 #
 # Usage:
-#   bash evolved.sh [OPTIONS]
+#   bash run.sh [OPTIONS]
 #
 # Standard options:
-#   --step=N / --plot-only / --force / --force-step=A,B / --clean
+#   --size=SIZE / --step=N / --plot-only / --force / --force-step=A,B / --clean
 #   --config=PATH / --list-steps / -h / --help
 #
 # Required inputs:
-#   REFERENCE_MANIFEST  matched-pair manifest from validation/reference-nbody/run.sh
+#   REFERENCE_MANIFEST  periodic run description from validation/periodic-lpt/run.sh
 #   GLASS_SNAP          complete relaxed spherical StePS glass
 #                       (content hash included in consuming step manifests)
 #
-# Principal artifacts:
-#   evolved-cache/sphere/pair-contract.json
-#   evolved-cache/sphere/cl.npz
-#   evolved-cache/sphere/pk/steps-native.txt
-#   evolved-cache/sphere/pk/periodic-native.npz
-#   evolved-cache/sphere/evolved-comparison.npz
-#   output/evolved-sphere/evolved-cl.pdf
-#   output/evolved-sphere/evolved-pk.pdf
-#   output/evolved-sphere/result.json
+# Outputs:
+#   runs/<profile>/cache/pair-contract.json
+#   runs/<profile>/cache/cl.npz
+#   runs/<profile>/cache/pk/steps-native.txt
+#   runs/<profile>/cache/pk/periodic-native.npz
+#   runs/<profile>/cache/evolved-comparison.npz
+#   runs/<profile>/output/supplementary/spherical-evolution-cl.pdf
+#   runs/<profile>/output/supplementary/spherical-evolution-pk.pdf
 #
 # Steps:
-#   1. geom_ic      matched spherical 2LPT IC and exact field-hash check
+#   1. geom_ic      make a spherical 2LPT IC and confirm that its field matches
 #   2. build        spherical StePS simulation binary
 #   3. evolve       evolve the full StePS system to the requested epoch
-#   4. contract     record final matched-pair epoch and resolution metadata
-#   5. cl           matched-origin HEALPix spectra in configured shells
-#   6. pk_randoms   random catalog following the complete glass selection
-#   7. pk_steps     StePS_Pk.py over full snapshot, randoms, and glass
-#   8. pk_periodic  periodic FFT estimator over the complete cube
-#   9. compare      common-support and CAMB/Halofit diagnostics
+#   4. contract     confirm that final epochs and resolutions match
+#   5. cl           measure HEALPix spectra in matching radial shells
+#   6. pk_randoms   make random positions with the glass's radial distribution
+#   7. pk_steps     measure the full StePS snapshot with StePS_Pk.py
+#   8. pk_periodic  measure the complete periodic cube with an FFT
+#   9. compare      compare both spectra with CAMB/Halofit on shared k values
 #  10. plot_cl      evolved-cl.pdf
 #  11. plot_pk      evolved-pk.pdf
-#  12. evaluate     structural/provenance verdict (differences diagnostic)
 # ==========================================================================
 set -euo pipefail
 
 BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="${BASEDIR}/scripts${PYTHONPATH:+:${PYTHONPATH}}"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/evolved-config.env}"
-vlib::source_config "${CONFIG_FILE}"
+vlib::prepare_campaign spherical-evolution "${BASEDIR}" "${BASEDIR}/config.env"
 vlib::declare_steps \
     geom_ic build evolve contract cl pk_randoms pk_steps pk_periodic \
-    compare plot_cl plot_pk evaluate
+    compare plot_cl plot_pk
+vlib::manifest_implementation contract \
+    "${BASEDIR}/scripts/check-pair-contract.py" \
+    "${BASEDIR}/scripts/evolved.py"
+vlib::manifest_implementation evolve \
+    "${BASEDIR}/scripts/compute-evolved-softening.py"
+vlib::manifest_implementation cl \
+    "${BASEDIR}/scripts/measure-evolved-cl.py" \
+    "${BASEDIR}/scripts/evolved.py"
+vlib::manifest_implementation pk_randoms \
+    "${BASEDIR}/scripts/prepare-evolved-randoms.py" \
+    "${BASEDIR}/scripts/evolved.py"
+vlib::manifest_implementation pk_steps \
+    "${BASEDIR}/scripts/run-evolved-fkp.py"
+vlib::manifest_implementation pk_periodic \
+    "${BASEDIR}/scripts/measure-evolved-periodic-pk.py" \
+    "${BASEDIR}/scripts/evolved.py"
+vlib::manifest_implementation compare \
+    "${BASEDIR}/scripts/compare-evolved.py" \
+    "${BASEDIR}/scripts/evolved.py"
+vlib::manifest_implementation plot_cl \
+    "${BASEDIR}/scripts/plot-evolved-cl.py"
+vlib::manifest_implementation plot_pk \
+    "${BASEDIR}/scripts/plot-evolved-pk.py"
 if (( VLIB_LIST_STEPS )); then
+    vlib::profile_summary
     vlib::list_steps
     exit 0
 fi
@@ -58,9 +79,26 @@ if [[ -z "${REFERENCE_MANIFEST}" || ! -f "${REFERENCE_MANIFEST}" ]]; then
     echo "ERROR: REFERENCE_MANIFEST must name a periodic pair manifest." >&2
     exit 1
 fi
+case "${GLASS_INPUT_MODE}" in
+    generate)
+        if [[ "${VLIB_SIZE}" == custom || "${VLIB_SIZE}" == large ]]; then
+            echo "ERROR: generated spherical glass requires a small or medium profile." >&2
+            exit 2
+        fi
+        GENERATED_GLASS_ROOT="${VLIB_RUN_ROOT}/cache/generated-glass"
+        GLASS_INPUT_MODE=generate GLASS_PHASE=generation-only \
+            VLIB_RUN_ROOT_OVERRIDE="${GENERATED_GLASS_ROOT}" \
+            VLIB_RUN_ROOT_PARENT="${VLIB_RUN_ROOT}" \
+            bash "${BASEDIR}/../glass-quality/run.sh" --size="${VLIB_SIZE}" \
+            --evaluation=skip --run=spherical
+        GLASS_SNAP="$(vlib::find_last_snap "${GENERATED_GLASS_ROOT}/cache/spherical/glass")"
+        ;;
+    pre-generated) ;;
+    *) echo "ERROR: GLASS_INPUT_MODE must be generate or pre-generated." >&2; exit 2 ;;
+esac
 if [[ -z "${GLASS_SNAP}" || ! -f "${GLASS_SNAP}" ]]; then
-    echo "ERROR: GLASS_SNAP must name a complete relaxed spherical glass." >&2
-    exit 1
+    echo "ERROR: pre-generated mode requires an existing GLASS_SNAP." >&2
+    exit 2
 fi
 vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 vlib::steps::validate_backend
@@ -68,10 +106,11 @@ vlib::manifest_input geom_ic "${GLASS_SNAP}"
 vlib::manifest_input pk_randoms "${GLASS_SNAP}"
 vlib::manifest_input pk_steps "${GLASS_SNAP}"
 
-export VLIB_CACHE_DIR="${EVOLVED_CACHE_DIR:-${BASEDIR}/evolved-cache/sphere}"
-PARAM_DIR="${BASEDIR}/evolved-configs/sphere"
-BUILD_DIR="${BASEDIR}/evolved-builds"
-OUTPUT="${BASEDIR}/output/evolved-sphere"
+export VLIB_CACHE_DIR="${EVOLVED_CACHE_DIR:-${VLIB_RUN_ROOT}/cache}"
+PARAM_DIR="${VLIB_RUN_ROOT}/config/generated"
+BUILD_DIR="${VLIB_RUN_ROOT}/build"
+OUTPUT="${VLIB_RUN_ROOT}/output"
+FIGURES="${OUTPUT}/supplementary"
 IC_DIR="${VLIB_CACHE_DIR}/ic"
 SIM_DIR="${VLIB_CACHE_DIR}/simulation"
 PK_DIR="${VLIB_CACHE_DIR}/pk"
@@ -81,20 +120,21 @@ PK_RANDOMS="${PK_DIR}/randoms.hdf5"
 STEPS_PK_NATIVE="${PK_DIR}/steps-native.txt"
 PERIODIC_PK_NATIVE="${PK_DIR}/periodic-native.npz"
 COMPARISON_DATA="${VLIB_CACHE_DIR}/evolved-comparison.npz"
-CL_FIGURE="${OUTPUT}/evolved-cl.pdf"
-PK_FIGURE="${OUTPUT}/evolved-pk.pdf"
-EVOLVED_RESULT="${OUTPUT}/result.json"
+CL_FIGURE="${FIGURES}/spherical-evolution-cl.pdf"
+PK_FIGURE="${FIGURES}/spherical-evolution-pk.pdf"
 export PARAM_DIR BUILD_DIR
 
 if (( VLIB_CLEAN )); then
     vlib::clear_dir "${VLIB_CACHE_DIR}"
     vlib::clear_dir "${OUTPUT}"
 fi
-mkdir -p "${PARAM_DIR}" "${BUILD_DIR}" "${OUTPUT}" \
+mkdir -p "${PARAM_DIR}" "${BUILD_DIR}" "${FIGURES}" \
     "${IC_DIR}" "${SIM_DIR}" "${PK_DIR}"
 
 vlib::init_conda
 vlib::ensure_env "${STEPSIC_ENV}"
+vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/../_common/snapshots.py" \
+    "${GLASS_SNAP}" --geometry spherical --radius-mpc-h "${R_3D}"
 if ! (( VLIB_PLOT_ONLY )); then
     vlib::ensure_env "${STEPS_ENV}"
 fi
@@ -115,7 +155,7 @@ STEPS_REVISION="$(git -C "${STEPS_SRC}" rev-parse HEAD)"
 
 echo ""
 echo "========================================================================"
-echo "  Evolved spherical matched-pair comparison"
+echo "  Evolved spherical and periodic comparison"
 echo "========================================================================"
 echo "  R_3D=${R_3D} Mpc/h  RCRIT=${RCRIT} Mpc/h  Lbox=${LBOX_SIDE} Mpc/h"
 echo "  reference manifest: ${REFERENCE_MANIFEST}"
@@ -375,20 +415,6 @@ if vlib::step_check "plot_pk" "${PK_FIGURE}"; then
         "${BASEDIR}/scripts/plot-evolved-pk.py" \
         --input "${COMPARISON_DATA}" --output "${PK_FIGURE}"
     vlib::step_done "plot_pk"
-fi
-
-if vlib::step_check "evaluate" "${EVOLVED_RESULT}"; then
-    vlib::run_python "${STEPSIC_ENV}" \
-        "${BASEDIR}/scripts/evaluate-evolved.py" \
-        --archive "${COMPARISON_DATA}" \
-        --contract "${PAIR_CONTRACT}" \
-        --cl-figure "${CL_FIGURE}" \
-        --pk-figure "${PK_FIGURE}" \
-        --cl-native "${CL_DATA}" \
-        --steps-pk-native "${STEPS_PK_NATIVE}" \
-        --periodic-pk-native "${PERIODIC_PK_NATIVE}" \
-        --output "${EVOLVED_RESULT}"
-    vlib::step_done "evaluate"
 fi
 
 vlib::report_done

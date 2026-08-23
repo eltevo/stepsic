@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run StePS_Pk.py once on the complete spherical selection."""
+"""Measure the complete spherical snapshot with StePS_Pk.py."""
 
 from __future__ import annotations
 

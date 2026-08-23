@@ -1,4 +1,4 @@
-"""Pure contracts and estimators for the evolved spherical validation."""
+"""Measurements shared by the spherical-evolution scripts."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ FIELD_HASH_ALGORITHM = "sha256-canonical-hdf5-dataset"
 
 
 def atomic_write_json(path: str | Path, value: Mapping[str, Any]) -> None:
-    """Atomically publish strict JSON in the destination directory."""
+    """Write JSON atomically in the destination directory."""
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
@@ -68,7 +68,7 @@ def snapshot_diagnostics(path: str | Path) -> dict[str, Any]:
         or not np.all(np.isfinite(masses))
         or np.any(masses <= 0.0)
     ):
-        raise ValueError(f"{path} has invalid epoch or particle metadata")
+        raise ValueError(f"{path} has an invalid epoch, particle count, or particle mass")
     return {
         "final_scale_factor": scale_factor,
         "final_redshift": redshift,
@@ -83,13 +83,13 @@ def canonical_dataset_sha256(
     path: str | Path,
     dataset_name: str,
 ) -> str:
-    """Hash the logical HDF5 dataset, independently of container metadata."""
+    """Hash an HDF5 array independently of its file layout."""
     with h5py.File(path, "r") as handle:
         if dataset_name not in handle:
             raise ValueError(f"{path} contains no {dataset_name!r} dataset")
         values = np.asarray(handle[dataset_name][...])
     if values.dtype.hasobject:
-        raise ValueError("object-valued HDF5 datasets cannot be canonicalized")
+        raise ValueError("object-valued HDF5 arrays cannot be hashed reproducibly")
 
     canonical_dtype = values.dtype.newbyteorder("<")
     canonical = np.ascontiguousarray(values.astype(canonical_dtype, copy=False))
@@ -133,7 +133,7 @@ def validate_pair_configuration(
     )
     for key, value in paths.items():
         if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"paths.{key} must be a nonempty path")
+            raise ValueError(f"paths.{key} must be a non-empty path")
 
     extent = _mapping(manifest.get("extent"), "extent")
     radius_mpc_h = float(expected["radius_mpc_h"])
@@ -439,7 +439,7 @@ def physical_pk_to_h_units(
     power = np.asarray(power_mpc3, dtype=np.float64)
     h = float(h)
     if k.shape != power.shape or k.ndim != 1 or k.size == 0:
-        raise ValueError("k and power must be nonempty one-dimensional peers")
+        raise ValueError("k and power must be non-empty one-dimensional arrays of the same length")
     if (
         not np.all(np.isfinite(k))
         or not np.all(np.isfinite(power))
@@ -457,13 +457,13 @@ def measure_full_periodic_pk(
     box_size_mpc_h: float,
     nmesh: int,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.int64]]:
-    """Pass the complete periodic particle arrays to the native estimator."""
+    """Measure power from every particle in the periodic box."""
     from stepsic.pk import measure_pk
 
     coordinates = np.asarray(coordinates_mpc_h, dtype=np.float64)
     masses = np.asarray(masses_1e11_msun_h, dtype=np.float64)
     if coordinates.ndim != 2 or coordinates.shape[1:] != (3,) or len(coordinates) == 0:
-        raise ValueError("coordinates must be a nonempty (n_part, 3) array")
+        raise ValueError("coordinates must be a non-empty array with shape (n_part, 3)")
     if masses.shape != (len(coordinates),):
         raise ValueError("masses must contain one value per periodic particle")
     if (
@@ -474,7 +474,7 @@ def measure_full_periodic_pk(
         or box_size_mpc_h <= 0.0
         or nmesh < 1
     ):
-        raise ValueError("periodic estimator inputs must be finite and positive")
+        raise ValueError("coordinates and masses must be finite, and masses, box size, and nmesh must be positive")
     return measure_pk(
         coordinates,
         np.full(3, box_size_mpc_h),
@@ -494,7 +494,7 @@ def generate_full_selection_randoms(
     factor: int,
     seed: int,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Resample every glass radius and mass with isotropic directions."""
+    """Keep each sampled radius and mass but draw a new direction uniformly."""
     coordinates = np.asarray(coordinates_mpc_h, dtype=np.float64)
     masses = np.asarray(masses_1e11_msun_h, dtype=np.float64)
     if coordinates.ndim != 2 or coordinates.shape[1:] != (3,):

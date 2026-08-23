@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure matched-origin HEALPix shell spectra from both full snapshots."""
+"""Measure HEALPix spectra in matching shells from both snapshots."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import h5py
 import numpy as np
 
 from validation._common.evaluation import atomic_savez
-from validation.sphere.evolved import (
+from evolved import (
     measure_angular_spectra,
     minimum_image_displacements,
     parse_shells,
@@ -45,7 +45,7 @@ def main() -> None:
     with Path(args.contract).open(encoding="utf-8") as stream:
         contract = json.load(stream)
     if not contract.get("field_hashes_match"):
-        raise ValueError("pair contract field hashes have not passed")
+        raise ValueError("the two initial density fields do not have matching hashes")
     reference = contract["paths"]["reference"]
     periodic_snapshot = reference["snapshot"]
     box_size_mpc_h = 2.0 * args.radius_mpc_h

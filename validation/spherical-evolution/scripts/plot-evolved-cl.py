@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""Plot matched-shell angular spectra and their signed differences."""
+"""Plot angular spectra from matching shells and their signed differences."""
 
 from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
-import os
-from pathlib import Path
-import tempfile
 
 import numpy as np
 
-from validation import setup_matplotlib
+from validation._common.plotting import atomic_savefig, setup_matplotlib
 
 
 def main() -> None:
@@ -43,28 +40,14 @@ def main() -> None:
     axes[-1, 0].set_xlabel(r"$\ell$")
     axes[-1, 1].set_xlabel(r"$\ell$")
     figure.tight_layout()
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{output.name}.tmp-", dir=output.parent,
-    )
-    os.close(descriptor)
-    temporary = Path(temporary_name)
     try:
-        figure.savefig(
-            temporary,
-            format=output.suffix.lstrip("."),
+        atomic_savefig(
+            figure,
+            args.output,
             bbox_inches="tight",
             metadata={"CreationDate": datetime(2000, 1, 1, tzinfo=timezone.utc)},
         )
-        file_descriptor = os.open(temporary, os.O_RDONLY)
-        try:
-            os.fsync(file_descriptor)
-        finally:
-            os.close(file_descriptor)
-        os.replace(temporary, output)
     finally:
-        temporary.unlink(missing_ok=True)
         plt.close(figure)
 
 

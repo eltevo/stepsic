@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a reproducible random catalog from the complete spherical glass."""
+"""Create reproducible random positions with the spherical glass's radial distribution."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import tempfile
 import h5py
 import numpy as np
 
-from validation.sphere.evolved import generate_full_selection_randoms
+from evolved import generate_full_selection_randoms
 
 
 def main() -> None:
