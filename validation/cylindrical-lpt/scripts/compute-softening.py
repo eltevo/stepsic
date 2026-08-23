@@ -1,17 +1,9 @@
 #!/usr/bin/env python3
-"""
-Compute gravitational softening for a cylindrical StePS IC.
+"""Compute gravitational softening for a cylindrical StePS initial condition.
 
-Strategy:
-  1. If the HDF5 header contains SofteningLength / PARTICLE_RADII / Softening,
-     use that value directly.
-  2. Otherwise, identify the constant-resolution RCRIT zone (particles with
-     minimum mass), measure its cylindrical volume from the actual particle
-     coordinates, and apply  eps = (V / N)^{1/3} / 40.
-     This is h-agnostic: the softening comes out in whatever coordinate units
-     the file uses.
-
-Usage: python compute-softening.py <snapshot.hdf5>
+Use a softening value stored in the HDF5 header when available. Otherwise,
+measure the mean particle spacing in the constant-resolution core and divide it
+by 40. The result uses the snapshot's coordinate units.
 """
 import sys
 import h5py

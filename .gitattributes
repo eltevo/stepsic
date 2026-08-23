@@ -1,2 +1,0 @@
-validation/cylinder/reference/fig7-pk-1lpt.txt filter=lfs diff=lfs merge=lfs -text
-validation/cylinder/reference/fig7-pk-2lpt.txt filter=lfs diff=lfs merge=lfs -text

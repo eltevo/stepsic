@@ -1,16 +1,8 @@
 #!/usr/bin/env python3
-"""
-Generate a random catalog for the FKP power spectrum estimator.
+"""Generate an FKP random catalogue for a cylindrical simulation.
 
-For a cylindrical (S^1 x R^2) simulation, the randoms must fill the
-same volume with the same radial mass profile as the data. This script
-reads the glass file, measures its radial mass profile in cylindrical
-annuli, then generates N_random >> N_data random particles distributed
-according to that profile.
-
-Usage:
-    python generate_randoms.py <glass.hdf5> <output_randoms.hdf5> \
-        [--nfactor 10] [--seed 42]
+The random particles fill the same cylinder and follow the radial mass profile
+measured from the input glass.
 """
 
 import argparse

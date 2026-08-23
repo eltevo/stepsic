@@ -2,10 +2,7 @@
 set -euo pipefail
 
 # ============================================================================
-#  validation/cylinder/run.sh - Cylindrical (S^1 x R^2) end-to-end validation
-#
-#  End-to-end pipeline: glass -> 1LPT + 2LPT cosmological ICs -> N-body
-#  simulations -> P(k) measurement and comparison plots.
+#  Evolve cylindrical 1LPT and 2LPT initial conditions and compare their power.
 #
 #  Pipeline steps:
 #    1. preglass      - cylindrical pre-glass IC  (stepsic, LPTORDER=0)
@@ -19,10 +16,10 @@ set -euo pipefail
 #    9. run_sim_1lpt  - run 1LPT LCDM simulation  (z_init -> z=0)
 #   10. measure       - randoms + 1LPT/2LPT P(k) archives
 #   11. plot          - validation figures
-#   12. evaluate      - scientific result contract
+#   12. evaluate      - check large-scale 1LPT/2LPT convergence
 #
-#  When GLASS_SNAP is set, steps 1-4 are omitted and the pipeline starts at
-#  ic_2lpt. The glass content hash enters the IC and measurement manifests.
+#  When GLASS_SNAP is set, steps 1-4 are omitted. Cached steps record the
+#  glass hash so results are not reused with a different input.
 #
 #  Glass-making uses EdS cosmology (Omega_m=1) with reversed gravity (GLASS_MAKING).
 #  H0_EdS = 100 km/s/Mpc (h_EdS = 1); see vlib::cosmology::eds_h0 in
@@ -39,11 +36,12 @@ set -euo pipefail
 #    bash run.sh [OPTIONS]
 #
 #  Options:
+#    --size=SIZE   small, medium (default), or approved large profile
 #    --step=N      Start from step N (1–12, default 1)
 #    --plot-only   Refresh measurement and plotting inputs
 #    --force       Re-run all steps regardless of cached outputs
 #    --clean       Delete cache/ before running
-#    --config=PATH Source an alternative config.env
+#    --config=PATH Select a typed custom TOML profile
 #    --list-steps  Print the step list and exit
 #    -h, --help    Print this help text and exit
 #
@@ -63,7 +61,7 @@ set -euo pipefail
 #    PK_RANDOMS_NFACTOR, PK_RANDOMS_SEED
 #
 #  Examples:
-#    # Full end-to-end run with 4 GPUs
+#    # Full run with 4 GPUs
 #    N_GPU=4 bash run.sh
 #
 #    # Resume from step 5 (glass done, generate cosmological ICs)
@@ -80,21 +78,45 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
-vlib::source_config "${CONFIG_FILE}"
+vlib::prepare_campaign cylindrical-lpt "${BASEDIR}" "${BASEDIR}/config.env"
+
+case "${GLASS_INPUT_MODE}" in
+    generate)
+        if [[ -n "${GLASS_SNAP}" ]]; then
+            echo "ERROR: GLASS_SNAP is only valid with GLASS_INPUT_MODE=pre-generated." >&2
+            exit 2
+        fi
+        ;;
+    pre-generated)
+        if [[ -z "${GLASS_SNAP}" || ! -f "${GLASS_SNAP}" ]]; then
+            echo "ERROR: pre-generated mode requires an existing GLASS_SNAP." >&2
+            exit 2
+        fi
+        ;;
+    *) echo "ERROR: GLASS_INPUT_MODE must be generate or pre-generated." >&2; exit 2 ;;
+esac
 
 if [[ -n "${GLASS_SNAP}" ]]; then
     vlib::declare_steps ic_2lpt ic_1lpt build_sim run_sim_2lpt run_sim_1lpt measure plot evaluate
 else
     vlib::declare_steps preglass glass_param build_glass run_glass ic_2lpt ic_1lpt build_sim run_sim_2lpt run_sim_1lpt measure plot evaluate
 fi
+vlib::manifest_implementation glass_param \
+    "${BASEDIR}/scripts/compute-softening.py"
+vlib::manifest_implementation ic_2lpt \
+    "${BASEDIR}/scripts/compute-softening.py"
+vlib::manifest_implementation ic_1lpt \
+    "${BASEDIR}/scripts/compute-softening.py"
+vlib::manifest_implementation measure \
+    "${BASEDIR}/scripts/generate-randoms.py"
+vlib::manifest_implementation plot \
+    "${BASEDIR}/scripts/plot-pk-ratio.py" \
+    "${BASEDIR}/scripts/plot-lpt-ratio.py"
+vlib::manifest_evaluator evaluate "${BASEDIR}/scripts/evaluate.py"
 if (( VLIB_LIST_STEPS )); then
+    vlib::profile_summary
     vlib::list_steps
     exit 0
-fi
-if [[ -n "${GLASS_SNAP}" && ! -f "${GLASS_SNAP}" ]]; then
-    echo "ERROR: GLASS_SNAP not found: ${GLASS_SNAP}" >&2
-    exit 1
 fi
 vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 vlib::steps::validate_backend
@@ -105,10 +127,10 @@ if [[ -n "${GLASS_SNAP}" ]]; then
 fi
 
 # -- Directory layout --------------------------------------------------------
-export VLIB_CACHE_DIR="${VLIB_CACHE_DIR:-${BASEDIR}/cache}"
-PARAM_DIR="${BASEDIR}/configs"
-BUILD_DIR="${BASEDIR}/builds"
-OUTPUT="${BASEDIR}/output"
+export VLIB_CACHE_DIR="${VLIB_RUN_ROOT}/cache"
+PARAM_DIR="${VLIB_RUN_ROOT}/config/generated"
+BUILD_DIR="${VLIB_RUN_ROOT}/build"
+OUTPUT="${VLIB_RUN_ROOT}/output"
 export PARAM_DIR BUILD_DIR
 
 PREGLASS_DIR="${VLIB_CACHE_DIR}/preglass"
@@ -148,6 +170,11 @@ SIM_BIN="${BUILD_DIR}/StePS_cylindrical${STEPS_BACKEND_SUFFIX}$(vlib::steps::pre
 # -- Conda envs --------------------------------------------------------------
 vlib::init_conda
 vlib::ensure_env "${STEPSIC_ENV}"
+if [[ "${GLASS_INPUT_MODE}" == pre-generated ]]; then
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/../_common/snapshots.py" \
+        "${GLASS_SNAP}" --geometry cylindrical --radius-mpc-h "${R_3D}" \
+        --length-mpc-h "${LZ}"
+fi
 if ! (( VLIB_PLOT_ONLY )); then
     vlib::ensure_env "${STEPS_ENV}"
 fi
@@ -155,7 +182,7 @@ fi
 # -- Banner ------------------------------------------------------------------
 echo ""
 echo "========================================================================"
-echo "  Cylindrical (S^1 x R^2) end-to-end validation pipeline"
+echo "  Cylindrical 1LPT and 2LPT comparison (S^1 x R^2)"
 echo "========================================================================"
 echo ""
 echo "  Geometry:       R_3D=${R_3D} Mpc, D_4D=${D_4D} Mpc, Lz=${LZ} Mpc"
@@ -483,11 +510,6 @@ fi
 SNAP_1LPT="${SNAP_1LPT:-$(vlib::breadcrumb_get SNAP_1LPT)}"
 
 # -- Step 10: measure -------------------------------------------------------
-# --plot-only measures spectra from cached simulation data before plotting.
-_CYLINDER_PLOT_ONLY="${VLIB_PLOT_ONLY}"
-if (( VLIB_PLOT_ONLY )); then
-    VLIB_PLOT_ONLY=0
-fi
 if vlib::step_check "measure" "${PK_DIR}/pk_1lpt.txt" "${PK_DIR}/pk_2lpt.txt"; then
     for _req_var in GLASS_SNAP SNAP_2LPT SNAP_1LPT; do
         if [[ -z "${!_req_var:-}" || ! -f "${!_req_var}" ]]; then
@@ -535,18 +557,17 @@ if vlib::step_check "measure" "${PK_DIR}/pk_1lpt.txt" "${PK_DIR}/pk_2lpt.txt"; t
     done
     vlib::step_done "measure"
 fi
-VLIB_PLOT_ONLY="${_CYLINDER_PLOT_ONLY}"
 
 # -- Step 11: plot ----------------------------------------------------------
-if vlib::step_check "plot" "${OUTPUT}/cylinder_pk.pdf" "${OUTPUT}/cylinder_lpt_ratio.pdf"; then
+if vlib::step_check "plot" "${OUTPUT}/cylindrical-power.pdf" "${OUTPUT}/cylindrical-lpt-ratio.pdf"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot-pk-ratio.py" \
         --pk "${PK_DIR}/pk_2lpt.txt" \
         --snapshot "${SNAP_2LPT}" \
-        -o "${OUTPUT}/cylinder_pk.pdf"
+        -o "${OUTPUT}/cylindrical-power.pdf"
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot-lpt-ratio.py" \
         --pk-1lpt "${PK_DIR}/pk_1lpt.txt" \
         --pk-2lpt "${PK_DIR}/pk_2lpt.txt" \
-        -o "${OUTPUT}/cylinder_lpt_ratio.pdf"
+        -o "${OUTPUT}/cylindrical-lpt-ratio.pdf"
     vlib::step_done "plot"
 fi
 
@@ -554,8 +575,8 @@ if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/evaluate.py" \
         --one-lpt "${PK_DIR}/pk_1lpt.txt" \
         --two-lpt "${PK_DIR}/pk_2lpt.txt" \
-        --figure "${OUTPUT}/cylinder_pk.pdf" \
-        --figure "${OUTPUT}/cylinder_lpt_ratio.pdf" \
+        --figure "${OUTPUT}/cylindrical-power.pdf" \
+        --figure "${OUTPUT}/cylindrical-lpt-ratio.pdf" \
         --output "${OUTPUT}/result.json"
     vlib::step_done "evaluate"
 fi

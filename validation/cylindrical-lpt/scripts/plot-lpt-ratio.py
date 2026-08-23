@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-'''
-Plot the power spectrum ratio P_1LPT(k) / P_2LPT(k) for cylindrical
-(S^1 x R^2) StePS simulations, as an end-to-end validation of stepsic
-initial conditions evolved through StePS.
-
-Produces a single-panel figure matching the A&A column-width style of
-the other validation figures in the stepsic paper.
-
-Usage:
-    python plot-lpt-ratio.py \
-        --pk-1lpt work/pk_1lpt.txt \
-        --pk-2lpt work/pk_2lpt.txt \
-        --h 0.6774 \
-        -o work/validation_cylindrical_pk_ratio.pdf
-'''
+'''Plot the 1LPT-to-2LPT power ratio after cylindrical StePS evolution.'''
 
 from __future__ import annotations
 
@@ -27,7 +13,7 @@ import numpy as np
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-from validation import setup_matplotlib
+from validation._common.plotting import atomic_savefig, setup_matplotlib
 
 
 # A&A single-column width [inches]
@@ -147,7 +133,7 @@ def plot_pk_ratio(
     )
 
     fig.tight_layout()
-    fig.savefig(output, dpi=300, bbox_inches="tight")
+    atomic_savefig(fig, output, dpi=300, bbox_inches="tight")
     log.info("Figure saved to %s", output)
     plt.close(fig)
 

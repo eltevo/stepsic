@@ -1,26 +1,5 @@
 #!/usr/bin/env python3
-'''
-Plot the power spectrum ratio P_meas(k) / P_ref(k) for a cylindrical
-S^1 x R^2 StePS simulation, as an end-to-end validation of stepsic
-initial conditions evolved through StePS.
-
-Produces a single-panel figure matching the style of the other
-validation figures in the stepsic paper (A&A column width).
-
-Usage:
-    python plot_pk_ratio.py --pk work/pk_cylindrical_z0.txt \
-                            --snapshot work/sim_output/snapshot_XXXX.hdf5 \
-                            -o work/validation_cylindrical_pk.pdf
-
-Optionally, compare multiple redshifts:
-    python plot_pk_ratio.py \
-        --pk work/pk_z3.txt work/pk_z1.txt work/pk_z0.txt \
-        --labels "z=3" "z=1" "z=0" \
-        --snapshot work/sim_output/snapshot_0003.hdf5 \
-                   work/sim_output/snapshot_0005.hdf5 \
-                   work/sim_output/snapshot_0006.hdf5 \
-        -o work/validation_cylindrical_pk.pdf
-'''
+'''Plot measured-to-reference power ratios for cylindrical StePS snapshots.'''
 
 from __future__ import annotations
 
@@ -34,7 +13,8 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 # If running from the stepsic repo, use its matplotlib setup
-from validation import VALIDATION_COSMOLOGY, setup_matplotlib
+from validation._common.cosmology_fields import VALIDATION_COSMOLOGY
+from validation._common.plotting import atomic_savefig, setup_matplotlib
 
 
 # A&A single-column width [inches]
@@ -151,7 +131,7 @@ def detect_discontinuities(
         \Delta_i = \log P_{i+1} - 2\,\log P_i + \log P_{i-1}
  
     normalised by the local spacing :math:`\Delta\!\log k`. Points whose
-    absolute deviation from the median exceeds ``sigma_threshold`` × MAD
+    absolute deviation from the median exceeds ``sigma_threshold`` x MAD
     are flagged.
  
     Parameters
@@ -183,7 +163,7 @@ def detect_discontinuities(
     dk_mid = 0.5 * (dk[:-1] + dk[1:])
     d2_norm = d2 / dk_mid**2
  
-    # Robust outlier detection: median absolute deviation
+    # Use median absolute deviation so a few outliers do not set the scale.
     med = np.median(d2_norm)
     mad = np.median(np.abs(d2_norm - med))
     if mad == 0:
@@ -329,7 +309,7 @@ def plot_pk_measured(
     ax.legend(fontsize=7, loc="lower left", frameon=False)
  
     fig.tight_layout()
-    fig.savefig(output, dpi=300, bbox_inches="tight")
+    atomic_savefig(fig, output, dpi=300, bbox_inches="tight")
     log.info(f"Measured P(k) figure saved to {output}")
     plt.close(fig)
  
@@ -381,7 +361,7 @@ def plot_pk_reference(
     ax.legend(fontsize=7, loc="lower left", frameon=False)
  
     fig.tight_layout()
-    fig.savefig(output, dpi=300, bbox_inches="tight")
+    atomic_savefig(fig, output, dpi=300, bbox_inches="tight")
     log.info(f"Reference P(k) figure saved to {output}")
     plt.close(fig)
  
@@ -467,7 +447,7 @@ def plot_pk_ratio(
     ax.legend(fontsize=7, loc="lower left", ncol=2, frameon=False)
 
     fig.tight_layout()
-    fig.savefig(output, dpi=300, bbox_inches="tight")
+    atomic_savefig(fig, output, dpi=300, bbox_inches="tight")
     log.info(f"Figure saved to {output}")
     plt.close(fig)
 

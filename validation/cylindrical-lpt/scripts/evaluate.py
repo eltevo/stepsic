@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate the expected low-k convergence of 1LPT and 2LPT."""
+"""Check that 1LPT and 2LPT converge on large scales."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def evaluate(
             source="Lagrangian perturbation-theory convergence",
         )
         return ValidationResult(
-            campaign="cylinder",
+            campaign="cylindrical-lpt",
             parameters={
                 "common_bin_count": len(k),
                 "low_k_max_inv_mpc": float(k[midpoint - 1]),
@@ -86,7 +86,7 @@ def evaluate(
         )
     except (IndexError, OSError, TypeError, ValueError) as error:
         return malformed_result(
-            campaign="cylinder",
+            campaign="cylindrical-lpt",
             archive=one_lpt,
             figures=figures,
             error=error,
