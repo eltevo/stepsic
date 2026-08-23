@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  validation/grid/run.sh - P(k) recovery on cubic grids (four-panel figure)
+#  Measure P(k) recovery on cubic grids.
 #
 #  Each panel isolates one parameter dimension while holding the others
 #  fixed. All panels use Angulo & Pontzen (2016) paired-fixed averaging.
@@ -14,12 +14,13 @@
 #    bash run.sh [OPTIONS]
 #
 #  Options:
+#    --size=SIZE       small, medium (default), or approved large profile
 #    --step=N          Start from step N (default 1)
 #    --plot-only       Regenerate the PDF from cached .npz files
 #    --force           Re-run every step, ignoring cached outputs
 #    --force-step=A,B  Re-run only the named steps
 #    --clean           Delete cache/ and output/ before running
-#    --config=PATH     Source an alternative config.env
+#    --config=PATH     Select a typed custom TOML profile
 #    --list-steps      Print the step list and exit
 #    -h, --help        Print this help text and exit
 #
@@ -49,18 +50,23 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
-vlib::source_config "${CONFIG_FILE}"
+vlib::prepare_campaign grid-power-recovery "${BASEDIR}" "${BASEDIR}/config.env"
 
 vlib::declare_steps panel_a panel_b panel_c panel_d plot evaluate
+for _step in panel_a panel_b panel_c panel_d; do
+    vlib::manifest_implementation "${_step}" "${BASEDIR}/scripts/run.py"
+done
+vlib::manifest_implementation plot "${BASEDIR}/scripts/plot.py"
+vlib::manifest_evaluator evaluate "${BASEDIR}/scripts/evaluate.py"
 if (( VLIB_LIST_STEPS )); then
+    vlib::profile_summary
     vlib::list_steps
     exit 0
 fi
 vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 
-VLIB_CACHE_DIR="${BASEDIR}/cache"
-OUTPUT="${BASEDIR}/output"
+VLIB_CACHE_DIR="${VLIB_RUN_ROOT}/cache"
+OUTPUT="${VLIB_RUN_ROOT}/output"
 
 if (( VLIB_CLEAN )); then
     vlib::clear_dir "${VLIB_CACHE_DIR}"
@@ -80,7 +86,7 @@ fi
 
 echo ""
 echo "========================================================================"
-echo "  Grid validation: P(k) recovery (four-panel figure)"
+echo "  Grid P(k) recovery"
 echo "========================================================================"
 echo ""
 echo "  Lbox: ${LBOX} Mpc/h   seed: ${SEED}   paired: ${PAIRED}"

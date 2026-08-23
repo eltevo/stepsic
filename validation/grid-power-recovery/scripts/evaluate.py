@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate the grid campaign's mode-counted power-recovery claim."""
+"""Check recovered LPT power against Gaussian sampling variance."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def evaluate(
             source="Gaussian Fourier-mode sampling variance",
         )
         return ValidationResult(
-            campaign="grid",
+            campaign="grid-power-recovery",
             parameters=parameters,
             provenance={
                 "archives": [
@@ -85,7 +85,7 @@ def evaluate(
         )
     except (KeyError, OSError, TypeError, ValueError) as error:
         return malformed_result(
-            campaign="grid",
+            campaign="grid-power-recovery",
             archive=archives[0] if archives else "",
             figures=[figure],
             error=error,

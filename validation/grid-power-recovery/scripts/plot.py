@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
 '''
-Plot stepsic P(k) validation results from ``.npz`` archives produced
-by :mod:`validate_run`.
+Plot measured-to-reference power ratios from grid-recovery archives.
 
-Produces a single four-panel figure (vertical stack, shared x-axis)
-designed for a single-column A&A layout:
+The four panels compare:
 
     Panel A, Resolution dependence (multiple nmesh, fixed z/LPT/method)
     Panel B, Redshift dependence   (multiple z, fixed nmesh/LPT/method)
     Panel C, LPT order comparison  (1LPT vs 2LPT, fixed nmesh/z/method)
     Panel D, MAS scheme comparison (NGP/CIC/TSC, fixed nmesh/z/LPT)
 
-Each panel can be loaded from a separate ``.npz`` file, or all four
-can live in a single archive if the run covered the full parameter
-space.
+Each panel may use a separate archive, or all four may read one archive containing every requested measurement.
 
 Usage
 -----
@@ -42,7 +38,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 
-from validation import setup_matplotlib, load_archive
+from validation._common.plotting import atomic_savefig, setup_matplotlib
+from validation._common.artifacts import load_archive
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -51,12 +48,12 @@ log = logging.getLogger(__name__)
 ArrayF: TypeAlias = NDArray[np.float64]
 ArrayI: TypeAlias = NDArray[np.int64]
 
-# MAS display names
+# Names used in the plot legend.
 MAS_LABELS = {'ngp': 'NGP', 'cic': 'CIC', 'tsc': 'TSC'}
 
 
 def _z_tag(z: float) -> str:
-    '''Reproduce the key-formatting convention from validate_run.'''
+    '''Format a redshift as it appears in an archive key.'''
     if np.isclose(z, round(z)):
         return str(int(round(z)))
     return f'{z:.1f}'
@@ -336,7 +333,7 @@ def plot_validation(
     fig.subplots_adjust(hspace=0.15)
 
     if output:
-        fig.savefig(output, bbox_inches='tight')
+        atomic_savefig(fig, output, bbox_inches='tight')
         log.info('Figure saved to %s', output)
     else:
         plt.show()
@@ -350,7 +347,7 @@ def _discover_keys(data: dict, prefix: str) -> list[str]:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description='Four-panel P(k) validation in the `stepsic` article.',
+        description='Plot power recovery as resolution, redshift, LPT order, and mass assignment change.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument(

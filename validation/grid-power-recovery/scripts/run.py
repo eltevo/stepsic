@@ -1,17 +1,10 @@
 #!/usr/bin/env python3
 '''
-Compute validation data for stepsic P(k) recovery.
+Measure how well particle power recovers the input spectrum.
 
-Generates LPT-displaced particle P(k) measurements for one or more
-combinations of mesh resolution, LPT order, target redshift, and
-mass-assignment scheme. Results are serialised to a ``.npz`` archive
-that a companion plotting script can consume.
+The script varies mesh resolution, LPT order, target redshift, and mass-assignment method, then writes the measurements to a NumPy archive.
 
-Also records direct-field P(k) measurements for debugging
-(``--debug-field``); these are skipped by default in paired-fixed mode
-since they are trivially unity.
-
-No matplotlib dependency - safe for headless HPC jobs.
+``--debug-field`` also records power directly from the Fourier field. Paired-fixed runs omit this by default because the ratio is identically one.
 
 Usage
 -----
@@ -61,7 +54,7 @@ from stepsic.pk import (
     measure_pk_from_delta_k,
 )
 
-from validation import (
+from validation._common.cosmology_fields import (
     ArrayF,
     ArrayI,
     GrowthData,
@@ -403,9 +396,7 @@ def run_validation(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            'Run stepsic P(k) validation across multiple resolutions, '
-            'redshifts, LPT orders, and MAS methods. Save results to '
-            'an .npz archive for plotting.'
+            'Measure particle power at several resolutions, redshifts, LPT orders, and mass-assignment methods, then save a NumPy archive.'
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
