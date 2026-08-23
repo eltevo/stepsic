@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 '''
-Aspect-rescale residual-force summary.
+Plot residual force after compressing a toroidal glass to several aspect ratios.
 
-Consumes diagnose.py archives (with force data) for the toroidal glass
-at aspect ratios 1:1 (control), s:1 rescales, and the Poisson twin, and
-plots the dimensionless residual force q = |F| d^2 / m against the
-aspect ratio. The twin level is the known-bad ceiling; the 1:1 control
-is the relaxed floor. The rescaled values show when residual forces approach the Poisson ceiling.
+The 1:1 glass gives the relaxed reference and the Poisson twin gives the force expected from random particle positions. The rescaled measurements show how ``q = |F| d^2 / m`` changes with aspect ratio.
 
 Usage
 -----
@@ -26,7 +22,8 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 
-from validation import setup_matplotlib, load_archive
+from validation._common.plotting import atomic_savefig, setup_matplotlib
+from validation._common.artifacts import load_archive
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -34,14 +31,14 @@ log = logging.getLogger(__name__)
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description='Residual force vs aspect-rescale ratio.',
+        description='Plot residual force after compressing a toroidal glass.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument('--diag', action='append', required=True,
                    metavar='ASPECT:NPZ',
                    help='Aspect ratio and diagnose.py archive; repeatable.')
     p.add_argument('--twin', type=str, default=None,
-                   help='Poisson-twin archive (known-bad ceiling).')
+                   help='Archive containing the Poisson comparison.')
     p.add_argument('-o', '--output', type=str, default=None)
     args = p.parse_args()
 
@@ -77,7 +74,7 @@ def main() -> None:
     ax.legend(fontsize=6, loc='best', frameon=False)
     fig.tight_layout()
     if args.output:
-        fig.savefig(args.output, bbox_inches='tight')
+        atomic_savefig(fig, args.output, bbox_inches='tight')
         log.info('Figure saved to %s', args.output)
     else:
         plt.show()

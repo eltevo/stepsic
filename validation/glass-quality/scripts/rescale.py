@@ -1,22 +1,12 @@
 #!/usr/bin/env python3
 '''
-Anisotropically rescale a cubic toroidal glass and tile it back to a cube.
+Compress a cubic toroidal glass along z and tile it back to a cube.
 
-Linear rescaling reuses a toroidal glass in boxes of a different aspect
-ratio, but a force-free glass does not remain force-free after the rescale.
-This tool prepares configurations for measuring that residual with StePS.
+Compressing a force-free glass can introduce residual force. This script prepares the rescaled snapshots used to measure it with StePS.
 
-StePS's periodic mode only supports cubic boxes, so the anisotropic
-torus is measured through an exact reduction: compressing the z
-coordinates by 1/s (positions ``(x, y, z/s)`` in the box
-``[L, L, L/s]``) and then stacking ``s`` copies along z reproduces, in
-the ``L^3`` periodic cube, exactly the force field of the ``[L, L,
-L/s]`` periodic torus (the torus IS the cube restricted to s-fold
-z-periodic configurations). Forces read off any one tile are the torus
-forces. ``s = 1`` passes the input through (control configuration).
+StePS measures periodic forces only in cubes. Compressing z by ``1/s`` and stacking ``s`` copies gives the same force in each copy as the physical ``[L, L, L/s]`` torus. An aspect of 1 leaves the positions unchanged.
 
-Velocities are zeroed; particle IDs are re-enumerated; the Header
-particle counts are updated for the tiled total.
+The output has zero velocities, new particle IDs, and updated particle counts.
 
 Usage
 -----
@@ -54,12 +44,12 @@ def rescale_and_tile(pos: np.ndarray, lbox: float, aspect: int) -> np.ndarray:
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description='Aspect-rescale + tile a cubic toroidal glass.')
+        description='Compress a cubic toroidal glass along z and tile it back to a cube.')
     p.add_argument('input', type=str)
     p.add_argument('output', type=str)
     p.add_argument('--aspect', type=int, required=True,
                    help='Integer aspect ratio s (z compressed by 1/s); '
-                        '1 = pass-through control.')
+                        '1 leaves positions unchanged.')
     args = p.parse_args()
     if args.aspect < 1:
         raise ValueError('aspect must be >= 1.')

@@ -1,53 +1,54 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  validation/glass/diagnose.sh - glass-quality diagnostics pipeline
+#  Measure relaxed glasses and compare them with randomized particle loads.
 #
-#  Quantifies glasses produced by run.sh, with optional per-geometry snapshot
-#  overrides: zoned P(k) vs shot noise,
-#  nearest-neighbour statistics, radial density profile with mass-bin
-#  interfaces, and residual forces measured directly by StePS
-#  (SAVE_ACCELERATIONS).
-#  Every diagnostic is also run on a "Poisson twin" (same masses and
-#  radial structure, random positions) as the known-bad baseline it
-#  must discriminate against.
+#  For each geometry, the campaign measures power relative to shot noise,
+#  nearest-neighbour spacing, radial density, and residual force when StePS
+#  saved accelerations. It repeats each measurement after randomizing positions
+#  while preserving particle masses and radial bands.
 #
-#  The aspect-rescale study compresses the cubic toroidal glass in
-#  z by 1/s and tiles s copies back into the cube - an exact reduction
-#  of the anisotropic [L, L, L/s] torus, whose periodic forces StePS
-#  cannot compute directly (its periodic mode is cubic-only).
+#  To measure an [L, L, L/s] torus with StePS's cubic periodic mode, the
+#  campaign compresses z by 1/s and stacks s identical copies in a cube.
 #
 #  Pipeline steps:
-#    1. twins        - Poisson twins for available glass snapshots  (laptop)
-#    2. rescale      - aspect-rescaled tiled tori from the cubic glass (laptop)
-#    3. build_force  - StePS binaries with SAVE_ACCELERATIONS         (node)
-#    4. forces       - force dumps for every configuration            (node)
-#    5. diagnose     - compute diagnostics archives                   (laptop)
-#    6. plot         - quality figures + rescale summary              (laptop)
+#    1. twins        - randomize the available glasses
+#    2. rescale      - compress and tile the cubic glass
+#    3. build_force  - build StePS with SAVE_ACCELERATIONS
+#    4. forces       - measure forces for every configuration
+#    5. diagnose     - compute numerical diagnostics
+#    6. plot         - plot glass quality and residual force
 #
-#  Steps 3-4 need the StePS toolchain (STEPS_ENV); steps 5-6 fall back
-#  to force-less diagnostics when no force dumps exist yet, so the
-#  laptop part of the pipeline can run before the node part.
+#  Steps 3-4 need the StePS toolchain. Without saved forces, steps 5-6 still
+#  measure power, spacing, and density.
 #
 #  Usage:
-#    bash diagnose.sh [OPTIONS]
+#    bash run.sh [OPTIONS]
 #
 #  Options (standard vlib):
-#    --step=N / --plot-only / --force / --force-step=A,B / --clean
-#    --config=PATH / --list-steps / -h
+#    --size=SIZE / --step=N / --plot-only / --force / --force-step=A,B
+#    --clean / --config=PATH / --list-steps / -h
 #
 #  Configuration: see the "Diagnostics" section of config.env.
 # ============================================================================
 set -euo pipefail
 
-BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASEDIR="${CAMPAIGN_DIR}"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
-vlib::source_config "${CONFIG_FILE}"
+vlib::prepare_campaign glass-quality "${BASEDIR}" "${BASEDIR}/config.env"
 
 vlib::declare_steps twins rescale build_force forces diagnose plot evaluate
+vlib::manifest_implementation twins "${BASEDIR}/scripts/twin.py"
+vlib::manifest_implementation rescale "${BASEDIR}/scripts/rescale.py"
+vlib::manifest_implementation diagnose "${BASEDIR}/scripts/diagnose.py"
+vlib::manifest_implementation plot \
+    "${BASEDIR}/scripts/plot-diagnostics.py" \
+    "${BASEDIR}/scripts/plot-rescale.py"
+vlib::manifest_evaluator evaluate \
+    "${BASEDIR}/scripts/evaluate-diagnostics.py"
 if (( VLIB_LIST_STEPS )); then
+    vlib::profile_summary
     vlib::list_steps
     exit 0
 fi
@@ -61,12 +62,13 @@ done
 vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 vlib::steps::validate_backend
 
-export VLIB_CACHE_DIR="${BASEDIR}/cache"
-OUTPUT="${BASEDIR}/output"
-PARAM_DIR="${BASEDIR}/params"
-BUILD_DIR="${BASEDIR}/builds"
+export VLIB_CACHE_DIR="${VLIB_RUN_ROOT}/cache/diagnostics"
+OUTPUT="${VLIB_RUN_ROOT}/output"
+FIGURES="${OUTPUT}/supplementary"
+PARAM_DIR="${VLIB_RUN_ROOT}/config/diagnostics"
+BUILD_DIR="${VLIB_RUN_ROOT}/build/diagnostics"
 export PARAM_DIR BUILD_DIR
-OUTDIR="${OUTDIR:-${BASEDIR}}"
+OUTDIR="${OUTDIR:-${VLIB_RUN_ROOT}/cache}"
 
 TWIN_DIR="${VLIB_CACHE_DIR}/twins"
 RESCALE_DIR="${VLIB_CACHE_DIR}/rescale"
@@ -77,7 +79,7 @@ if (( VLIB_CLEAN )); then
     vlib::clear_dir "${VLIB_CACHE_DIR}"
 fi
 mkdir -p "${TWIN_DIR}" "${RESCALE_DIR}" "${FORCE_DIR}" "${DIAG_DIR}" \
-         "${OUTPUT}" "${PARAM_DIR}" "${BUILD_DIR}"
+         "${FIGURES}" "${PARAM_DIR}" "${BUILD_DIR}"
 
 
 vlib::init_conda
@@ -151,9 +153,15 @@ fi
 # Force-measurement binaries (built with SAVE_ACCELERATIONS; the IC is
 # re-saved with the computed forces at run start).
 STEPS_PRECISION_FLAGS="$(vlib::steps::precision_flags)"
-FORCE_BIN_PERIODIC="${BUILD_DIR}/StePS_force_periodic$(vlib::steps::precision_suffix)"
-FORCE_BIN_SPHERICAL="${BUILD_DIR}/StePS_force_spherical$(vlib::steps::precision_suffix)"
-FORCE_BIN_CYLINDRICAL="${BUILD_DIR}/StePS_force_cylindrical$(vlib::steps::precision_suffix)"
+STEPS_BACKEND_SUFFIX=""
+STEPS_BACKEND_FLAGS=()
+if [[ "${STEPS_BACKEND}" == "bh" ]]; then
+    STEPS_BACKEND_SUFFIX="_bh"
+    STEPS_BACKEND_FLAGS=("USE_BH=0.25" "RANDOMIZE_BH=123456")
+fi
+FORCE_BIN_PERIODIC="${BUILD_DIR}/StePS_force_periodic${STEPS_BACKEND_SUFFIX}$(vlib::steps::precision_suffix)"
+FORCE_BIN_SPHERICAL="${BUILD_DIR}/StePS_force_spherical${STEPS_BACKEND_SUFFIX}$(vlib::steps::precision_suffix)"
+FORCE_BIN_CYLINDRICAL="${BUILD_DIR}/StePS_force_cylindrical${STEPS_BACKEND_SUFFIX}$(vlib::steps::precision_suffix)"
 
 # -- Step 3: build_force -----------------------------------------------------
 if vlib::step_check "build_force" \
@@ -162,11 +170,14 @@ if vlib::step_check "build_force" \
     vlib::ensure_env "${STEPS_ENV}"
     vlib::steps::detect_toolchain
     vlib::steps::build "$(basename "${FORCE_BIN_PERIODIC}")" \
-        PERIODIC SAVE_ACCELERATIONS ${STEPS_PRECISION_FLAGS}
+        PERIODIC SAVE_ACCELERATIONS "${STEPS_BACKEND_FLAGS[@]}" \
+        ${STEPS_PRECISION_FLAGS}
     vlib::steps::build "$(basename "${FORCE_BIN_SPHERICAL}")" \
-        SAVE_ACCELERATIONS ${STEPS_PRECISION_FLAGS}
+        SAVE_ACCELERATIONS "${STEPS_BACKEND_FLAGS[@]}" \
+        ${STEPS_PRECISION_FLAGS}
     vlib::steps::build "$(basename "${FORCE_BIN_CYLINDRICAL}")" \
-        PERIODIC_Z SAVE_ACCELERATIONS ${STEPS_PRECISION_FLAGS}
+        PERIODIC_Z SAVE_ACCELERATIONS "${STEPS_BACKEND_FLAGS[@]}" \
+        ${STEPS_PRECISION_FLAGS}
     vlib::step_done "build_force"
 fi
 
@@ -289,8 +300,8 @@ if vlib::step_check "plot"; then
         vlib::run_python "${STEPSIC_ENV}" \
             "${BASEDIR}/scripts/plot-diagnostics.py" \
             --glass "${g}" --twin "${t}" --label "${geom}" \
-            -o "${OUTPUT}/glass-quality-${geom}.pdf"
-        echo "  -> ${OUTPUT}/glass-quality-${geom}.pdf"
+            -o "${FIGURES}/glass-quality-${geom}.pdf"
+        echo "  -> ${FIGURES}/glass-quality-${geom}.pdf"
     done
     # Rescale summary needs force data on every point.
     RESCALE_PLOT_ARGS=()
@@ -304,8 +315,8 @@ if vlib::step_check "plot"; then
                 "${BASEDIR}/scripts/plot-rescale.py" \
                 "${RESCALE_PLOT_ARGS[@]}" \
                 --twin "${DIAG_DIR}/diag_twin_cubical.npz" \
-                -o "${OUTPUT}/glass-rescale.pdf"; then
-            echo "  -> ${OUTPUT}/glass-rescale.pdf"
+                -o "${FIGURES}/glass-rescale.pdf"; then
+            echo "  -> ${FIGURES}/glass-rescale.pdf"
         else
             echo "  [skip] rescale summary (archives lack force data)"
         fi
@@ -313,7 +324,7 @@ if vlib::step_check "plot"; then
     vlib::step_done "plot"
 fi
 
-if vlib::step_check "evaluate" "${OUTPUT}/diagnostics/result.json"; then
+if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
     EVALUATE_ARGS=()
     FIGURE_ARGS=()
     for geom in "${GEOMS[@]}"; do
@@ -321,14 +332,19 @@ if vlib::step_check "evaluate" "${OUTPUT}/diagnostics/result.json"; then
         t="${DIAG_DIR}/diag_twin_${geom}.npz"
         if [[ -f "${g}" && -f "${t}" ]]; then
             EVALUATE_ARGS+=(--pair "${geom}" "${g}" "${t}")
-            figure="${OUTPUT}/glass-quality-${geom}.pdf"
+            figure="${FIGURES}/glass-quality-${geom}.pdf"
             [[ -f "${figure}" ]] && FIGURE_ARGS+=(--figure "${figure}")
         fi
     done
+    for s in 1 ${RESCALE_ASPECTS}; do
+        archive="${DIAG_DIR}/diag_tiled_s${s}.npz"
+        [[ -f "${archive}" ]] && EVALUATE_ARGS+=(--rescale "${s}" "${archive}")
+    done
+    [[ -f "${FIGURES}/glass-rescale.pdf" ]] && FIGURE_ARGS+=(--figure "${FIGURES}/glass-rescale.pdf")
     vlib::run_python "${STEPSIC_ENV}" \
         "${BASEDIR}/scripts/evaluate-diagnostics.py" \
         "${EVALUATE_ARGS[@]}" "${FIGURE_ARGS[@]}" \
-        --output "${OUTPUT}/diagnostics/result.json"
+        --output "${OUTPUT}/result.json"
     vlib::step_done "evaluate"
 fi
 

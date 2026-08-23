@@ -17,7 +17,9 @@ set -euo pipefail
 # All other required env vars are set by the controller - see run.sh.
 
 GEOM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PARENT_RUN_ROOT="${VLIB_RUN_ROOT}"
 source "${GEOM_DIR}/../../_common/lib.sh"
+VLIB_RUN_ROOT="${PARENT_RUN_ROOT}"
 
 START_STEP="${GEOM_START_STEP:-1}"
 if ! [[ "${START_STEP}" =~ ^[1-4]$ ]]; then
@@ -27,7 +29,13 @@ fi
 
 # Precision build flag (empty for the default double)
 STEPS_PRECISION_FLAGS="$(vlib::steps::precision_flags)"
-GLASS_BIN_NAME="StePS_glass_periodic$(vlib::steps::precision_suffix)"
+STEPS_BACKEND_SUFFIX=""
+STEPS_BACKEND_FLAGS=()
+if [[ "${STEPS_BACKEND}" == "bh" ]]; then
+    STEPS_BACKEND_SUFFIX="_bh"
+    STEPS_BACKEND_FLAGS=("USE_BH=0.25" "RANDOMIZE_BH=123456")
+fi
+GLASS_BIN_NAME="StePS_glass_periodic${STEPS_BACKEND_SUFFIX}$(vlib::steps::precision_suffix)"
 
 echo ""
 echo "--------------------------------------------------------------------"
@@ -112,7 +120,8 @@ if (( START_STEP <= 3 )); then
     vlib::steps::detect_toolchain
     vlib::clear_files "${BUILD_DIR}" "${GLASS_BIN_NAME}"
 
-    vlib::steps::build "${GLASS_BIN_NAME}" PERIODIC GLASS_MAKING ${STEPS_PRECISION_FLAGS}
+    vlib::steps::build "${GLASS_BIN_NAME}" PERIODIC GLASS_MAKING \
+        "${STEPS_BACKEND_FLAGS[@]}" ${STEPS_PRECISION_FLAGS}
 fi
 
 # Always rewrite the param file so env-var overrides (e.g. GLASS_TIME_LIMIT_MIN)

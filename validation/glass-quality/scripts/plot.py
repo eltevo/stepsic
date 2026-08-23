@@ -1,34 +1,31 @@
 #!/usr/bin/env python3
 '''
-Plot glass particle distributions for the stepsic / StePS paper.
+Plot centred x-z slices through the available glasses.
 
-Produces a 4-panel landscape figure (A&A double-column width)
-showing 3D scatter views of each glass geometry:
+Each panel shows one glass geometry:
 
-    (a) Cubical glass (from random pre-glass)
-    (b) Cubical glass (from grid pre-glass)
-    (c) Spherical glass
-    (d) Cylindrical glass
+    (a) Cubical glass (from random pre-glass) - X-Z slab of configurable thickness
+    (b) Cubical glass (from grid pre-glass)   - single Y-layer of the grid
+    (c) Spherical glass                       - X-Z slab
+    (d) Cylindrical glass                     - X-Z slab (vertical cut)
 
-Each panel renders a random subsample of particles in a 3D
-projection, revealing the spatial homogeneity and distinct
-boundary shapes achieved by the reverse-gravity relaxation
-in StePS.
+Random, spherical, and cylindrical loads use a slab of the requested thickness. A regular cubic load uses only the grid layer nearest the centre so that adjacent layers do not overlap in the projection.
 
 Usage
 -----
 ::
 
-    PYTHONPATH="$PWD" conda run -n stepsic python validation/glass/scripts/plot-3d.py \\
-        --cubic-random validation/glass/cubic_random/glass/snapshot_0001.hdf5 \\
-        --cubic-grid   validation/glass/cubic_grid/preglass/ic.hdf5 \\
-        --spherical    validation/glass/spherical/glass/snapshot_0001.hdf5 \\
-        --cylindrical  validation/glass/cylindrical/glass/snapshot_0001.hdf5 \\
+    PYTHONPATH="$PWD" conda run -n stepsic python validation/glass-quality/scripts/plot.py \\
+        --cubic-random validation/glass-quality/runs/medium/cache/cubic_random/glass/snapshot_0001.hdf5 \\
+        --cubic-grid   validation/glass-quality/runs/medium/cache/cubic_grid/preglass/ic.hdf5 \\
+        --spherical    validation/glass-quality/runs/medium/cache/spherical/glass/snapshot_0001.hdf5 \\
+        --cylindrical  validation/glass-quality/runs/medium/cache/cylindrical/glass/snapshot_0001.hdf5 \\
         --target-radius 500.0 \\
-        -o validation/glass/output/glass.pdf
+        --slice-thickness 10.0 \\
+        -o validation/glass-quality/runs/medium/output/glass.pdf
 
 Any subset of panels can be omitted; missing panels are left blank.
-The ``--target-radius`` value must match ``R_3D`` in ``validation/glass/config.env``
+The ``--target-radius`` value must match ``R_3D`` in ``validation/glass-quality/config.env``
 (default 500 Mpc).
 '''
 
@@ -42,48 +39,15 @@ from typing import TypeAlias
 
 import h5py
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
-
 import numpy as np
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (side-effect import)
 from numpy.typing import NDArray
 
-from validation import setup_matplotlib
+from validation._common.plotting import atomic_savefig, setup_matplotlib
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 ArrayF: TypeAlias = NDArray[np.float64]
-
-
-def log_mass_to_colors(
-    mass: np.ndarray,
-    *,
-    vmin: float | None = None,
-    vmax: float | None = None,
-    cmap_name: str = 'plasma_r',
-) -> np.ndarray:
-    """Map positive particle masses to a logarithmic colormap."""
-    mass = np.asarray(mass, dtype=np.float64)
-
-    if np.any(mass <= 0.0):
-        raise ValueError('Masses must be strictly positive for logarithmic colouring.')
-
-    if vmin is None:
-        vmin = float(np.min(mass))
-    if vmax is None:
-        vmax = float(np.max(mass))
-
-    if vmin <= 0.0:
-        raise ValueError(f'vmin must be > 0 for LogNorm, got {vmin}.')
-    if vmax <= vmin:
-        raise ValueError(
-            f'vmax must be > vmin for LogNorm, got vmin={vmin}, vmax={vmax}.'
-        )
-
-    norm = LogNorm(vmin=vmin, vmax=vmax)
-    cmap = plt.get_cmap(cmap_name)
-    return cmap(norm(mass))
 
 
 def load_glass(path: str, part_type: int = 1) -> tuple[ArrayF, ArrayF]:
@@ -140,7 +104,7 @@ def rescale_to_radius(
         Particle positions (modified in-place, also returned).
     target_radius : float
         Desired half-extent after rescaling [Mpc]. Pass the same value as
-        ``R_3D`` in ``validation/glass/config.env``.
+        ``R_3D`` in ``validation/glass-quality/config.env``.
         For spherical: applied to all three axes.
         For cylindrical: applied to x and y only (z is periodic and correct).
     geometry : str
@@ -180,6 +144,74 @@ def rescale_to_radius(
     return pos
 
 
+def slice_xz(
+    pos: ArrayF,
+    thickness: float,
+    *,
+    y_centre: float | None = None,
+) -> ArrayF:
+    """Select particles within a Y-slab and return their X-Z coordinates.
+
+    Parameters
+    ----------
+    pos : ndarray, shape (N, 3)
+        Full particle positions (columns: x, y, z).
+    thickness : float
+        Total slab thickness along Y. Particles with
+        ``|y - y_centre| <= thickness / 2`` are kept.
+    y_centre : float or None
+        Centre of the slab. Defaults to the median Y coordinate.
+
+    Returns
+    -------
+    ndarray, shape (M, 2)
+        Columns are (x, z) for the particles inside the slab.
+    """
+    if y_centre is None:
+        y_centre = float(np.median(pos[:, 1]))
+
+    half = 0.5 * thickness
+    mask = np.abs(pos[:, 1] - y_centre) <= half
+    n_kept = int(np.sum(mask))
+    log.info(
+        'Y-slab: centre=%.4f, thickness=%.4f -> kept %d / %d particles',
+        y_centre, thickness, n_kept, pos.shape[0],
+    )
+    return pos[mask][:, [0, 2]]  # (x, z)
+
+
+def pick_grid_layer(pos: ArrayF) -> ArrayF:
+    """Select the single Y-layer closest to the centre of a regular grid.
+
+    For a simple-cubic grid, particles sit at a discrete set of Y values.
+    This function finds the Y level nearest to the midpoint and returns
+    the (x, z) coordinates of all particles on that layer.
+
+    Parameters
+    ----------
+    pos : ndarray, shape (N, 3)
+        Full particle positions.
+
+    Returns
+    -------
+    ndarray, shape (M, 2)
+        Columns are (x, z) for the selected layer.
+    """
+    y_vals = np.unique(pos[:, 1])
+    y_mid = 0.5 * (y_vals.min() + y_vals.max())
+    y_layer = y_vals[np.argmin(np.abs(y_vals - y_mid))]
+
+    # Float comparison is safe here: particles sit exactly on lattice nodes.
+    mask = pos[:, 1] == y_layer
+    n_kept = int(np.sum(mask))
+    log.info(
+        'Grid layer: y=%.6f (centre=%.6f), %d particles on layer out of '
+        '%d unique Y values',
+        y_layer, y_mid, n_kept, len(y_vals),
+    )
+    return pos[mask][:, [0, 2]]
+
+
 def subsample(
     pos: ArrayF,
     fraction: float,
@@ -190,8 +222,8 @@ def subsample(
 
     Parameters
     ----------
-    pos : ndarray, shape (N, 3)
-        Full particle array.
+    pos : ndarray, shape (N, D)
+        Full particle array (works for any number of columns).
     fraction : float
         Fraction of particles to keep, in (0, 1].
     seed : int
@@ -199,7 +231,7 @@ def subsample(
 
     Returns
     -------
-    ndarray, shape (M, 3)
+    ndarray, shape (M, D)
         Subsampled positions.
     '''
     n_total = pos.shape[0]
@@ -211,75 +243,38 @@ def subsample(
     return pos[idx]
 
 
-def _draw_panel_3d(
-    ax: Axes3D,
-    pos: ArrayF,
-    mass: ArrayF,
+def _draw_panel_2d(
+    ax: plt.Axes,
+    xz: ArrayF,
     title: str,
     *,
-    fraction: float = 0.08,
-    point_size: float = 0.5,
-    point_color: str | None = None,
-    point_vmin: float | None = None,
-    point_vmax: float | None = None,
-    point_alpha: float = 0.25,
-    elev: float = 22.0,
-    azim: float = -42.0,
+    fraction: float = 1.0,
+    point_size: float = 0.15,
+    point_color: str = 'k',
+    point_alpha: float = 0.35,
 ) -> int:
-    """Draw a 3D scatter of a subsampled particle distribution."""
-    n_total = pos.shape[0]
-    n_keep = max(1, int(n_total * fraction))
+    """Draw a 2D X-Z scatter on *ax* and return the number of plotted points."""
+    if fraction < 1.0:
+        xz = subsample(xz, fraction)
 
-    if n_keep >= n_total:
-        idx = np.arange(n_total)
-    else:
-        rng = np.random.default_rng(42)
-        idx = rng.choice(n_total, size=n_keep, replace=False)
-
-    sub = pos[idx]
-    sub_mass = mass[idx]
-    n_plot = sub.shape[0]
-
-    if point_color is None:
-        if np.allclose(sub_mass, sub_mass[0]):
-            point_color = 'k'
-        else:
-            point_color = log_mass_to_colors(
-                sub_mass,
-                vmin=point_vmin,
-                vmax=point_vmax,
-            )
+    n_plot = xz.shape[0]
 
     ax.scatter(
-        sub[:, 0], sub[:, 1], sub[:, 2],
+        xz[:, 0], xz[:, 1],
         s=point_size,
         c=point_color,
         alpha=point_alpha,
         edgecolors='none',
         rasterized=True,
-        depthshade=True,
     )
 
-    ax.view_init(elev=elev, azim=azim)
-
-    # Clean up axes - for this figure, the *shape* is the message.
-    # Tick labels clutter 3D panels at publication scale.
+    ax.set_aspect('equal', adjustable='datalim')
     ax.set_xticklabels([])
     ax.set_yticklabels([])
-    ax.set_zticklabels([])
     ax.tick_params(axis='both', which='both', length=0, pad=0)
 
-    # Subtle pane styling: white panes, light grid
-    for pane in (ax.xaxis.pane, ax.yaxis.pane, ax.zaxis.pane):
-        pane.fill = False
-        pane.set_edgecolor('0.80')
-
-    for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
-        axis._axinfo['grid']['color'] = (0.85, 0.85, 0.85, 0.5)
-        axis._axinfo['grid']['linewidth'] = 0.4
-
-    ax.text2D(
-        0.03, 0.96, title,
+    ax.text(
+        0.03, 0.97, title,
         transform=ax.transAxes, fontsize=7,
         va='top', ha='left',
         bbox=dict(facecolor='white', edgecolor='none', alpha=0.80, pad=1.5),
@@ -288,82 +283,15 @@ def _draw_panel_3d(
     return n_plot
 
 
-def _set_equal_aspect_3d(ax: Axes3D, pos: ArrayF, pad: float = 0.05) -> None:
-    '''Force equal aspect ratio on a 3D axes by setting matching limits.
-
-    Parameters
-    ----------
-    ax : Axes3D
-        The 3D axes to adjust.
-    pos : ndarray, shape (N, 3)
-        Particle positions (full set, not subsampled) for extent computation.
-    pad : float
-        Fractional padding around the data extent.
-    '''
-    mins = pos.min(axis=0)
-    maxs = pos.max(axis=0)
-    centres = 0.5 * (mins + maxs)
-    half_range = 0.5 * (1.0 + pad) * (maxs - mins).max()
-
-    ax.set_box_aspect((1, 1, 1))
-    ax.set_xlim(centres[0] - half_range, centres[0] + half_range)
-    ax.set_ylim(centres[1] - half_range, centres[1] + half_range)
-    ax.set_zlim(centres[2] - half_range, centres[2] + half_range)
-
-
-def _set_cylinder_aspect(
-    ax: Axes3D,
-    pos: ArrayF,
-    r_max: float,
-    z_min: float,
-    z_max: float,
-    xy_centre: ArrayF,
-    pad: float = 0.05,
-) -> None:
-    '''Set 3D limits for a cylindrical geometry.
-
-    Uses the physical aspect ratio of the cylinder so that a squat
-    cylinder looks squat. The x-y extent is set by ``r_max`` and the
-    z extent by ``[z_min, z_max]``.
-
-    Parameters
-    ----------
-    ax : Axes3D
-        The 3D axes.
-    pos : ndarray, shape (N, 3)
-        Particle positions (unused; kept for API symmetry with
-        ``_set_equal_aspect_3d``).
-    r_max : float
-        Maximum cylindrical radius.
-    z_min, z_max : float
-        Axial extent of the cylinder.
-    xy_centre : ndarray, shape (2,)
-        Centre of the particle distribution in the x-y plane.
-    pad : float
-        Fractional padding.
-    '''
-    r_padded = r_max * (1.0 + pad)
-    z_centre = 0.5 * (z_min + z_max)
-    z_half = 0.5 * (z_max - z_min) * (1.0 + pad)
-
-    half_range = max(r_padded, z_half)
-
-    ax.set_box_aspect((1, 1, 1))
-    ax.set_xlim(xy_centre[0] - half_range, xy_centre[0] + half_range)
-    ax.set_ylim(xy_centre[1] - half_range, xy_centre[1] + half_range)
-    ax.set_zlim(z_centre - half_range, z_centre + half_range)
-
-
 def plot_glasses(
     paths: dict[str, str | None],
     output: str | None = None,
     *,
-    fraction: float = 0.08,
-    elev: float = 22.0,
-    azim: float = -42.0,
+    fraction: float = 1.0,
     target_radius: float = 250.0,
+    slice_thickness: float = 10.0,
 ) -> None:
-    r'''Produce the 4-panel 3D glass validation figure.
+    r'''Produce the 4-panel 2D glass validation figure (X-Z slices).
 
     Parameters
     ----------
@@ -374,15 +302,17 @@ def plot_glasses(
     output : str or None
         Output file path. Interactive display if ``None``.
     fraction : float
-        Fraction of particles to show per panel (random subsample).
-    elev : float
-        3D viewing elevation angle [degrees].
-    azim : float
-        3D viewing azimuth angle [degrees].
+        Fraction of *slice* particles to show per panel (random subsample).
+        Unlike the 3D version, the slice itself already reduces the count
+        substantially, so a value of 1.0 (show all) is a reasonable default.
     target_radius : float
         Physical radius [Mpc] used to rescale spherical and cylindrical
         glass back to their intended domain after StePS expansion.
-        Must match ``R_3D`` in ``validation/glass/config.env``.
+        Must match ``R_3D`` in ``validation/glass-quality/config.env``.
+    slice_thickness : float
+        Thickness of the Y-slab [Mpc] for the X-Z cut.
+        Ignored for the cubical-grid panel which always picks a single
+        Y-layer.
     '''
     setup_matplotlib()
 
@@ -398,66 +328,56 @@ def plot_glasses(
     # A&A double-column layout: 7.09" wide
     fig_width = 7.09
     panel_size = fig_width / n_panels
-    fig_height = panel_size + 0.15  # 3D panels need a bit more vertical room
+    fig_height = panel_size + 0.15
 
-    fig = plt.figure(figsize=(fig_width, fig_height), dpi=200)
+    fig, axes = plt.subplots(
+        1, n_panels,
+        figsize=(fig_width, fig_height),
+        dpi=200,
+    )
 
     for i, (key, title) in enumerate(zip(panel_keys, panel_titles)):
+        ax = axes[i]
         path = paths.get(key)
         if path is None or not Path(path).exists():
             log.warning('Skipping panel %s (file not provided or missing).', key)
+            ax.set_visible(False)
             continue
 
-        ax = fig.add_subplot(1, n_panels, i + 1, projection='3d')
-        pos, mass = load_glass(path)
+        pos, _mass = load_glass(path)
         n_total = pos.shape[0]
 
         # Rescale non-periodic geometries back to their physical domain.
-        # StePS writes L_BOX = 0 for non-periodic runs (it is unused), so
-        # the header is not a usable anchor - we use target_radius instead.
         if key == 'spherical':
             pos = rescale_to_radius(pos, target_radius, 'spherical')
         elif key == 'cylindrical':
             pos = rescale_to_radius(pos, target_radius, 'cylindrical')
 
-        # Set axis limits based on geometry
-        if key in ('cubic_random', 'cubic_grid', 'spherical'):
-            _set_equal_aspect_3d(ax, pos)
-
-        elif key == 'cylindrical':
-            centre = pos.mean(axis=0)
-            dx = pos[:, 0] - centre[0]
-            dy = pos[:, 1] - centre[1]
-            r_max = float(np.max(np.sqrt(dx**2 + dy**2)))
-            _set_cylinder_aspect(
-                ax, pos, r_max,
-                z_min=float(pos[:, 2].min()),
-                z_max=float(pos[:, 2].max()),
-                xy_centre=centre[:2],
-            )
-
+        # Extract X-Z slice
+        if key == 'cubic_grid':
+            xz = pick_grid_layer(pos)
         else:
-            raise ValueError(f'Unknown panel key: {key}')
+            xz = slice_xz(pos, slice_thickness)
 
-        n_plotted = _draw_panel_3d(
-            ax, pos, mass, title,
+        n_slice = xz.shape[0]
+
+        n_plotted = _draw_panel_2d(
+            ax, xz, title,
             fraction=fraction,
-            elev=elev,
-            azim=azim,
         )
         log.info(
-            '%s: N_total = %d, N_shown = %d (%.1f%%)',
-            key, n_total, n_plotted, 100.0 * n_plotted / n_total,
+            '%s: N_total=%d, N_slice=%d, N_shown=%d',
+            key, n_total, n_slice, n_plotted,
         )
 
     fig.subplots_adjust(
         left=0.01, right=0.99,
         bottom=0.02, top=0.98,
-        wspace=0.02,
+        wspace=0.08,
     )
 
     if output:
-        fig.savefig(output, bbox_inches='tight', dpi=300)
+        atomic_savefig(fig, output, bbox_inches='tight', dpi=300)
         log.info('Figure saved to %s', output)
     else:
         plt.show()
@@ -465,8 +385,7 @@ def plot_glasses(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description='Plot 4-panel 3D glass validation figure for the '
-                    'stepsic paper.',
+        description='Plot centred x-z slices through the available glasses.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument(
@@ -488,19 +407,16 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         '--target-radius', type=float, default=500.0,
         help='Physical radius [Mpc] of the sphere/cylinder domain. '
-             'Must match R_3D in validation/glass/config.env.',
+             'Must match R_3D in validation/glass-quality/config.env.',
+    )
+    p.add_argument(
+        '--slice-thickness', type=float, default=10.0,
+        help='Thickness of the Y-slab [Mpc] for X-Z cuts. '
+             'Ignored for the cubical-grid panel (always a single layer).',
     )
     p.add_argument(
         '--fraction', type=float, default=0.08,
-        help='Fraction of particles to display per panel (random subsample).',
-    )
-    p.add_argument(
-        '--elev', type=float, default=22.0,
-        help='3D viewing elevation angle [degrees].',
-    )
-    p.add_argument(
-        '--azim', type=float, default=-42.0,
-        help='3D viewing azimuth angle [degrees].',
+        help='Fraction of slice particles to display per panel.',
     )
     p.add_argument(
         '-o', '--output', type=str, default=None,
@@ -533,7 +449,6 @@ if __name__ == '__main__':
         glass_paths,
         output=args.output,
         fraction=args.fraction,
-        elev=args.elev,
-        azim=args.azim,
         target_radius=args.target_radius,
+        slice_thickness=args.slice_thickness,
     )

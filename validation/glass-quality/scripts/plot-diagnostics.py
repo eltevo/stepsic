@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 '''
-Glass-quality figure: diagnostics archive (diagnose.py) vs its Poisson
-twin.
+Plot glass diagnostics beside the corresponding Poisson measurements.
 
-Four panels (A&A two-column):
+The four panels show:
 (a) zoned P(k) / P_shot against k / k_p (k_p = 2*pi / d_zone): the
     glass must fall below the twin's flat Poisson level at k < k_p;
 (b) radial density profile rho/rho_mean with mass-level interfaces
@@ -30,14 +29,15 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 
-from validation import setup_matplotlib, load_archive
+from validation._common.plotting import atomic_savefig, setup_matplotlib
+from validation._common.artifacts import load_archive
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 
 def _interfaces(d: dict) -> np.ndarray:
-    '''Radii separating consecutive mass levels (interface markers).'''
+    '''Return the radii between consecutive mass levels.'''
     order = np.argsort(d['level_rmin'])
     rmax = d['level_rmax'][order]
     return rmax[:-1]
@@ -160,7 +160,7 @@ def plot_diagnostics(
         fig.suptitle(label, fontsize=9)
     fig.tight_layout()
     if output:
-        fig.savefig(output, bbox_inches='tight')
+        atomic_savefig(fig, output, bbox_inches='tight')
         log.info('Figure saved to %s', output)
     else:
         plt.show()
@@ -168,7 +168,7 @@ def plot_diagnostics(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description='Plot glass diagnostics vs the Poisson twin.',
+        description='Plot glass diagnostics beside the corresponding randomized load.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument('--glass', type=str, required=True,

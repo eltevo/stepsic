@@ -1,18 +1,10 @@
 #!/usr/bin/env python3
 '''
-Generate the "Poisson twin" of a glass snapshot.
+Randomize particle positions while preserving a glass's masses and radial bands.
 
-The twin keeps every particle's mass and the snapshot's macroscopic
-radial structure - positions are redrawn uniformly within each mass
-level's own radial extent (annulus for cylindrical, shell for
-spherical, the whole box for cubical) - but destroys the sub-Poisson
-glass order. Running the same diagnostics on the twin gives the
-known-bad baseline every glass metric must be seen to discriminate
-against: no sub-shot P(k) suppression, Poissonian nearest-neighbour
-statistics, O(1) residual forces.
+Positions are drawn uniformly within each mass level's radial extent: an annulus for cylindrical loads, a shell for spherical loads, and the whole box for cubical loads. The randomized snapshot provides a Poisson comparison for the glass diagnostics.
 
-The twin is written with the same HDF5 layout (PartType1 + Header) as
-the input so it can be fed to the same StePS force-measurement run.
+The output keeps the input HDF5 layout so the same StePS force calculation can read it.
 
 Usage
 -----
@@ -76,7 +68,7 @@ def make_twin(pos: np.ndarray, mass: np.ndarray, geometry: str,
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description='Poisson twin of a glass snapshot (known-bad baseline).')
+        description='Randomize a glass while preserving its masses and radial bands.')
     p.add_argument('input', type=str)
     p.add_argument('output', type=str)
     p.add_argument('--geometry', type=str, required=True,

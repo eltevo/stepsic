@@ -1,38 +1,14 @@
 #!/usr/bin/env python3
 '''
-Quantitative quality diagnostics for a (variable-mass) glass snapshot.
+Measure the power, spacing, density, and residual forces of a glass.
 
-Computes, for any spherical, cylindrical, or cubical glass:
+For spherical and cylindrical glasses, particles are grouped into radial zones with equal particle counts. Cubical glasses use the full periodic box.
 
-* **Zoned P(k) vs shot noise** - particles are grouped into radial
-  zones (equal particle count); inside each zone, mass-weighted P(k) is
-  measured in several cubic sub-volumes inscribed in the zone and
-  compared against the sub-volumes' shot-noise level ``V *
-  sum(m^2)/sum(m)^2``. A good glass is sub-Poisson (P/P_shot << 1)
-  below the zone's inter-particle scale; a Poisson load sits at 1.
-  Cubical glasses use the full periodic box directly.
-* **Nearest-neighbour statistic** - ``u = d_NN / (m/rho_mean)^(1/3)``
-  per particle: the NN distance normalized by the local expected
-  spacing. Reported as a per-mass-level mean/std and as a fine radial
-  profile; anomalies at mass-bin interfaces or at the domain edge show
-  up as localized dips/spikes.
-* **Radial density profile** - mass density in fine radial bins over
-  the mean, with each mass level's radial extent recorded so interfaces
-  can be marked in the figure.
-* **Residual-force statistic** (optional) - if the snapshot contains an
-  ``Accelerations`` dataset (StePS built with ``SAVE_ACCELERATIONS``
-  re-saves the IC with forces), the dimensionless per-particle residual
-  ``q = |F| d_exp^2 / m`` (internal units, G=1) is reported per zone
-  and as a radial profile. ``q ~ O(1)`` for a Poisson load (NN-scale
-  imbalance), ``q << 1`` for a relaxed glass.
+The archive contains mass-weighted power relative to shot noise, nearest-neighbour distance relative to local spacing, radial density, and mass-level boundaries. If the snapshot contains accelerations, it also contains ``q = |F| d^2 / m`` in internal units with ``G = 1``.
 
-For tiled aspect-rescale configurations (see ``rescale.py``), pass
-``--tile-lz`` so that only the first z-tile enters the statistics
-(every tile is an identical copy of the torus).
+For a tiled glass, ``--tile-lz`` restricts the measurement to the first repeated z section.
 
-The output ``.npz`` is consumed by ``plot-diagnostics.py``. Run the
-same command on the Poisson twin (``twin.py``) to produce the
-known-bad baseline archive.
+Run the same measurement on the Poisson twin to compare the relaxed glass with random particle positions.
 
 Usage
 -----
@@ -336,7 +312,7 @@ def diagnose(
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description='Glass-quality diagnostics for a snapshot.',
+        description='Measure the power, spacing, density, and residual forces of a glass.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument('snapshot', type=str)

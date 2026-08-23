@@ -1,23 +1,17 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  validation/glass/run.sh - Glass generation and validation figure controller
+#  Generate relaxed glasses and plot their particle distributions.
 #
-#  Top-level orchestrator for the glass validation pipeline. Configures
-#  shared parameters, selectively dispatches geometry-specific pipelines,
-#  and produces the final 4-panel validation figure.
-#
-#  Glass-making strategy (Gabor Racz's recipe):
+#  Glass-making method:
 #    All geometries use comoving integration in an Einstein-de Sitter (EdS)
-#    background (Omega_m=1, Omega_lambda=0) with GLASS_MAKING enabled.
-#    EdS avoids the Hubble-drag freeze-out that occurs in LCDM at late
-#    times (a > 0.5), where Lambda dominates and structure formation stalls.
+#    background (Omega_m=1, Omega_lambda=0) with GLASS_MAKING enabled. EdS
+#    avoids late-time suppression of the reverse-gravity relaxation by Lambda.
 #    H0_EdS is fixed at 100 km/s/Mpc (h=1) so that StePS's rho_part /
-#    rho_cosm check matches stepsic's h-independent IC mass density (which
-#    is built around the canonical 100 km/s/Mpc); see vlib::cosmology::eds_h0
-#    in _common/lib.sh. H0 is only a timescale here - comoving relaxation
-#    is independent of it, so this does not affect the resulting glass.
+#    rho_cosm check matches stepsic's h-independent IC mass density; see
+#    vlib::cosmology::eds_h0 in _common/lib.sh. H0 sets only the timescale and
+#    does not change the relaxed comoving particle distribution.
 #
-#  Workflow (for each selected geometry):
+#  Steps for each selected geometry:
 #    1. Generate pre-glass ICs via stepsic (LPTORDER=0)
 #    2. Write StePS parameter files
 #    3. Compile StePS GPU binaries
@@ -28,11 +22,12 @@
 #    bash run.sh [OPTIONS]
 #
 #  Options (standard):
+#    --size=SIZE       small, medium (default), or approved large profile
 #    --step=N          Geometry sub-step to start from (1–4, default 1)
 #    --plot-only       Skip all geometry pipelines; regenerate figure only
 #    --force           Not used in glass (pass --no-clean to re-run)
 #    --clean           Delete configs/, params/, builds/, and cache dirs
-#    --config=PATH     Source an alternative config.env
+#    --config=PATH     Select a typed custom TOML profile
 #    --list-steps      Print the step list and exit
 #    -h, --help        Print this help text and exit
 #
@@ -73,15 +68,13 @@
 # ============================================================================
 set -euo pipefail
 
-BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASEDIR="${CAMPAIGN_DIR}"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
-vlib::source_config "${CONFIG_FILE}"
+vlib::prepare_campaign glass-quality "${BASEDIR}" "${BASEDIR}/config.env"
 
-vlib::declare_steps cubical spherical cylindrical plot evaluate
-vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
+vlib::declare_steps cubical spherical cylindrical plot
 
 # Parse glass-specific flags from VLIB_EXTRA_ARGS
 RUN_GEOMS="all"
@@ -138,7 +131,7 @@ fi
 
 # Export shared configuration for geometry sub-scripts.
 export STEPS_SRC STEPSIC_SRC STEPSIC_PY STEPS_ENV STEPSIC_ENV
-export N_MPI N_GPU OMP_NUM_THREADS
+export N_MPI N_GPU OMP_NUM_THREADS STEPS_BACKEND
 export OMP_PLACES=cores OMP_PROC_BIND=close
 export LBOX NGRID NPART R_3D D_4D RCRIT LZ
 export NRBINS_STEPS NSHELL_STEPS BIN_MODE_STEPS
@@ -156,14 +149,17 @@ export GLASS_FIRST_T_OUT GLASS_H_OUT
 [[ -n "${HDF5_LIBS:-}" ]] && export HDF5_LIBS
 
 # Directory layout (also exported for geometry sub-scripts).
-export OUTDIR="${OUTDIR:-${BASEDIR}}"
-export TOML_DIR="${OUTDIR}/configs"
-export PARAM_DIR="${OUTDIR}/params"
-export BUILD_DIR="${OUTDIR}/builds"
-export VLIB_CACHE_DIR="${BASEDIR}/cache/controller"
-OUTPUT="${BASEDIR}/output"
+export OUTDIR="${OUTDIR:-${VLIB_RUN_ROOT}/cache}"
+export TOML_DIR="${VLIB_RUN_ROOT}/config/generated"
+export PARAM_DIR="${VLIB_RUN_ROOT}/config/params"
+export BUILD_DIR="${VLIB_RUN_ROOT}/build"
+export VLIB_CACHE_DIR="${VLIB_RUN_ROOT}/cache/controller"
+export VLIB_RUN_ROOT
+OUTPUT="${VLIB_RUN_ROOT}/output"
+FIGURES="${OUTPUT}/supplementary"
 
 if (( VLIB_LIST_STEPS )); then
+    vlib::profile_summary
     echo "  Selected plot: ${PLOT_MODE}"
     echo ""
     echo "  Geometry sub-steps (controlled by --step=N or GEOM_START_STEP):"
@@ -176,6 +172,7 @@ if (( VLIB_LIST_STEPS )); then
     vlib::list_steps
     exit 0
 fi
+vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 
 vlib::init_conda
 vlib::ensure_env "${STEPSIC_ENV}"
@@ -187,7 +184,7 @@ fi
 export EDS_H0
 EDS_H0="$(vlib::cosmology::eds_h0 "${COSMO_H0}" "${COSMO_OMEGA_M}")"
 
-mkdir -p "${TOML_DIR}" "${PARAM_DIR}" "${BUILD_DIR}" "${OUTPUT}"
+mkdir -p "${TOML_DIR}" "${PARAM_DIR}" "${BUILD_DIR}" "${FIGURES}"
 
 echo ""
 echo "========================================================================"
@@ -296,26 +293,16 @@ if [[ "${PLOT_MODE}" == "3D" ]]; then
     PLOT_SCRIPT="${BASEDIR}/scripts/plot-3d.py"
     PLOT_DIMENSION_ARGS=()
 fi
+vlib::manifest_implementation plot "${PLOT_SCRIPT}"
 
-if vlib::step_check "plot" "${OUTPUT}/glass.pdf"; then
+if vlib::step_check "plot" "${FIGURES}/glass-generation.pdf"; then
     vlib::run_python "${STEPSIC_ENV}" "${PLOT_SCRIPT}" \
         "${PLOT_ARGS[@]}" \
         --target-radius "${R_3D}" \
         "${PLOT_DIMENSION_ARGS[@]+"${PLOT_DIMENSION_ARGS[@]}"}" \
         --fraction 1.0 \
-        -o "${OUTPUT}/glass.pdf"
+        -o "${FIGURES}/glass-generation.pdf"
     vlib::step_done "plot"
-fi
-
-if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
-    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/evaluate.py" \
-        "${PLOT_ARGS[@]}" \
-        --box-size "${LBOX}" \
-        --radius "${R_3D}" \
-        --cylinder-length "${LZ}" \
-        --figure "${OUTPUT}/glass.pdf" \
-        --output "${OUTPUT}/result.json"
-    vlib::step_done "evaluate"
 fi
 
 vlib::report_done
