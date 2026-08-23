@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure shell mass profiles into the campaign's numerical archive."""
+"""Measure shell mass profiles and save them to a NumPy archive."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from plot import (
     _mass_profile,
     _rho_mean,
 )
-from validation import VALIDATION_COSMOLOGY
+from validation._common.cosmology_fields import VALIDATION_COSMOLOGY
 from validation._common.evaluation import atomic_savez
 
 

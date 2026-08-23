@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate shell-mass conservation against analytic domain volumes."""
+"""Check summed shell mass against the mass of each analytic volume."""
 
 from __future__ import annotations
 
@@ -92,7 +92,7 @@ def evaluate(
             boundary_normalized_errors.values()
         )
         return ValidationResult(
-            campaign="shell-mass",
+            campaign="shell-mass-profiles",
             parameters=metadata_parameters(data),
             provenance=archive_provenance(archive),
             metrics={
@@ -112,7 +112,7 @@ def evaluate(
             },
             checks=[
                 upper_bound_check(
-                    name="analytic shell-mass closure",
+                    name="shell mass agrees with analytic volume",
                     observed=maximum_closure_error,
                     limit=rounding_limit,
                     unit="dimensionless",
@@ -141,7 +141,7 @@ def evaluate(
         )
     except (KeyError, OSError, TypeError, ValueError) as error:
         return malformed_result(
-            campaign="shell-mass",
+            campaign="shell-mass-profiles",
             archive=archive,
             figures=[figure],
             error=error,

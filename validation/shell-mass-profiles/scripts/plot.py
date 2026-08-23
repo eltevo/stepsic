@@ -1,26 +1,17 @@
 #!/usr/bin/env python3
 '''
-Plot the particle mass distribution across radial shells for spherical
-and cylindrical StePS geometries, comparing constant-omega (``omega``)
-and constant-volume (``volume``) binning strategies.
+Plot particle mass across radial shells for spherical and cylindrical geometries.
 
-Produces a vertical two-panel A&A single-column figure:
+Each panel compares constant-angle (``omega``) and constant-volume (``volume``) bins:
 
 * **Top panel** - spherical geometry (R^3 via stereographic projection
   from S^3): particle mass as a function of radial distance from the
   centre.
-* **Bottom panel** - cylindrical geometry (R^2 × R via stereographic
-  projection from S^1 × R^2): particle mass as a function of radial
+* **Bottom panel** - cylindrical geometry (R^2 x R via stereographic
+  projection from S^1 x R^2): particle mass as a function of radial
   distance from the central axis.
 
-Each panel overlays both binning modes so the reader can immediately
-see how the multiresolution mass profile differs between
-constant-angle-step and constant-compact-volume strategies.
-
-When ``--rcrit`` is given, the constant-resolution inner zone is
-applied to both binning methods: particles inside the critical radius
-all share the same mass, while the exterior follows the standard
-multiresolution scaling.
+With ``--rcrit``, particles inside the critical radius have equal mass for both methods; particles outside retain the corresponding multiresolution profile.
 
 Usage
 -----
@@ -30,8 +21,7 @@ Usage
     python plot-shell-mass.py --D4D 75 --R3D 500 --nrbins 224 --nshell 12288
     python plot-shell-mass.py --rcrit 50 -o shell_mass_rcrit.pdf
 
-All parameters have sensible defaults matching the Template-config.toml
-values used in the stepsic paper.
+Defaults match ``Template-config.toml``.
 '''
 
 from __future__ import annotations
@@ -57,7 +47,9 @@ from stepsic.geometry import (
     _compute_rcrit_zones,
     shell_masses,
 )
-from validation import VALIDATION_COSMOLOGY, load_archive, setup_matplotlib
+from validation._common.cosmology_fields import VALIDATION_COSMOLOGY
+from validation._common.artifacts import load_archive
+from validation._common.plotting import atomic_savefig, setup_matplotlib
 
 
 AA_COL_WIDTH = 3.5
@@ -338,7 +330,7 @@ def plot_shell_mass(
         ax.legend(fontsize=7, loc='lower right', frameon=False)
 
     fig.tight_layout(h_pad=0.6)
-    fig.savefig(output, dpi=300, bbox_inches='tight')
+    atomic_savefig(fig, output, dpi=300, bbox_inches='tight')
     log.info('Figure saved to %s', output)
     plt.close(fig)
 
