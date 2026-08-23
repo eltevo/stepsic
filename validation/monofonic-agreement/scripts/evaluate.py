@@ -36,7 +36,7 @@ def evaluate(
             source="independent Gaussian Fourier-mode variance bound",
         )
         return ValidationResult(
-            campaign="monofonic",
+            campaign="monofonic-agreement",
             parameters=metadata_parameters(data),
             provenance=archive_provenance(archive),
             metrics={"power_agreement_chi_square": metric},
@@ -46,7 +46,7 @@ def evaluate(
         )
     except (KeyError, OSError, TypeError, ValueError) as error:
         return malformed_result(
-            campaign="monofonic",
+            campaign="monofonic-agreement",
             archive=archive,
             figures=[figure],
             error=error,

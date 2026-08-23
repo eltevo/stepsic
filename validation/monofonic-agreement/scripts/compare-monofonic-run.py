@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 '''
-Compare stepsic and monofonIC initial conditions.
+Compare initial conditions produced by stepsic and monofonIC.
 
-Reads both IC snapshots (Gadget HDF5 format), measures P(k) from each
-using identical interlaced CIC deposition, and computes per-particle
-displacement and velocity residuals.
+The script measures both power spectra with the same interlaced CIC deposition and compares matched particles' displacements and velocities.
 
-Outputs a ``.npz`` archive for the companion plotting script.
-
-No matplotlib dependency - safe for headless HPC jobs.
+It writes the measurements to a NumPy archive for the plotting script.
 
 Usage
 -----
@@ -46,7 +42,7 @@ ArrayF: TypeAlias = NDArray[np.float64]
 
 
 # ---------------------------------------------------------------------------
-#  HDF5 IC reading
+# Read initial conditions from HDF5.
 # ---------------------------------------------------------------------------
 
 def _read_gadget_hdf5(
@@ -76,7 +72,7 @@ def _read_gadget_hdf5(
 def _sort_by_id(
     pos: ArrayF, vel: ArrayF, ids: ArrayF,
 ) -> tuple[ArrayF, ArrayF, ArrayF]:
-    '''Sort arrays by particle ID for consistent cross-code matching.'''
+    '''Sort arrays by particle ID so the same particles can be compared.'''
     order = np.argsort(ids)
     return pos[order], vel[order], ids[order]
 

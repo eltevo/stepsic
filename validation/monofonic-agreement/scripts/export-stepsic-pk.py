@@ -42,7 +42,7 @@ import numpy as np
 
 from stepsic.cosmology import CAMBCosmology
 
-from validation import VALIDATION_COSMOLOGY, VALIDATION_COSMOLOGY_NAME
+from validation._common.cosmology_fields import VALIDATION_COSMOLOGY, VALIDATION_COSMOLOGY_NAME
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
