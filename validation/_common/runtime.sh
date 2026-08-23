@@ -1,3 +1,9 @@
+# Shared execution defaults. Environment values take precedence.
+N_MPI="${N_MPI:-16}"
+OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+N_GPU="${N_GPU:-1}"
+N_BUILD="${N_BUILD:-8}"
+
 # ---------------------------------------------------------------------------
 # Internal state - do not access directly from drivers
 # ---------------------------------------------------------------------------

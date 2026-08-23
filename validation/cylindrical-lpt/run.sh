@@ -47,7 +47,7 @@ set -euo pipefail
 #
 #  Configuration (edit config.env or export before running):
 #    STEPS_SRC, STEPSIC_SRC, STEPSIC_PY, STEPS_ENV, STEPSIC_ENV
-#    STEPS_BACKEND, N_MPI, N_GPU, OMP_NUM_THREADS
+#    STEPS_BACKEND, N_GPU, OMP_NUM_THREADS
 #    GLASS_SNAP
 #    R_3D, D_4D, RCRIT, LZ, NRBINS, NSHELL, BIN_MODE
 #    SIM_Z_INIT, SIM_LPTORDER, SIM_NMESH

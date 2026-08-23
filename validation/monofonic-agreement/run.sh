@@ -45,7 +45,8 @@ set -euo pipefail
 #  Configuration (edit config.env or export before running):
 #    STEPSIC_SRC, STEPSIC_PY, STEPSIC_ENV
 #    MONOFONIC_REPO, MONOFONIC_ENV
-#    LBOX, NMESH, Z_INIT, LPT_ORDER, MAS_METHOD, SEED, NUM_THREADS
+#    N_MPI, OMP_NUM_THREADS
+#    LBOX, NMESH, Z_INIT, LPT_ORDER, MAS_METHOD, SEED
 #    COSMO_H0, COSMO_OMEGA_M, COSMO_OMEGA_B, COSMO_OMEGA_L,
 #    COSMO_NS, COSMO_AS, COSMO_SIGMA8, COSMO_TCMB, COSMO_YHE,
 #    COSMO_MNU, COSMO_KPIVOT, COSMO_W0, COSMO_WA, COSMO_NUR
@@ -439,7 +440,7 @@ ConstraintFieldFile = ${_noise_abs}
 ConstraintFieldName = ic_white_noise
 
 [execution]
-NumThreads      = ${NUM_THREADS}
+NumThreads      = ${OMP_NUM_THREADS}
 
 [output]
 format          = gadget_hdf5
@@ -450,7 +451,8 @@ EOF
     echo "  Noise:  ${_noise_abs}"
     (
         cd "${OUTPUT}"
-        vlib::run_in_env "${MONOFONIC_ENV}" "${MONOFONIC_BIN}" "${MONOFONIC_CONF}"
+        vlib::run_in_env "${MONOFONIC_ENV}" \
+            mpirun -np "${N_MPI}" "${MONOFONIC_BIN}" "${MONOFONIC_CONF}"
     )
 
     if [[ ! -f "${MONOFONIC_IC}" ]]; then

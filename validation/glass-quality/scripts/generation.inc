@@ -57,7 +57,7 @@
 #    STEPSIC_SRC       Path to stepsic source tree       (default: ~/projects/stepsic)
 #    STEPS_ENV         Conda env for StePS               (default: steps)
 #    STEPSIC_ENV       Conda env for stepsic             (default: stepsic)
-#    N_MPI, N_GPU, OMP_NUM_THREADS
+#    N_GPU, OMP_NUM_THREADS
 #    LBOX, NGRID, NPART, R_3D, D_4D, RCRIT, LZ
 #    NRBINS_STEPS, NSHELL_STEPS, BIN_MODE_STEPS
 #    NRBINS_CUBICAL, NSHELL_CUBICAL, BIN_MODE_CUBICAL
@@ -131,7 +131,7 @@ fi
 
 # Export shared configuration for geometry sub-scripts.
 export STEPS_SRC STEPSIC_SRC STEPSIC_PY STEPS_ENV STEPSIC_ENV
-export N_MPI N_GPU OMP_NUM_THREADS STEPS_BACKEND
+export N_GPU OMP_NUM_THREADS STEPS_BACKEND
 export OMP_PLACES=cores OMP_PROC_BIND=close
 export LBOX NGRID NPART R_3D D_4D RCRIT LZ
 export NRBINS_STEPS NSHELL_STEPS BIN_MODE_STEPS

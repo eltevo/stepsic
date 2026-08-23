@@ -7,7 +7,8 @@
 #   STEPS_ENV     - conda env name for StePS
 #   BUILD_DIR     - where compiled binaries are installed
 #   STEPS_BACKEND - cuda (default) or bh
-#   N_MPI, N_GPU, OMP_NUM_THREADS
+#   N_GPU, OMP_NUM_THREADS  (StePS runs as a single MPI task; N_GPU GPUs for
+#                            the cuda backend, OMP_NUM_THREADS threads for bh)
 
 vlib::steps::validate_backend() {
     case "${STEPS_BACKEND:-cuda}" in
@@ -178,7 +179,7 @@ vlib::steps::run_binary() {
     script="$(cat <<EOF
 set -euo pipefail
 export OMP_NUM_THREADS="${OMP_NUM_THREADS}"
-mpirun -np "${N_MPI}" "${binary}" "${param}" "${parallel_count}"
+mpirun -np 1 "${binary}" "${param}" "${parallel_count}"
 EOF
 )"
     vlib::run_shell_in_env "${STEPS_ENV}" "${script}"
