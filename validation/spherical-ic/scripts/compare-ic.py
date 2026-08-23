@@ -1,27 +1,12 @@
 #!/usr/bin/env python3
 '''
-IC-level fair-sample comparison: embedded geometry vs periodic cube.
+Compare embedded initial conditions with a periodic cube.
 
-Both ICs must be produced by ``stepsic.py`` with identical LBOX, NMESH,
-SEED, cosmology, and redshift, so they share their Gaussian field
-mode-for-mode; the spherical (or cylindrical) IC differs from the
-periodic cubical grid reference only through the geometry handling -
-shell/glass particle load, multi-resolution mixing, and interpolation
-at off-grid positions. This script quantifies that difference inside
-the well-resolved central region:
+Both inputs must use the same box, mesh, seed, cosmology, and redshift so they share every Gaussian mode. The central comparison then measures differences caused by particle geometry, multiresolution mixing, and interpolation away from grid points:
 
-* **velocity-field residual** - both particle sets are CIC-deposited
-  (mass-weighted velocity) onto a common grid covering the central
-  cube; per-cell |v_geom - v_ref| is reported as an overall RMS, as a
-  radial profile, and normalized by the reference RMS. At 1LPT the
-  velocity is proportional to the displacement field, so this is a
-  direct field-level comparison that needs no Lagrangian bookkeeping;
-* **windowed core P(k)** - mass-weighted P(k) of the particles inside
-  the core radius, with the identical spherical/cylindrical top-hat
-  window applied to both, so the ratio is window-independent;
-* **velocity-component variances** - per-component var(v) in the core
-  for both ICs (direction-resolved isotropy check; for cylindrical
-  geometry the z axis is the genuinely periodic one).
+* **velocity difference** - both particle sets are deposited with CIC onto the same central grid. The archive records the RMS difference, its radial profile, and its value relative to the periodic grid. At 1LPT, velocity is proportional to displacement;
+* **core P(k)** - mass-weighted power inside the core radius, using the same spherical or cylindrical window for both inputs;
+* **velocity variance** - ``var(v)`` along each axis in the core. For cylindrical geometry, z is the periodic axis.
 
 Usage
 -----
@@ -62,12 +47,11 @@ def load_ic(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 def unwrap_centred(pos: np.ndarray, sizes: np.ndarray,
                    wrapped: tuple[bool, bool, bool]) -> np.ndarray:
-    '''Undo stepsic's periodic output wrapping on the wrapped axes.
+    '''Convert wrapped output coordinates back to centred coordinates.
 
     ``stepsic.field.wrap`` stores periodic-axis coordinates as
     ``mod(x + L/2, L)`` (corner-origin); the physical centred
-    coordinate is therefore ``stored - L/2``. Non-periodic axes are
-    written centred already and are left untouched.
+    coordinate is therefore ``stored - L/2``. Non-periodic axes are already centred.
     '''
     out = pos.copy()
     for i in range(3):
@@ -224,7 +208,7 @@ def compare(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description='IC-level embedded-geometry vs periodic-cube comparison.',
+        description='Compare embedded initial conditions with a periodic cube.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument('--geom-ic', type=str, required=True)

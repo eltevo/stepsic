@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate IC component variances against the periodic reference."""
+"""Compare velocity variance with the periodic initial conditions."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
         x = math.log(1.0e6)
         limit = dof + 2.0 * math.sqrt(dof * x) + 2.0 * x
         return ValidationResult(
-            campaign="sphere-ic",
+            campaign="spherical-ic",
             parameters=metadata_parameters(data),
             provenance=archive_provenance(archive),
             metrics={
@@ -83,7 +83,7 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
         ZeroDivisionError,
     ) as error:
         return malformed_result(
-            campaign="sphere-ic",
+            campaign="spherical-ic",
             archive=archive,
             figures=[figure],
             error=error,

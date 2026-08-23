@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  validation/sphere/run.sh - IC-level fair-sample validation (IC level)
+#  Compare spherical or cylindrical initial conditions with a periodic grid.
 #
-#  Generates, with an identical Fourier box, seed, cosmology, and
-#  redshift, (a) a periodic cubical grid-load IC and (b) an embedded
-#  spherical (or cylindrical) shell-load IC, so that both share their
-#  Gaussian field mode-for-mode. The comparison inside the central
-#  constant-resolution region then isolates the geometry handling
-#  (embedding, multi-resolution mixing, off-grid interpolation):
+#  Both initial conditions use the same Fourier box, seed, cosmology, and
+#  redshift, so they share every Gaussian mode. Comparing their central,
+#  constant-resolution regions shows the effect of the particle geometry,
+#  multiresolution mixing, and interpolation away from grid points:
 #    - mass-weighted velocity-field residual on a common grid,
 #    - windowed core P(k) ratio,
 #    - per-component velocity variances.
 #
 #  The evolved comparison against an N-body reference lives
-#  in evolved.sh; this driver is laptop-scale.
+#  in the spherical-evolution campaign; this driver is laptop-scale.
 #
 #  Pipeline steps:
 #    1. ic_ref   - periodic cubical grid IC          (stepsic)
@@ -25,7 +23,7 @@
 #    bash run.sh [OPTIONS]
 #
 #  Options (standard vlib):
-#    --step=N / --plot-only / --force / --force-step=A,B / --clean
+#    --size=SIZE / --step=N / --plot-only / --force / --force-step=A,B / --clean
 #    --config=PATH / --list-steps / -h
 #
 #  Configuration (edit config.env or export before running):
@@ -39,19 +37,23 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
-vlib::source_config "${CONFIG_FILE}"
+vlib::prepare_campaign spherical-ic "${BASEDIR}" "${BASEDIR}/config.env"
 
 vlib::declare_steps ic_ref ic_geom compare plot evaluate
+vlib::manifest_implementation compare "${BASEDIR}/scripts/compare-ic.py"
+vlib::manifest_implementation plot "${BASEDIR}/scripts/plot-ic.py"
+vlib::manifest_evaluator evaluate "${BASEDIR}/scripts/evaluate.py"
 if (( VLIB_LIST_STEPS )); then
+    vlib::profile_summary
     vlib::list_steps
     exit 0
 fi
 vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 
-VLIB_CACHE_DIR="${BASEDIR}/cache"
-OUTPUT="${BASEDIR}/output"
-PARAM_DIR="${BASEDIR}/configs"
+VLIB_CACHE_DIR="${VLIB_RUN_ROOT}/cache"
+OUTPUT="${VLIB_RUN_ROOT}/output"
+FIGURES="${OUTPUT}/supplementary"
+PARAM_DIR="${VLIB_RUN_ROOT}/config/generated"
 IC_REF_DIR="${VLIB_CACHE_DIR}/ic_ref"
 IC_GEOM_DIR="${VLIB_CACHE_DIR}/ic_geom"
 
@@ -59,7 +61,7 @@ if (( VLIB_CLEAN )); then
     vlib::clear_dir "${VLIB_CACHE_DIR}"
     vlib::clear_dir "${OUTPUT}"
 fi
-mkdir -p "${VLIB_CACHE_DIR}" "${OUTPUT}" "${PARAM_DIR}" \
+mkdir -p "${VLIB_CACHE_DIR}" "${FIGURES}" "${PARAM_DIR}" \
          "${IC_REF_DIR}" "${IC_GEOM_DIR}"
 
 # Shared Fourier box: LBOX = ALPHA * 2 * R_3D on the non-periodic axes.
@@ -78,7 +80,7 @@ vlib::ensure_env "${STEPSIC_ENV}"
 
 echo ""
 echo "========================================================================"
-echo "  IC-level fair-sample validation: ${GEOMETRY} vs periodic cube"
+echo "  Initial conditions: ${GEOMETRY} vs periodic cube"
 echo "========================================================================"
 echo ""
 echo "  R_3D: ${R_3D}   RCRIT: ${RCRIT}   alpha: ${ALPHA}  -> LBOX: ${LBOX_TOML}"
@@ -150,17 +152,17 @@ if vlib::step_check "compare" "${VLIB_CACHE_DIR}/compare.npz"; then
 fi
 
 # -- Step 4: plot ------------------------------------------------------------
-if vlib::step_check "plot" "${OUTPUT}/sphere-ic.pdf"; then
+if vlib::step_check "plot" "${FIGURES}/spherical-ic.pdf"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot-ic.py" \
         -i "${VLIB_CACHE_DIR}/compare.npz" \
-        -o "${OUTPUT}/sphere-ic.pdf"
+        -o "${FIGURES}/spherical-ic.pdf"
     vlib::step_done "plot"
 fi
 
 if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/evaluate.py" \
         --archive "${VLIB_CACHE_DIR}/compare.npz" \
-        --figure "${OUTPUT}/sphere-ic.pdf" \
+        --figure "${FIGURES}/spherical-ic.pdf" \
         --output "${OUTPUT}/result.json"
     vlib::step_done "evaluate"
 fi

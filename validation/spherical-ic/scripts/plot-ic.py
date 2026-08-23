@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 '''
-Plot the IC-level comparison (compare-ic.py archive).
+Plot the embedded-to-periodic initial-condition comparison.
 
-Three panels: (a) radial profile of the relative velocity-field
-residual, (b) windowed core P(k) ratio, (c) per-component velocity
-variances (isotropy check).
+The panels show relative velocity difference by radius, the core power ratio, and velocity variance along each axis.
 
 Usage
 -----
@@ -23,7 +21,8 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 
-from validation import setup_matplotlib, load_archive
+from validation._common.plotting import atomic_savefig, setup_matplotlib
+from validation._common.artifacts import load_archive
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -31,7 +30,7 @@ log = logging.getLogger(__name__)
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description='Plot IC-level geometry comparison.',
+        description='Plot embedded and periodic initial conditions side by side.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument('-i', '--input', type=str, required=True)
@@ -75,7 +74,7 @@ def main() -> None:
 
     fig.tight_layout()
     if args.output:
-        fig.savefig(args.output, bbox_inches='tight')
+        atomic_savefig(fig, args.output, bbox_inches='tight')
         log.info('Figure saved to %s', args.output)
     else:
         plt.show()
