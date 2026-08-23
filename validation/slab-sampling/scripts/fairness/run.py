@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 '''
-Quantify how fair a sample a native stepsic slab is of an isotropic
-Universe.
+Compare a native stepsic slab with an equally sized region cut from an isotropic cube.
 
-The circular test (recovering the input P(k) on the slab's own mode
-lattice) cannot answer this. Here the non-circular comparison is run at
-the IC level:
+Recovering the input ``P(k)`` on the slab's own Fourier modes cannot show which longer z modes are missing. This comparison instead uses:
 
 * a **native slab** realization ``L x L x L/s`` (its own periodic mode
   lattice, so k_z is quantized at 2*pi/(L/s): supra-slab z-modes are
@@ -14,24 +11,14 @@ the IC level:
   realization at the same cell size. Its density field contains the
   full isotropic mode content, folded into the slab window.
 
-Both fields are pushed through the *identical* windowed estimator: each
-particle is weighted by a Tukey taper W(z) across the slab thickness,
-deposited on the same slab-box mesh, and normalized by the same
-deposit of the *unperturbed* (Lagrangian) load - this cancels the
-window's own profile exactly, so the spectra differ only through mode
-content. Measured per realization:
+Both fields use the same estimator. Particles are weighted by a Tukey window across the slab, deposited on the same mesh, and normalized by the corresponding undisplaced load. This removes the window profile, leaving the difference in available Fourier modes. Each random field contributes:
 
 * isotropic windowed P(k) for native and cut;
 * the same split into line-of-sight (mu = |k_z|/k > MU_SPLIT) and
   transverse (mu < MU_SPLIT) mode sets;
-* per-component displacement variances (the Fig. 3 statistic): the
-  native slab suppresses var(Psi_z) through the missing long z-modes,
-  and the cube cut supplies the fair-sample value.
+* per-component displacement variances, showing the suppression of ``var(Psi_z)`` when the native slab lacks long z modes.
 
-Realizations are seed-matched only loosely (the two boxes' mode
-lattices differ, so the fields are distinct realizations); ensemble
-over --nreal seeds provides the error bars, with optional paired-fixed
-variance reduction.
+The two boxes have different Fourier modes, so the same seed does not create identical fields. Repeating the comparison with ``--nreal`` measures the resulting variation; paired-fixed fields can reduce it.
 
 Usage
 -----
@@ -57,7 +44,7 @@ import scipy.fft
 from stepsic.field import create_grid, fourier_vectors, wrap
 from stepsic.interpolation import deposit_field
 
-from validation import (
+from validation._common.cosmology_fields import (
     ArrayF,
     generate_field,
     init_cosmology,
@@ -273,7 +260,7 @@ def run_slab_validation(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description='Native-slab vs cube-cut fair-sample comparison.',
+        description='Compare a native slab with an equally sized region cut from a cube.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument('--Lcube', type=float, default=1000.0)

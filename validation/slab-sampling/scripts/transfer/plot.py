@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 '''
-Plot stepsic P(k) recovery as a function of box aspect ratio from
-``.npz`` archives produced by :mod:`squish_run`.
+Plot power transfer relative to the cubic box as aspect ratio changes.
 
-Produces a single-panel figure (P_meas / P_ref vs k) with one curve
-per L_z value, designed for a single-column A&A layout.
+The figure contains one curve for each z length.
 
 Usage
 -----
@@ -26,7 +24,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 
-from validation import setup_matplotlib, load_archive
+from validation._common.plotting import atomic_savefig, setup_matplotlib
+from validation._common.artifacts import load_archive
+from common import cubic_normalized_transfer_curves
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -37,9 +37,9 @@ ArrayF: TypeAlias = NDArray[np.float64]
 
 @dataclass
 class CurveData:
-    '''One P(k) ratio curve ready for plotting.'''
+    '''One power-transfer curve relative to the cubic box.'''
     k: ArrayF
-    ratio: ArrayF
+    transfer: ArrayF
     nmesh_max: int
     lz: float
     label: str
@@ -47,7 +47,7 @@ class CurveData:
 
 
 def build_curves(data: dict) -> list[CurveData]:
-    '''Extract ratio curves for every L_z value in the archive.
+    '''Extract a curve for each L_z value, relative to the cubic box.
 
     Parameters
     ----------
@@ -59,41 +59,29 @@ def build_curves(data: dict) -> list[CurveData]:
     list of CurveData
         One entry per L_z step, sorted from largest to smallest L_z.
     '''
-    lz_values = data['meta_lz_values']
     l_cube = float(data['meta_l_cube'])
     nmesh = int(data['meta_nmesh'])
 
     dk = float(data['meta_dk'])
 
-    # Nyquist is set by the fixed cell size, identical for ALL curves.
+    # The fixed cell size gives every curve the same Nyquist wavenumber.
     k_ny = np.pi / dk
 
     curves = []
-    for lz in lz_values:
-        tag = f'lz{lz:g}'
-        lpt_key_k = f'lpt_{tag}_k'
-        lpt_key_pk = f'lpt_{tag}_pk'
-        ref_key_pk = f'ref_{tag}_pk'
-
-        if lpt_key_k not in data:
-            log.warning('Keys not found for L_z = %g, skipping.', lz)
-            continue
-
-        k = data[lpt_key_k]
-        pk_lpt = data[lpt_key_pk]
-        pk_ref = data[ref_key_pk]
-        ratio = pk_lpt / pk_ref
-
+    for normalized in cubic_normalized_transfer_curves(data):
+        lz = normalized.lz_mpc_h
         aspect = l_cube / lz
         label = rf'$L_z = {lz:g}$ ({aspect:.1f}:1)'
 
         nmesh_max = np.round(l_cube / dk)
         curves.append(CurveData(
-            k=k, ratio=ratio, nmesh_max=nmesh_max, lz=lz, label=label, k_ny=k_ny,
+            k=normalized.k_h_mpc,
+            transfer=normalized.transfer,
+            nmesh_max=nmesh_max,
+            lz=lz,
+            label=label,
+            k_ny=k_ny,
         ))
-
-    # Sort: largest L_z (cubic) first
-    curves.sort(key=lambda c: -c.lz)
     return curves
 
 
@@ -106,23 +94,22 @@ def plot_squish(
     curves: list[CurveData],
     output: str | None = None,
     *,
-    ylim: tuple[float, float] = (0.99, 1.01),
+    ylim: tuple[float, float] = (0.9949, 1.0051),
     percent_band: float = 0.005,
     title: str | None = None,
 ) -> None:
-    '''Produce the single-panel squish validation figure.
+    '''Plot power transfer relative to the cubic box.
 
     Parameters
     ----------
     curves : list of CurveData
-        Ratio curves, one per L_z value.
+        Cubic-normalized transfer curves, one per L_z value.
     output : str or None
         Save path. Shows interactively if ``None``.
     ylim : tuple
         Y-axis limits for the ratio panel.
     percent_band : float
-        Half-width of the shaded reference band (as a fraction, e.g.
-        0.005 for +/- 0.5%).
+        Half-width of the shaded reference band as a fraction.
     title : str or None
         Optional panel title text (top-left annotation).
     '''
@@ -150,7 +137,7 @@ def plot_squish(
     for i, curve in enumerate(curves):
         ls = _LINESTYLES[i % len(_LINESTYLES)]
         ax.semilogx(
-            curve.k, curve.ratio, ls=ls, lw=1.4,
+            curve.k, curve.transfer, ls=ls, lw=1.4,
             label=curve.label, zorder=3 + i,
         )
 
@@ -175,7 +162,7 @@ def plot_squish(
     ax.set_ylim(*ylim)
     ax.set_xlabel(r'$k$ [$h\,\mathrm{Mpc}^{-1}$]')
     ax.set_title(
-        r'$P_{\mathrm{meas}} (k) / P_{\mathrm{ref}} (k)$',
+        r'$T_{L_z}(k)$',
         loc='left', fontsize=8,
     )
 
@@ -196,7 +183,7 @@ def plot_squish(
     fig.tight_layout()
 
     if output:
-        fig.savefig(output, bbox_inches='tight')
+        atomic_savefig(fig, output, bbox_inches='tight')
         log.info('Figure saved to %s', output)
     else:
         plt.show()
@@ -204,20 +191,20 @@ def plot_squish(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description='Plot stepsic P(k) recovery vs box aspect ratio.',
+        description='Plot power transfer relative to the cubic box at each aspect ratio.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument(
         '-i', '--input', type=str, required=True,
-        help='Input .npz archive from squish_run.py.',
+        help='Input NumPy archive from the transfer measurement.',
     )
     p.add_argument(
         '-o', '--output', type=str, default=None,
-        help='Output figure path (e.g. squish.pdf). '
+        help='Output figure path. '
              'Shows interactively if omitted.',
     )
     p.add_argument(
-        '--ylim', type=float, nargs=2, default=[0.99, 1.01],
+        '--ylim', type=float, nargs=2, default=[0.9949, 1.0051],
         help='Y-axis limits (ratio).',
     )
     p.add_argument(
@@ -254,9 +241,9 @@ if __name__ == '__main__':
     for c in curves:
         log.info(
             '  L_z = %7.1f | %3d bins | k = [%.4e, %.4e] | '
-            'k_Ny = %.4f | ratio = [%.6f, %.6f]',
+            'k_Ny = %.4f | transfer = [%.6f, %.6f]',
             c.lz, len(c.k), c.k[0], c.k[-1], c.k_ny,
-            c.ratio.min(), c.ratio.max(),
+            c.transfer.min(), c.transfer.max(),
         )
 
     plot_squish(

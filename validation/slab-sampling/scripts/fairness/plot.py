@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 '''
-Plot the native-slab vs cube-cut fairness comparison (run.py archives).
+Plot a native slab beside an equally sized region cut from a cube.
 
-Three panels: (a) isotropic windowed P(k) ratio native/cut, (b) the
-same ratio for the transverse and line-of-sight mode sets, (c) per-
-component displacement variance ratio. Bands are the realization
-scatter.
+The panels compare isotropic power, transverse and line-of-sight power, and displacement variance. Shaded bands show variation between random fields.
 
 Usage
 -----
@@ -24,7 +21,8 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 
-from validation import setup_matplotlib, load_archive
+from validation._common.plotting import atomic_savefig, setup_matplotlib
+from validation._common.artifacts import load_archive
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -52,7 +50,7 @@ def _ratio(num: np.ndarray, den: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description='Plot slab fair-sample comparison.',
+        description='Compare a native slab with an equally sized region cut from a cube.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument('-i', '--input', type=str, required=True)
@@ -105,7 +103,7 @@ def main() -> None:
 
     fig.tight_layout()
     if args.output:
-        fig.savefig(args.output, bbox_inches='tight')
+        atomic_savefig(fig, args.output, bbox_inches='tight')
         log.info('Figure saved to %s', args.output)
     else:
         plt.show()

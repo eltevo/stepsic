@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 r'''
-Plot the slab displacement anisotropy: transverse vs longitudinal.
+Plot transverse and longitudinal displacement in a slab.
 
-Consumes the ``.npz`` archive from ``validate-fields-run.py`` and
-produces a single-panel figure showing the physical suppression of
-:math:`|\Psi_z|` relative to :math:`|\Psi_{x,y}|` in a non-cubic
-("slab") box geometry.
+The figure shows the suppression of :math:`|\Psi_z|` relative to :math:`|\Psi_{x,y}|` in a non-cubic box.
 
-The :math:`x` and :math:`y` histograms are averaged into a single
-"transverse" curve :math:`\langle|\Psi_\perp|\rangle`, exploiting the
-exact :math:`x \leftrightarrow y` symmetry of the slab (:math:`L_x
-= L_y`). The "longitudinal" curve is :math:`|\Psi_z|`.
+Because :math:`L_x = L_y`, the x and y histograms are averaged into one transverse curve. The z histogram gives the longitudinal curve.
 
 Usage
 -----
@@ -32,7 +26,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 
-from validation import setup_matplotlib, load_archive
+from validation._common.plotting import atomic_savefig, setup_matplotlib
+from validation._common.artifacts import load_archive
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -146,7 +141,7 @@ def plot_slab_anisotropy(
     fig.tight_layout()
 
     if output:
-        fig.savefig(output, bbox_inches='tight')
+        atomic_savefig(fig, output, bbox_inches='tight')
         log.info('Figure saved to %s', output)
     else:
         plt.show()

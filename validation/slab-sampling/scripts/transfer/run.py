@@ -1,18 +1,10 @@
 #!/usr/bin/env python3
 '''
-Measure LPT P(k) recovery as a function of box aspect ratio.
+Measure LPT power transfer as box aspect ratio changes.
 
-Starting from a cubic box of side ``L_cube``, the z-dimension is
-linearly decreased to ``L_z`` in ``N`` steps while the x and y
-dimensions remain fixed. For each slab geometry
-``L_cube × L_cube × L_z(i)``, a full LPT realisation is produced and
-its particle P(k) is compared against the band-averaged theory
-reference *for that specific box geometry*.
+Starting from a cube of side ``L_cube``, the script shortens z in ``N`` steps while leaving x and y fixed. At each step it compares particle ``P(k)`` with theory averaged over that box's discrete Fourier modes. The evaluator then compares each result with the cubic box.
 
-Results are written to an ``.npz`` archive that the companion
-``validate_squish_plot.py`` plotting script can consume.
-
-No matplotlib dependency - safe for headless HPC jobs.
+Results are written to a NumPy archive for the plotting script.
 
 Usage
 -----
@@ -41,7 +33,7 @@ from scipy.interpolate import CubicSpline
 from stepsic.field import create_grid, fourier_kmod, wrap
 from stepsic.pk import _bin_isotropic_modes, measure_pk
 
-from validation import (
+from validation._common.cosmology_fields import (
     ArrayF,
     ArrayI,
     GrowthData,
@@ -202,12 +194,9 @@ def run_squish_validation(
     paired: bool = False,
     kmax_fraction_nyquist: float = 0.8,
 ) -> None:
-    r'''Run LPT P(k) recovery validation for a sequence of squished boxes.
+    r'''Measure LPT P(k) while shortening one side of the box.
 
-    **Resolution strategy**: The ``nmesh`` parameter sets the number of
-    cells along the z-axis of the *most squished* box (``L_z = lz_min``).
-    This defines a fixed physical cell size ``dk = lz_min / nmesh`` that
-    is reused for every box in the suite.
+    ``nmesh`` sets the number of z cells in the shortest box. The resulting physical cell size, ``dk = lz_min / nmesh``, is used for every box.
 
     Parameters
     ----------
@@ -218,7 +207,7 @@ def run_squish_validation(
     nsteps : int
         Number of L_z values (including endpoints).
     nmesh : int
-        Grid resolution: cells along the z-axis of the most squished box.
+        Grid resolution along z in the shortest box.
     lpt_order : {1, 2}
         LPT order.
     redshift : float
@@ -245,11 +234,11 @@ def run_squish_validation(
 
     lz_values = _generate_lz_steps(l_cube, lz_min, nsteps)
 
-    # Fixed cell size from the most-squished box
+    # Use the shortest box to set one cell size for the whole comparison.
     dk = lz_min / nmesh  # [Mpc/h]
 
     log.info(
-        'Squish sweep: L_cube = %.1f, L_z range = [%.1f, %.1f], '
+        'Box-length sweep: L_cube = %.1f, L_z range = [%.1f, %.1f], '
         '%d steps, %dLPT, %s, z = %g, dk = %.6f (fixed)',
         l_cube, lz_values[0], lz_values[-1], nsteps,
         lpt_order, method.upper(), redshift, dk,
@@ -374,8 +363,7 @@ def run_squish_validation(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            'Run stepsic P(k) recovery validation for squished '
-            '(slab) box geometries. Save results to an .npz archive.'
+            'Measure particle power as the z length of a box decreases, then save a NumPy archive.'
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -393,8 +381,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         '--nmesh', type=int, default=256,
-        help='Grid resolution: cells along the z-axis of the most squished '
-             'box.',
+        help='Cells along z in the shortest box; this sets the shared cell size.',
     )
     parser.add_argument(
         '--lpt', type=int, default=2, choices=[1, 2],

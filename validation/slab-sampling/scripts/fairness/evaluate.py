@@ -39,7 +39,7 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
             np.mean(slab_variance[:, 2]) / np.mean(cut_variance[:, 2])
         )
         return ValidationResult(
-            campaign="slab",
+            campaign="slab-sampling-fairness",
             parameters=metadata_parameters(data),
             provenance=archive_provenance(archive),
             metrics={
@@ -55,7 +55,7 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
                     unit="dimensionless",
                     rationale=(
                         "A native periodic slab lacks the line-of-sight modes "
-                        "longer than its short side that remain in a cube carve."
+                        "longer than its short side that remain in the region cut from the cube."
                     ),
                     source="discrete Fourier support of a periodic slab",
                 )
@@ -65,7 +65,7 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
         )
     except (KeyError, OSError, TypeError, ValueError) as error:
         return malformed_result(
-            campaign="slab",
+            campaign="slab-sampling-fairness",
             archive=archive,
             figures=[figure],
             error=error,
