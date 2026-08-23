@@ -1,22 +1,7 @@
 #!/usr/bin/env python3
-'''
-Compute displacement and velocity field statistics for stepsic
-validation.
+'''Measure LPT displacement and velocity distributions for one configuration.
 
-Generates LPT-displaced particle positions and velocities for a single
-(Lx, Ly, Lz, nmesh, z, lpt_order, method) configuration.
-
-Serialises pre-binned histograms to a ``.npz`` archive that the
-companion ``validate_fields_plot.py`` script can consume.
-
-Usage
------
-::
-
-    python validate_fields_run.py \\
-        --Lbox 500 500 500 --nmesh 128 --lpt 2 --z 31 \\
-        --method cic --seed 137 --nbins 120 \\
-        -o fields_data.npz
+The output archive contains pre-binned histograms for the plotting script.
 '''
 
 from __future__ import annotations
@@ -36,11 +21,10 @@ from validation._common.evaluation import atomic_savez
 
 from stepsic.field import create_grid, cubic_voxels
 
-from validation import (
+from validation._common.cosmology_fields import (
     ArrayF,
     GrowthData,
     generate_field,
-    histogram,
     init_cosmology,
     parse_boxsize,
     run_lpt,
@@ -155,6 +139,7 @@ def run_fields(
     stat_disp_max = 0.0
     stat_vel_mean_sum = 0.0
     stat_vel_max = 0.0
+    component_second_moments: list[np.ndarray] = []
 
     t0 = time.time()
     eval_idx = 0
@@ -193,6 +178,9 @@ def run_fields(
             log.info('    LPT done in %.1f s', time.time() - t_lpt)
 
             disp_kpc = (xpert - pos_grid) * 1e3  # [kpc/h]
+            component_second_moments.append(
+                np.mean(np.square(disp_kpc), axis=0, dtype=np.float64)
+            )
             samples = {
                 'disp_x': np.abs(disp_kpc[:, 0]),
                 'disp_y': np.abs(disp_kpc[:, 1]),
@@ -311,6 +299,9 @@ def run_fields(
     results['stat_vel_mean'] = np.float64(stat_vel_mean_sum / n_total)
     results['stat_vel_median'] = np.float64(stat_vel_median)
     results['stat_vel_max'] = np.float64(stat_vel_max)
+    results['stat_disp_component_second_moments'] = np.asarray(
+        component_second_moments, dtype=np.float64,
+    )
 
     atomic_savez(output, **results)
     log.info(
@@ -322,8 +313,7 @@ def run_fields(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            'Generate LPT displacement/velocity fields and serialise '
-            'histogram data to an .npz archive for plotting.'
+            'Measure LPT displacement and velocity distributions, then save their histograms to a NumPy archive.'
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )

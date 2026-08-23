@@ -1,40 +1,36 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  validation/field/run.sh - displacement and velocity field histogram validation
+#  LPT displacement and velocity field statistics.
 #
-#  Generates LPT-displaced particles WITHOUT periodic wrapping so the full
-#  displacement distribution is visible. Produces three output figures:
+#  Generates cubic LPT-displaced particles without periodic wrapping.
 #
-#    output/fields.pdf          3-panel |Ψ_x|, |Ψ|, |v| histograms (2LPT)
-#    output/comparison.pdf      1LPT vs 2LPT histogram overlay
-#    output/slab_anisotropy.pdf x vs z displacement ratio for slab geometry
+#    output/supplementary/field-statistics.pdf      2LPT field histograms
+#    output/supplementary/field-statistics-lpt.pdf  1LPT/2LPT comparison
 #
 #  Usage:
 #    bash run.sh [OPTIONS]
 #
 #  Options:
+#    --size=SIZE       small, medium (default), or approved large profile
 #    --step=N          Start from step N (default 1)
 #    --plot-only       Regenerate PDFs from cached .npz files
 #    --force           Re-run every step, ignoring cached outputs
 #    --force-step=A,B  Re-run only the named steps
 #    --clean           Delete cache/ and output/ before running
-#    --config=PATH     Source an alternative config.env
+#    --config=PATH     Select a typed custom TOML profile
 #    --list-steps      Print the step list and exit
 #    -h, --help        Print this help text and exit
 #
 #  Steps (in order):
-#    1. run_2lpt   - 200-realisation 2LPT displacement/velocity histograms
-#    2. run_1lpt   - 200-realisation 1LPT histograms (for comparison)
-#    3. run_slab   - 200-realisation slab box histograms
-#    4. plot_fields      - validation-fields PDF (2LPT only)
-#    5. plot_comparison  - 1LPT vs 2LPT overlay PDF
-#    6. plot_slab        - slab anisotropy PDF
+#    1. run_2lpt         - 2LPT displacement and velocity histograms
+#    2. run_1lpt         - 1LPT histograms for comparison
+#    3. plot_fields      - displacement/velocity distributions
+#    4. plot_comparison  - 1LPT vs 2LPT overlay
+#    5. evaluate         - isotropy and histogram integrity
 #
 #  Configuration (edit config.env or export before running):
 #    LBOX_3D           3D box [Lx Ly Lz] in Mpc/h    (default: 1000 1000 1000)
-#    LBOX_SLAB         Slab box [Lx Ly Lz] in Mpc/h  (default: 1000 1000 200)
 #    NMESH_3D          Grid cells, 3D box             (default: 128)
-#    NMESH_SLAB        Grid cells, slab               (default: 64)
 #    Z                 Target redshift                (default: 31)
 #    METHOD            Mass-assignment scheme         (default: cic)
 #    SEED              RNG seed                       (default: 137)
@@ -48,25 +44,33 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
-CONFIG_FILE="${VLIB_CONFIG_FILE:-${BASEDIR}/config.env}"
-vlib::source_config "${CONFIG_FILE}"
+vlib::prepare_campaign field-statistics "${BASEDIR}" "${BASEDIR}/config.env"
 
-vlib::declare_steps run_2lpt run_1lpt run_slab plot_fields plot_comparison plot_slab evaluate
+vlib::declare_steps run_2lpt run_1lpt plot_fields plot_comparison evaluate
+for _step in run_2lpt run_1lpt; do
+    vlib::manifest_implementation "${_step}" "${BASEDIR}/scripts/run.py"
+done
+for _step in plot_fields plot_comparison; do
+    vlib::manifest_implementation "${_step}" "${BASEDIR}/scripts/plot.py"
+done
+vlib::manifest_evaluator evaluate "${BASEDIR}/scripts/evaluate.py"
 if (( VLIB_LIST_STEPS )); then
+    vlib::profile_summary
     vlib::list_steps
     exit 0
 fi
 vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 
-VLIB_CACHE_DIR="${BASEDIR}/cache"
-OUTPUT="${BASEDIR}/output"
+VLIB_CACHE_DIR="${VLIB_RUN_ROOT}/cache"
+OUTPUT="${VLIB_RUN_ROOT}/output"
+FIGURES="${OUTPUT}/supplementary"
 
 if (( VLIB_CLEAN )); then
     vlib::clear_dir "${VLIB_CACHE_DIR}"
     vlib::clear_dir "${OUTPUT}"
 fi
 
-mkdir -p "${VLIB_CACHE_DIR}" "${OUTPUT}"
+mkdir -p "${VLIB_CACHE_DIR}" "${FIGURES}"
 
 
 vlib::init_conda
@@ -78,7 +82,6 @@ echo "  Field validation: displacement and velocity distributions"
 echo "========================================================================"
 echo ""
 echo "  3D box:   ${LBOX_3D} Mpc/h   nmesh: ${NMESH_3D}"
-echo "  Slab box: ${LBOX_SLAB} Mpc/h   nmesh: ${NMESH_SLAB}"
 echo "  z: ${Z}   method: ${METHOD}   nreal: ${NREAL}   nbins: ${NBINS}"
 echo "  cache:  ${VLIB_CACHE_DIR}"
 echo "  output: ${OUTPUT}"
@@ -114,49 +117,26 @@ if vlib::step_check "run_1lpt" "${VLIB_CACHE_DIR}/1lpt.npz"; then
     vlib::step_done "run_1lpt"
 fi
 
-# shellcheck disable=SC2086
-if vlib::step_check "run_slab" "${VLIB_CACHE_DIR}/slab.npz"; then
-    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/run.py" \
-        --Lbox ${LBOX_SLAB} \
-        --nmesh "${NMESH_SLAB}" \
-        --lpt 2 \
-        --z "${Z}" \
-        --method "${METHOD}" \
-        --seed "${SEED}" \
-        --nreal "${NREAL}" \
-        --nbins "${NBINS}" \
-        -o "${VLIB_CACHE_DIR}/slab.npz"
-    vlib::step_done "run_slab"
-fi
-
-if vlib::step_check "plot_fields" "${OUTPUT}/fields.pdf"; then
+if vlib::step_check "plot_fields" "${FIGURES}/field-statistics.pdf"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot.py" \
         -i "${VLIB_CACHE_DIR}/2lpt.npz" \
-        -o "${OUTPUT}/fields.pdf"
+        -o "${FIGURES}/field-statistics.pdf"
     vlib::step_done "plot_fields"
 fi
 
-if vlib::step_check "plot_comparison" "${OUTPUT}/comparison.pdf"; then
+if vlib::step_check "plot_comparison" "${FIGURES}/field-statistics-lpt.pdf"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot.py" \
         -i "${VLIB_CACHE_DIR}/1lpt.npz" "${VLIB_CACHE_DIR}/2lpt.npz" \
         --labels "1LPT" "2LPT" \
-        -o "${OUTPUT}/comparison.pdf"
+        -o "${FIGURES}/field-statistics-lpt.pdf"
     vlib::step_done "plot_comparison"
-fi
-
-if vlib::step_check "plot_slab" "${OUTPUT}/slab_anisotropy.pdf"; then
-    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot_slab.py" \
-        -i "${VLIB_CACHE_DIR}/slab.npz" \
-        -o "${OUTPUT}/slab_anisotropy.pdf"
-    vlib::step_done "plot_slab"
 fi
 
 if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/evaluate.py" \
         --archive "${VLIB_CACHE_DIR}/2lpt.npz" \
-        --figure "${OUTPUT}/fields.pdf" \
-        --figure "${OUTPUT}/comparison.pdf" \
-        --figure "${OUTPUT}/slab_anisotropy.pdf" \
+        --figure "${FIGURES}/field-statistics.pdf" \
+        --figure "${FIGURES}/field-statistics-lpt.pdf" \
         --output "${OUTPUT}/result.json"
     vlib::step_done "evaluate"
 fi

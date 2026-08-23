@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Evaluate histogram conservation and cubic-field isotropy."""
+"""Check histogram counts and rotational symmetry in a cubic field."""
 
 from __future__ import annotations
 
 import argparse
-import math
 from pathlib import Path
 
 import numpy as np
+from scipy.stats import f as f_distribution
 
 from validation._common.evaluation import (
     archive_provenance,
@@ -27,8 +27,6 @@ def evaluate(
     try:
         data = load_npz(archive)
         n_part = int(data["meta_npart"])
-        n_samples = n_part * int(data["meta_n_total"])
-        second_moments = []
         conservation_errors = []
         for axis in "xyz":
             centres = np.asarray(
@@ -43,24 +41,30 @@ def evaluate(
                 raise ValueError("component histograms contain invalid values")
             count = float(np.sum(counts))
             conservation_errors.append(abs(count - n_part))
-            second_moments.append(float(np.sum(counts * centres**2) / count))
-
-        moments = np.asarray(second_moments)
-        mean_moment = float(np.mean(moments))
-        if not math.isfinite(mean_moment) or mean_moment <= 0.0:
-            raise ValueError("component second moments must be finite and positive")
-        # A Gaussian component sample variance has fractional variance
-        # 2/(N-1). Summing the three conservative standardized deviations
-        # gives a chi-square-like statistic.
-        isotropy_statistic = float(
-            np.sum(
-                ((moments / mean_moment) - 1.0) ** 2
-                / (2.0 / (n_samples - 1))
-            )
+        nreal = int(data["meta_nreal"])
+        n_total = int(data["meta_n_total"])
+        if nreal < 4 or n_total % nreal != 0:
+            raise ValueError("isotropy evaluation requires at least four realizations")
+        moments = np.asarray(
+            data["stat_disp_component_second_moments"], dtype=np.float64,
         )
-        dof = 3
-        x = math.log(1.0e6)
-        isotropy_limit = dof + 2.0 * math.sqrt(dof * x) + 2.0 * x
+        if moments.shape != (n_total, 3) or not np.all(np.isfinite(moments)):
+            raise ValueError("component second moments have the wrong shape or values")
+        moments = moments.reshape(nreal, n_total // nreal, 3).mean(axis=1)
+        contrasts = np.column_stack(
+            (moments[:, 0] - moments[:, 2], moments[:, 1] - moments[:, 2])
+        )
+        covariance = np.cov(contrasts, rowvar=False, ddof=1)
+        if covariance.shape != (2, 2) or np.linalg.matrix_rank(covariance) != 2:
+            raise ValueError("isotropy contrast covariance is singular")
+        mean_contrast = np.mean(contrasts, axis=0)
+        hotelling_t2 = float(
+            nreal * mean_contrast @ np.linalg.solve(covariance, mean_contrast)
+        )
+        isotropy_statistic = float(
+            (nreal - 2) * hotelling_t2 / (2 * (nreal - 1))
+        )
+        isotropy_limit = float(f_distribution.ppf(1.0 - 1.0e-6, 2, nreal - 2))
         conservation_error = max(conservation_errors)
         conservation_limit = (
             np.finfo(np.float64).eps
@@ -68,12 +72,12 @@ def evaluate(
             * int(data["meta_nbins"])
         )
         return ValidationResult(
-            campaign="field",
+            campaign="field-statistics",
             parameters=metadata_parameters(data),
             provenance=archive_provenance(archive),
             metrics={
                 "component_isotropy": Metric(
-                    isotropy_statistic, "chi-square"
+                    isotropy_statistic, "F statistic"
                 ),
                 "histogram_count_error": Metric(
                     conservation_error, "particles"
@@ -84,12 +88,11 @@ def evaluate(
                     name="cubic displacement-component isotropy",
                     observed=isotropy_statistic,
                     limit=isotropy_limit,
-                    unit="chi-square",
+                    unit="F statistic",
                     rationale=(
-                        "Gaussian sample-variance law 2/(N-1), with the "
-                        "Laurent-Massart 1e-6 upper-tail bound."
+                        "A Hotelling test compares two independent component-variance differences across random fields. The limit is the 1e-6 upper tail of its F distribution."
                     ),
-                    source="isotropy of a homogeneous Gaussian field",
+                    source="rotational symmetry of homogeneous Gaussian fields",
                 ),
                 upper_bound_check(
                     name="component histogram particle conservation",
@@ -105,7 +108,7 @@ def evaluate(
         )
     except (KeyError, OSError, TypeError, ValueError, ZeroDivisionError) as error:
         return malformed_result(
-            campaign="field",
+            campaign="field-statistics",
             archive=archive,
             figures=figures,
             error=error,

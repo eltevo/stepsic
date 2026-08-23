@@ -1,30 +1,5 @@
 #!/usr/bin/env python3
-'''
-Plot stepsic displacement and velocity field histograms from ``.npz``
-archives produced by :mod:`validate-fields-run`.
-
-Produces a single, vertical, three-panel figure:
-
-    Panel (a): Per-component displacement  (|Psi_x|, |Psi_y|, |Psi_z|)
-    Panel (b): Total displacement magnitude |Psi|
-    Panel (c): Total velocity magnitude     |v|
-
-Multiple archives can be overlaid on the same figure (e.g. 1LPT vs
-2LPT, different redshifts, different box geometries).
-
-Usage
------
-::
-
-    # Single realisation
-    python validate_fields_plot.py -i fields_data.npz -o fields.pdf
-
-    # Overlay two realisations (e.g. 1LPT vs 2LPT)
-    python validate_fields_plot.py \\
-        -i fields_1lpt.npz fields_2lpt.npz \\
-        --labels "1LPT" "2LPT" \\
-        -o fields_comparison.pdf
-'''
+'''Plot displacement and velocity histograms from one or more NumPy archives.'''
 
 from __future__ import annotations
 
@@ -39,7 +14,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 
-from validation import setup_matplotlib, load_archive
+from validation._common.plotting import atomic_savefig, setup_matplotlib
+from validation._common.artifacts import load_archive
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -291,7 +267,7 @@ def plot_fields(
     fig.subplots_adjust(hspace=0.15)
 
     if output:
-        fig.savefig(output, bbox_inches='tight')
+        atomic_savefig(fig, output, bbox_inches='tight')
         log.info('Figure saved to %s', output)
     else:
         plt.show()
