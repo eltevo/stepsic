@@ -1,4 +1,4 @@
-"""Shared I/O and statistical derivations for explicit campaign evaluators."""
+"""File I/O and statistical checks shared by campaign evaluators."""
 
 from __future__ import annotations
 
@@ -86,29 +86,8 @@ def malformed_result(
     figures: list[str | Path],
     error: Exception,
 ) -> ValidationResult:
-    check = Check(
-        name="archive schema",
-        observed=None,
-        comparison="is",
-        limit="well-formed typed data",
-        unit="not applicable",
-        rationale="Scientific claims require every documented input array.",
-        source="campaign archive contract",
-        passed=False,
-        required=True,
-    )
-    return ValidationResult(
-        campaign=campaign,
-        parameters={},
-        provenance={
-            **archive_provenance(archive),
-            "error": f"{type(error).__name__}: {error}",
-        },
-        metrics={},
-        checks=[check],
-        numerical_archive=archive,
-        figures=figures,
-    )
+    del campaign, archive, figures
+    raise RuntimeError(f"campaign output is malformed: {error}") from error
 
 
 def gaussian_power_check(
@@ -164,6 +143,9 @@ def gaussian_power_check(
 
 def write_result(result: ValidationResult, path: str | Path) -> int:
     result.write(path)
-    if os.environ.get("VALIDATION_DIAGNOSTIC") == "1":
+    policy = os.environ.get("VALIDATION_EVALUATION", "gate")
+    if policy == "report":
         return 0
-    return 0 if result.as_dict()["status"] == "pass" else 1
+    if policy == "gate":
+        return 0 if result.as_dict()["status"] == "pass" else 1
+    raise RuntimeError(f"invalid evaluation policy: {policy}")

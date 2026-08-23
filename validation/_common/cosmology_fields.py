@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-'''
-Consolidates cosmological parameter definitions, CAMB + Colossus
-initialisation, growth-factor computation, and matplotlib styling across
-validation runs for the stepsic paper.
-
-Usage
------
-::
-
-    from validation import VALIDATION_COSMOLOGY, GrowthData, init_cosmology
-
-    growth_table = init_cosmology([31.0, 15.0], lbox_max=500.0)
-    gd = growth_table[31.0]
-    print(gd.d1, gd.aHf1)
-'''
+'''Cosmology, growth, and LPT field helpers used by validation scripts.'''
 
 from __future__ import annotations
 
@@ -51,7 +37,7 @@ ArrayC: TypeAlias = Union[NDArray[np.complex128], NDArray[np.complex64]]
 
 VALIDATION_COSMOLOGY_NAME = 'Planck2018EE+BAO'
 _VALIDATION_COSMOLOGY_PATH = (
-    Path(__file__).parent / '_common' / 'cosmology'
+    Path(__file__).parent / 'cosmology'
     / f'{VALIDATION_COSMOLOGY_NAME}.toml'
 )
 VALIDATION_COSMOLOGY: dict[str, float] = {
@@ -214,7 +200,7 @@ def run_lpt(
     *,
     compensate: bool | None = None,
 ) -> tuple[ArrayF, ArrayF]:
-    r'''Run an LPT displacement and return perturbed positions + velocities.
+    r'''Run an LPT displacement and return perturbed positions and velocities.
 
     Parameters
     ----------
@@ -354,92 +340,6 @@ def parse_boxsize(lbox_arg: list[float]) -> ArrayF:
     return boxsize
 
 
-def load_archive(path: str) -> dict:
-    '''Load a typed ``.npz`` file without permitting pickle payloads.'''
-    with np.load(path, allow_pickle=False) as archive:
-        return {name: archive[name].copy() for name in archive.files}
-
-
-def setup_matplotlib() -> None:
-    '''Configure matplotlib for publication-quality A&A figures.
-
-    Uses the Okabe-Ito colour-blind-safe palette, LaTeX text rendering,
-    and inward-facing ticks. Safe to call multiple times.
-
-    .. note::
-        Importing matplotlib is deferred to this function so that the
-        run scripts can ``import validate_common`` without pulling in
-        the entire plotting stack.
-    '''
-    from cycler import cycler
-    import matplotlib.pyplot as plt
-
-    okabe_ito = [
-        '#000000', '#E69F00', '#56B4E9', '#009E73',
-        '#F0E442', '#0072B2', '#D55E00', '#CC79A7',
-    ]
-
-    custom_settings: dict = {
-        'axes.prop_cycle': cycler(color=okabe_ito),
-        'figure.facecolor': '#ffffff',
-        'axes.facecolor': '#ffffff',
-        'axes.edgecolor': '0.3',
-        'axes.linewidth': 1,
-        'axes.grid': False,
-        'grid.color': '0.7',
-        'grid.linestyle': ':',
-        'grid.alpha': 0.6,
-        'figure.dpi': 150,
-        'savefig.dpi': 300,
-    }
-    text_settings: dict = {
-        'text.usetex': True,
-        'text.latex.preamble': r'\usepackage{amsmath}\usepackage{amssymb}',
-        'font.family': 'serif',
-        'font.serif': ['Computer Modern Roman'],
-        'axes.unicode_minus': False,
-    }
-    for t in ('xtick', 'ytick'):
-        custom_settings[f'{t}.direction'] = 'in'
-        custom_settings[f'{t}.bottom' if t == 'xtick' else f'{t}.left'] = True
-        custom_settings[f'{t}.top' if t == 'xtick' else f'{t}.right'] = True
-        custom_settings[f'{t}.color'] = '0.3'
-        for m in ('major', 'minor'):
-            custom_settings[f'{t}.{m}.width'] = 1
-            custom_settings[f'{t}.{m}.size'] = 6 if m == 'major' else 3
-    plt.rcParams.update(custom_settings)
-    plt.rcParams.update(text_settings)
-
-def histogram(
-    values: ArrayF,
-    nbins: int,
-    *,
-    range: tuple[float, float] | None = None,
-) -> tuple[ArrayF, ArrayF, ArrayF]:
-    '''Compute a histogram and return ``(bin_centres, counts, bin_widths)``.
-
-    Parameters
-    ----------
-    values : ndarray
-        Input data.
-    nbins : int
-        Number of bins.
-    range : tuple of float, optional
-        The lower and upper range of the bins. If not provided, the range is
-        simply ``(values.min(), values.max())``.
-
-    Returns
-    -------
-    centres : ndarray
-    counts : ndarray (float64)
-    widths : ndarray
-    '''
-    counts, edges = np.histogram(values, bins=nbins, range=range)
-    centres = 0.5 * (edges[:-1] + edges[1:])
-    widths = np.diff(edges)
-    return centres, counts.astype(np.float64), widths
-
-
 def z_tag(z: float) -> str:
     '''Format a redshift for use in archive keys (e.g. ``z31``).
 
@@ -452,16 +352,11 @@ def z_tag(z: float) -> str:
 
 
 def add_cosmology_args(parser: argparse.ArgumentParser) -> None:
-    '''Add the standard cosmology/LPT CLI arguments to parser.
-
-    Covers: ``--Lbox``, ``--nmesh``, ``--lpt``, ``--z``, ``--method``,
-    ``--seed``, ``--paired``, ``--kmax-frac-ny``, ``--nreal``, ``-o``.
-    Individual scripts can override defaults after calling this.
-    '''
+    '''Add the shared cosmology and LPT arguments to a parser.'''
     parser.add_argument(
         '--Lbox', type=float, nargs='+', default=[500.0],
-        help='Box dimensions [Mpc/h]. One value -> cubic; '
-             'three values -> Lx Ly Lz.',
+        help='Box dimensions [Mpc/h]. One value makes a cube; '
+             'three values set Lx, Ly, and Lz.',
     )
     parser.add_argument(
         '--nmesh', type=int, nargs='+', default=[128],

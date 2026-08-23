@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Source facade for the validation shell modules.
+# Load the shell helpers shared by validation campaigns.
 
 if [[ -n "${_VLIB_LOADED:-}" ]]; then
     return 0

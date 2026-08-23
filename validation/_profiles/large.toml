@@ -1,0 +1,19 @@
+# Approved node-scale configurations only.
+[profile]
+status = "defined"
+
+[cylindrical-lpt]
+NRBINS = 384
+NSHELL = 768
+SIM_NMESH = 256
+PK_NMESH = 128
+PK_RANDOMS_NFACTOR = 50
+PK_NFKP_RADIAL_BINS = 32
+GLASS_TIME_LIMIT_MIN = 3600
+SIM_TIME_LIMIT_MIN = 3600
+
+[periodic-lpt]
+REF_NGRID = 256
+REF_NMESH = 256
+REF_PMGRID = 256
+PK_NMESH = 256

@@ -14,7 +14,17 @@ VLIB_PLOT_ONLY=0
 VLIB_CLEAN=0
 VLIB_LIST_STEPS=0
 VLIB_CONFIG_FILE=""
+VLIB_SIZE="medium"
+VLIB_SIZE_EXPLICIT=0
+VLIB_EVALUATION="gate"
 VLIB_EXTRA_ARGS=()
+VLIB_CAMPAIGN=""
+VLIB_RUN_ROOT=""
+VLIB_PROFILE_FILE=""
+VLIB_PROFILE_SHA256=""
+VLIB_RESOLVED_PROFILE=""
+VLIB_RESOLVED_CONFIG=""
+VLIB_PROFILE_KEYS=()
 
 # Set by the driver before steps begin:
 VLIB_CACHE_DIR=""       # used by vlib::breadcrumb_* and vlib::cache_path
@@ -99,6 +109,11 @@ vlib::parse_args() {
             --clean)         VLIB_CLEAN=1 ;;
             --list-steps)    VLIB_LIST_STEPS=1 ;;
             --config=*)      VLIB_CONFIG_FILE="${arg#--config=}" ;;
+            --evaluation=*)  VLIB_EVALUATION="${arg#--evaluation=}" ;;
+            --size=*)
+                VLIB_SIZE="${arg#--size=}"
+                VLIB_SIZE_EXPLICIT=1
+                ;;
             -h|--help)
                 vlib::print_help
                 exit 0
@@ -108,6 +123,155 @@ vlib::parse_args() {
                 ;;
         esac
     done
+    case "${VLIB_EVALUATION}" in
+        skip|report|gate) ;;
+        *)
+            echo "ERROR: --evaluation must be skip, report, or gate." >&2
+            return 2
+            ;;
+    esac
+}
+
+# Load one campaign's size profile, export its variables, and then load the
+# campaign defaults. The profile is returned as NUL-delimited names and values;
+# TOML content is never evaluated as shell code.
+vlib::prepare_campaign() {
+    local campaign="${1}"
+    local campaign_dir="${2}"
+    local default_config="${3}"
+    if (( VLIB_SIZE_EXPLICIT )) && [[ -n "${VLIB_CONFIG_FILE}" ]]; then
+        echo "ERROR: --config and --size are mutually exclusive." >&2
+        return 2
+    fi
+
+    VLIB_CAMPAIGN="${campaign}"
+    CONFIG_FILE="${default_config}"
+    local resolver="${_VLIB_COMMON_DIR}/profiles.py"
+    local temporary
+    temporary="$(mktemp)"
+    local -a selection
+    if [[ -n "${VLIB_CONFIG_FILE}" ]]; then
+        VLIB_SIZE="custom"
+        VLIB_PROFILE_SHA256="$(sha256sum "${VLIB_CONFIG_FILE}" 2>/dev/null | awk '{print $1}')" || {
+            echo "ERROR: cannot read custom profile: ${VLIB_CONFIG_FILE}" >&2
+            rm -f "${temporary}"
+            return 2
+        }
+        [[ "${VLIB_PROFILE_SHA256}" =~ ^[0-9a-f]{64}$ ]] || {
+            echo "ERROR: cannot hash custom profile: ${VLIB_CONFIG_FILE}" >&2
+            rm -f "${temporary}"
+            return 2
+        }
+        VLIB_RUN_ROOT="${campaign_dir}/runs/custom/${VLIB_PROFILE_SHA256}"
+        selection=(--config "${VLIB_CONFIG_FILE}")
+    else
+        VLIB_RUN_ROOT="${campaign_dir}/runs/${VLIB_SIZE}"
+        selection=(--size "${VLIB_SIZE}")
+    fi
+    if [[ -n "${VLIB_RUN_ROOT_OVERRIDE:-}" || -n "${VLIB_RUN_ROOT_PARENT:-}" ]]; then
+        if [[ -z "${VLIB_RUN_ROOT_OVERRIDE:-}" || -z "${VLIB_RUN_ROOT_PARENT:-}" ]]; then
+            echo "ERROR: nested run-root override requires both path and parent." >&2
+            rm -f "${temporary}"
+            return 2
+        fi
+        local canonical_parent canonical_override
+        canonical_parent="$(realpath -m "${VLIB_RUN_ROOT_PARENT}")"
+        canonical_override="$(realpath -m "${VLIB_RUN_ROOT_OVERRIDE}")"
+        case "${canonical_override}" in
+            "${canonical_parent}"/*) VLIB_RUN_ROOT="${canonical_override}" ;;
+            *)
+                echo "ERROR: nested run root must be beneath its parent." >&2
+                rm -f "${temporary}"
+                return 2
+                ;;
+        esac
+    fi
+    VLIB_RESOLVED_PROFILE="${VLIB_RUN_ROOT}/config/resolved-profile.toml"
+    VLIB_RESOLVED_CONFIG="${VLIB_RUN_ROOT}/config/resolved-config.toml"
+    if ! conda run --no-capture-output -n "${STEPSIC_ENV:-stepsic}" \
+        python "${resolver}" resolve "${selection[@]}" \
+        --campaign "${campaign}" --write "${VLIB_RESOLVED_PROFILE}" \
+        > "${temporary}"; then
+        rm -f "${temporary}"
+        return 2
+    fi
+
+    local -a records=()
+    mapfile -d '' -t records < "${temporary}"
+    rm -f "${temporary}"
+    if (( ${#records[@]} % 2 != 0 )); then
+        echo "ERROR: profile resolver returned an incomplete record." >&2
+        return 2
+    fi
+    local index key value
+    for (( index=0; index<${#records[@]}; index+=2 )); do
+        key="${records[index]}"
+        value="${records[index + 1]}"
+        if [[ "${key}" == "VLIB_PROFILE_FILE" || \
+              "${key}" == "VLIB_PROFILE_SHA256" ]]; then
+            printf -v "${key}" '%s' "${value}"
+        elif [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+            printf -v "${key}" '%s' "${value}"
+            export "${key}"
+            VLIB_PROFILE_KEYS+=("${key}")
+        else
+            echo "ERROR: profile resolver returned invalid key: ${key}" >&2
+            return 2
+        fi
+    done
+    export VALIDATION_EVALUATION="${VLIB_EVALUATION}"
+    export VALIDATION_CAMPAIGN="${VLIB_CAMPAIGN}"
+    export VALIDATION_PROFILE_SIZE="${VLIB_SIZE}"
+    export VALIDATION_PROFILE_SHA256="${VLIB_PROFILE_SHA256}"
+    export VALIDATION_RESOLVED_PROFILE="${VLIB_RESOLVED_PROFILE}"
+
+    local -a config_keys=()
+    local -A config_sources=()
+    while IFS= read -r key; do
+        local profile_key=0 profile_name
+        for profile_name in "${VLIB_PROFILE_KEYS[@]+"${VLIB_PROFILE_KEYS[@]}"}"; do
+            [[ "${key}" == "${profile_name}" ]] && profile_key=1
+        done
+        (( profile_key )) && continue
+        config_keys+=("${key}")
+        if [[ -v "${key}" ]]; then
+            config_sources["${key}"]="environment"
+        else
+            config_sources["${key}"]="config.env"
+        fi
+    done < <(
+        sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' "${CONFIG_FILE}"
+    )
+    local cosmology_key cosmology_variable
+    for cosmology_key in "${_VLIB_COSMOLOGY_KEYS[@]}"; do
+        cosmology_variable="COSMO_${cosmology_key}"
+        if [[ -n "${config_sources[${cosmology_variable}]+x}" ]]; then
+            :
+        elif [[ -v "${cosmology_variable}" ]]; then
+            config_sources["${cosmology_variable}"]="environment"
+        else
+            config_sources["${cosmology_variable}"]="cosmology"
+        fi
+    done
+    vlib::source_config "${CONFIG_FILE}"
+    local -a record_command=(
+        conda run --no-capture-output -n "${STEPSIC_ENV:-stepsic}"
+        python "${resolver}" runtime-config --output "${VLIB_RESOLVED_CONFIG}"
+    )
+    for key in "${config_keys[@]+"${config_keys[@]}"}"; do
+        record_command+=(--entry "${key}" "${config_sources[${key}]}" "${!key}")
+    done
+    for cosmology_key in "${_VLIB_COSMOLOGY_KEYS[@]}"; do
+        cosmology_variable="COSMO_${cosmology_key}"
+        record_command+=(
+            --entry "${cosmology_variable}"
+            "${config_sources[${cosmology_variable}]}" "${!cosmology_variable}"
+        )
+    done
+    "${record_command[@]}"
+    _VLIB_GLOBAL_INPUTS+=("${VLIB_RESOLVED_CONFIG}")
+    export MPLCONFIGDIR="${VLIB_RUN_ROOT}/cache/matplotlib"
+    mkdir -p "${MPLCONFIGDIR}"
 }
 
 # Extract and print the script's header comment (lines 2..end-of-header).
@@ -135,10 +299,16 @@ vlib::source_config() {
     vlib::cosmology::load_defaults
 }
 
+vlib::profile_summary() {
+    echo ""
+    echo "Profile: ${VLIB_SIZE}"
+    echo "Run root: ${VLIB_RUN_ROOT}"
+}
+
 # Print a sorted list of all step names, one per line.
 vlib::report_done() {
     echo ""
-    echo "========================== Pipeline complete =========================="
+    echo "========================== Campaign complete =========================="
     echo ""
 }
 
@@ -165,12 +335,11 @@ vlib::atomic_text() {
 }
 
 # ============================================================================
-# Breadcrumb state (inter-step key/value store)
+# Values saved between campaign steps
 # ============================================================================
 #
-# Stores persistent key=value entries in ${VLIB_CACHE_DIR}/state.env.
-# Subsequent steps (or re-runs starting at --step=N) can retrieve values
-# written by earlier steps.
+# Store key=value entries in ${VLIB_CACHE_DIR}/state.env so later steps and
+# resumed runs can read values written by earlier steps.
 #
 # VLIB_CACHE_DIR must be set before calling these functions.
 
@@ -257,8 +426,16 @@ vlib::find_last_snap() {
 # Remove all contents of a directory (create it first if needed).
 vlib::clear_dir() {
     local dir="${1}"
-    mkdir -p "${dir}"
-    find "${dir}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    local root target
+    root="$(realpath -m "${VLIB_RUN_ROOT}")"
+    target="$(realpath -m "${dir}")"
+    if [[ -z "${root}" || "${root}" == "/" || \
+          ( "${target}" != "${root}" && "${target}" != "${root}/"* ) ]]; then
+        echo "ERROR: refusing cleanup outside campaign run root: ${dir}" >&2
+        return 2
+    fi
+    mkdir -p "${target}"
+    find "${target}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 }
 
 # Remove files matching glob patterns inside a directory.
@@ -266,11 +443,19 @@ vlib::clear_dir() {
 vlib::clear_files() {
     local dir="${1}"
     shift
-    mkdir -p "${dir}"
+    local root target
+    root="$(realpath -m "${VLIB_RUN_ROOT}")"
+    target="$(realpath -m "${dir}")"
+    if [[ -z "${root}" || "${root}" == "/" || \
+          ( "${target}" != "${root}" && "${target}" != "${root}/"* ) ]]; then
+        echo "ERROR: refusing cleanup outside campaign run root: ${dir}" >&2
+        return 2
+    fi
+    mkdir -p "${target}"
     shopt -s nullglob
     local pattern
     for pattern in "$@"; do
-        local matches=("${dir}"/${pattern})
+        local matches=("${target}"/${pattern})
         if [[ ${#matches[@]} -gt 0 ]]; then
             rm -f "${matches[@]}"
         fi

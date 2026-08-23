@@ -1,7 +1,8 @@
-"""Catalog primitives shared by evolved-geometry validation scripts."""
+"""Read, select, compare, and write particle snapshots."""
 
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
@@ -368,7 +369,7 @@ def write_snapshot(
     box_size_mpc_h: float,
     simulation_radius_mpc_h: float,
 ) -> None:
-    """Atomically write a deterministic Gadget-HDF5 PartType1 snapshot."""
+    """Write a reproducible Gadget-HDF5 PartType1 snapshot atomically."""
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     box_size_mpc_h = _validate_positive(box_size_mpc_h, "box_size_mpc_h")
@@ -421,3 +422,72 @@ def write_snapshot(
     finally:
         if temporary.exists():
             temporary.unlink()
+
+
+def validate_glass_snapshot(
+    path: str | Path,
+    *,
+    geometry: str,
+    radius_mpc_h: float,
+    length_mpc_h: float | None = None,
+) -> None:
+    """Validate the geometry and metadata required of a glass input."""
+    snapshot = load_snapshot(path)
+    if len(snapshot.particle_ids) == 0:
+        raise ValueError("glass snapshot contains no particles")
+    if len(np.unique(snapshot.particle_ids)) != len(snapshot.particle_ids):
+        raise ValueError("glass snapshot contains duplicate particle IDs")
+    radius_mpc_h = _validate_positive(radius_mpc_h, "radius_mpc_h")
+    try:
+        header_radius = float(snapshot.header["SimulationRadius"])
+        topology_value = snapshot.header["TopologicalManifold"]
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("glass snapshot lacks geometry metadata") from error
+    if isinstance(topology_value, bytes):
+        topology = topology_value.decode("ascii")
+    else:
+        topology = str(topology_value)
+    if not np.isclose(header_radius, radius_mpc_h, rtol=1e-12, atol=0.0):
+        raise ValueError("glass snapshot has the wrong simulation radius")
+    if geometry == "spherical":
+        if length_mpc_h is not None:
+            raise ValueError("spherical glass does not use length_mpc_h")
+        if topology != "R^3":
+            raise ValueError("spherical glass has the wrong topology")
+    elif geometry == "cylindrical":
+        if length_mpc_h is None:
+            raise ValueError("cylindrical glass requires length_mpc_h")
+        length_mpc_h = _validate_positive(length_mpc_h, "length_mpc_h")
+        if topology != "S^1xR^2":
+            raise ValueError("cylindrical glass has the wrong topology")
+        try:
+            box_size = float(snapshot.header["BoxSize"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("cylindrical glass lacks its axial period") from error
+        if not np.isclose(box_size, length_mpc_h, rtol=1e-12, atol=0.0):
+            raise ValueError("cylindrical glass has the wrong axial period")
+        z = snapshot.coordinates[:, 2]
+        tolerance = 32.0 * np.finfo(np.float64).eps * length_mpc_h
+        if np.any(z < -tolerance) or np.any(z >= length_mpc_h + tolerance):
+            raise ValueError("cylindrical glass lies outside its axial period")
+    else:
+        raise ValueError("glass geometry must be spherical or cylindrical")
+
+
+def _main() -> None:
+    parser = argparse.ArgumentParser(description="Validate a pre-generated glass snapshot.")
+    parser.add_argument("path")
+    parser.add_argument("--geometry", choices=("spherical", "cylindrical"), required=True)
+    parser.add_argument("--radius-mpc-h", type=float, required=True)
+    parser.add_argument("--length-mpc-h", type=float)
+    args = parser.parse_args()
+    validate_glass_snapshot(
+        args.path,
+        geometry=args.geometry,
+        radius_mpc_h=args.radius_mpc_h,
+        length_mpc_h=args.length_mpc_h,
+    )
+
+
+if __name__ == "__main__":
+    _main()

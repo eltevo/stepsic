@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create and compare content manifests for validation pipeline steps."""
+"""Record the inputs and outputs used by each cached campaign step."""
 
 from __future__ import annotations
 

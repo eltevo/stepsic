@@ -1,0 +1,12 @@
+**/__pycache__/
+**/runs/
+**/cache/
+**/output/
+**/build/
+**/builds/
+**/configs/
+**/*.ipynb
+
+!_profiles/
+!_profiles/*.toml
+!slab-sampling/scripts/field/cosmic-variance-slab-displacement.ipynb

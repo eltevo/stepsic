@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step declarations and content-manifest cache control.
+# Declare campaign steps and decide when cached outputs can be reused.
 
 declare -ag _VLIB_DECLARED_STEPS=()
 declare -Ag _VLIB_STEP_INPUTS=()
@@ -16,6 +16,14 @@ declare -ag _VLIB_GLOBAL_IMPLEMENTATIONS=(
     "${_VLIB_COMMON_DIR}/stepsic.sh"
     "${_VLIB_COMMON_DIR}/orchestration.sh"
     "${_VLIB_COMMON_DIR}/manifest.py"
+    "${_VLIB_COMMON_DIR}/profiles.py"
+    "${_VLIB_COMMON_DIR}/artifacts.py"
+    "${_VLIB_COMMON_DIR}/cosmology_fields.py"
+    "${_VLIB_COMMON_DIR}/evaluation.py"
+    "${_VLIB_COMMON_DIR}/pairing.py"
+    "${_VLIB_COMMON_DIR}/plotting.py"
+    "${_VLIB_COMMON_DIR}/result.py"
+    "${_VLIB_COMMON_DIR}/snapshots.py"
 )
 declare -ag _VLIB_PREVIOUS_OUTPUTS=()
 declare -ag _VLIB_CURRENT_OUTPUTS=()
@@ -86,6 +94,12 @@ vlib::manifest_implementation() {
     vlib::_manifest_append _VLIB_STEP_IMPLEMENTATIONS "${step}" "$@"
 }
 
+vlib::manifest_evaluator() {
+    vlib::manifest_implementation "${1}" "${2}" \
+        "${_VLIB_COMMON_DIR}/evaluation.py" \
+        "${_VLIB_COMMON_DIR}/result.py"
+}
+
 vlib::manifest_config() {
     local value
     for value in "$@"; do
@@ -101,7 +115,18 @@ vlib::manifest_init() {
     local campaign_dir="${1}"
     local config_file="${2:-}"
     local key variable
-    _VLIB_GLOBAL_IMPLEMENTATIONS+=("${BASH_SOURCE[-1]}" "${campaign_dir}/scripts")
+    _VLIB_GLOBAL_IMPLEMENTATIONS+=("${BASH_SOURCE[-1]}")
+    if [[ -n "${VLIB_PROFILE_FILE:-}" ]]; then
+        _VLIB_GLOBAL_INPUTS+=("${VLIB_PROFILE_FILE}" "${VLIB_RESOLVED_PROFILE}")
+        vlib::manifest_config \
+            "VALIDATION_SIZE=${VLIB_SIZE}" \
+            "VALIDATION_PROFILE_SHA256=${VLIB_PROFILE_SHA256}"
+        for key in "${VLIB_PROFILE_KEYS[@]+"${VLIB_PROFILE_KEYS[@]}"}"; do
+            vlib::manifest_config "${key}=${!key}"
+        done
+    else
+        vlib::manifest_config "VALIDATION_SIZE=${VLIB_SIZE:-custom}"
+    fi
     if [[ -n "${config_file}" ]]; then
         _VLIB_GLOBAL_INPUTS+=("${config_file}")
         while IFS= read -r key; do
@@ -201,7 +226,12 @@ vlib::step_check() {
     if (( VLIB_LIST_STEPS )); then
         return 1
     fi
-    if (( VLIB_PLOT_ONLY )) && [[ "${name}" != *plot* ]]; then
+    if [[ "${name}" == evaluate* && "${VLIB_EVALUATION}" == "skip" ]]; then
+        echo "  [skip] step ${number}: ${name}  (--evaluation=skip)"
+        return 1
+    fi
+    if (( VLIB_PLOT_ONLY )) \
+        && [[ "${name}" != *plot* && "${name}" != evaluate* ]]; then
         echo "  [skip] step ${number}: ${name}  (--plot-only)"
         return 1
     fi
@@ -233,6 +263,19 @@ vlib::step_check() {
         matches "${_VLIB_CURRENT_MANIFEST}" "${name}"; then
         echo "  [cached] step ${number}: ${name}"
         vlib::_release_step_lock
+        if [[ "${name}" == "evaluate" && "${VLIB_EVALUATION}" == "gate" ]]; then
+            for output in "${outputs[@]+"${outputs[@]}"}"; do
+                if [[ "${output}" == */result.json ]]; then
+                    local gate_status=0
+                    python3 "${_VLIB_COMMON_DIR}/result.py" gate "${output}" \
+                        || gate_status=$?
+                    if (( gate_status != 0 )); then
+                        exit "${gate_status}"
+                    fi
+                    return 1
+                fi
+            done
+        fi
         return 1
     fi
 
