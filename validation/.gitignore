@@ -6,6 +6,7 @@
 **/builds/
 **/configs/
 **/*.ipynb
+monofonic-agreement/monofonic/
 
 !_profiles/
 !_profiles/*.toml
