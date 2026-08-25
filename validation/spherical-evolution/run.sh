@@ -11,8 +11,9 @@
 #
 # Required inputs:
 #   REFERENCE_MANIFEST  periodic run description from validation/periodic-lpt/run.sh
-#   GLASS_SNAP          complete relaxed spherical StePS glass
-#                       (content hash included in consuming step manifests)
+#   GLASS_INPUT_MODE    generate (default for small/medium) or pre-generated
+#   GLASS_SNAP          complete relaxed spherical StePS glass when using
+#                       pre-generated mode (hashed in consuming manifests)
 #
 # Outputs:
 #   runs/<profile>/cache/pair-contract.json
@@ -97,7 +98,11 @@ case "${GLASS_INPUT_MODE}" in
     *) echo "ERROR: GLASS_INPUT_MODE must be generate or pre-generated." >&2; exit 2 ;;
 esac
 if [[ -z "${GLASS_SNAP}" || ! -f "${GLASS_SNAP}" ]]; then
-    echo "ERROR: pre-generated mode requires an existing GLASS_SNAP." >&2
+    if [[ "${GLASS_INPUT_MODE}" == generate ]]; then
+        echo "ERROR: spherical glass generation produced no snapshot." >&2
+    else
+        echo "ERROR: pre-generated mode requires an existing GLASS_SNAP." >&2
+    fi
     exit 2
 fi
 vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"

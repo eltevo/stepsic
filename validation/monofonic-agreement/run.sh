@@ -71,6 +71,8 @@ vlib::prepare_campaign monofonic-agreement "${BASEDIR}" "${BASEDIR}/config.env"
 vlib::declare_steps run_stepsic build_monofonic run_monofonic compare plot evaluate
 vlib::manifest_implementation run_stepsic \
     "${BASEDIR}/scripts/export-stepsic-pk.py"
+vlib::manifest_implementation build_monofonic \
+    "${BASEDIR}/scripts/prepare-monofonic-source.py"
 vlib::manifest_implementation compare \
     "${BASEDIR}/scripts/compare-monofonic-run.py"
 vlib::manifest_implementation plot \
@@ -201,60 +203,7 @@ EOF
 # Enforce the grid_fft.cc reset ordering required for valid FFT dimensions.
 _prepare_monofonic_source() {
     local source_path="${MONOFONIC_DIR}/src/grid_fft.cc"
-    if [[ ! -f "${source_path}" ]]; then
-        echo "  WARNING: monofonIC source file not found: ${source_path}" >&2
-        return 0
-    fi
-    python3 - "${source_path}" <<\PYEOF
-import os
-from pathlib import Path
-import re
-import sys
-import tempfile
-
-source = Path(sys.argv[1])
-text = source.read_text()
-required_pattern = re.compile(
-    r"this->reset\(\);\s*\n(\s*)for \(size_t i = 0; i < 3; \+\+i\)"
-)
-if required_pattern.search(text):
-    print(f"source invariant satisfied: {source}")
-    raise SystemExit(0)
-
-source_pattern = (
-    r"([ \t]+)(for \(size_t i = 0; i < 3; \+\+i\)\n"
-    r"[ \t]+this->n_\[i\] = dimsize\[i\];\n"
-    r"[ \t]+this->space_ = rspace_id;\n"
-    r"\n)"
-    r"[ \t]+this->reset\(\);\n"
-)
-required_block = r"\1this->reset();\n\1\2"
-updated, count = re.subn(source_pattern, required_block, text)
-if count != 1:
-    raise RuntimeError(
-        f"expected one grid_fft reset-ordering target, found {count}"
-    )
-
-descriptor, temporary_name = tempfile.mkstemp(
-    prefix=f".{source.name}.tmp-", dir=source.parent,
-)
-temporary = Path(temporary_name)
-try:
-    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-        stream.write(updated)
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(temporary, source)
-    directory_fd = os.open(source.parent, os.O_RDONLY)
-    try:
-        os.fsync(directory_fd)
-    finally:
-        os.close(directory_fd)
-except BaseException:
-    temporary.unlink(missing_ok=True)
-    raise
-print(f"source prepared: {source}")
-PYEOF
+    python3 "${BASEDIR}/scripts/prepare-monofonic-source.py" "${source_path}"
 }
 
 # Create the monofonIC conda build environment if it doesn't exist.
