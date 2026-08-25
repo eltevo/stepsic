@@ -2,7 +2,7 @@
 '''
 Measure the power, spacing, density, and residual forces of a glass.
 
-For spherical and cylindrical glasses, particles are grouped into radial zones with equal particle counts. Cubical glasses use the full periodic box.
+For spherical and cylindrical glasses, power is measured in cumulative central apertures. A spherical aperture uses an inscribed cube; a cylindrical aperture uses an inscribed square cross-section and the full periodic axis. Cubical glasses use the full periodic box.
 
 The archive contains mass-weighted power relative to shot noise, nearest-neighbour distance relative to local spacing, radial density, and mass-level boundaries. If the snapshot contains accelerations, it also contains ``q = |F| d^2 / m`` in internal units with ``G = 1``.
 
@@ -15,7 +15,7 @@ Usage
 ::
 
     python diagnose.py glass.hdf5 -o diag.npz --geometry cylindrical \
-        --r3d 500 --lz 1000
+        --radius-mpc-h 500 --length-mpc-h 1000
 '''
 
 from __future__ import annotations
@@ -69,79 +69,97 @@ def _radius(pos: np.ndarray, geometry: str) -> np.ndarray:
     return np.hypot(pos[:, 0], pos[:, 1])
 
 
-def zone_pk_cubes(
+def radial_power_apertures(
     pos: np.ndarray,
     mass: np.ndarray,
-    r: np.ndarray,
-    r0: float,
-    r1: float,
-    z_range: tuple[float, float] | None,
+    d_exp: np.ndarray,
+    radius_mpc_h: float,
+    length_mpc_h: float | None,
     geometry: str,
-    ncubes: int,
+    napertures: int,
     pk_nmesh: int,
-    rng: np.random.Generator,
-) -> tuple[np.ndarray, np.ndarray, float, float]:
-    '''Average mass-weighted P(k) over cubes inscribed in a radial zone.
+) -> tuple[list[np.ndarray], list[np.ndarray], np.ndarray,
+           np.ndarray, np.ndarray, np.ndarray]:
+    '''Measure power in cumulative central apertures.
 
-    Returns (k, pk_mean, shot_mean, cube_side). The cubes are treated
-    as periodic for the FFT; that is exact only for the cubical case,
-    but the sub-Poisson suppression signature lives at wavelengths well
-    below the cube side where the window leakage is negligible.
+    The Cartesian FFT boxes are fully contained by the open radial domain.
+    Cylindrical boxes retain the complete periodic z-axis. The 0.95 factor
+    keeps their corners away from the relaxed load's outer boundary. The FFT
+    treats each cutout as periodic; the matched twin controls that window, and
+    the evaluator uses only scales below the coarsest particle spacing.
     '''
-    safety = 0.95
-    if r0 <= 0.0:
-        # Innermost zone: one cube inscribed in the r1-sphere/cylinder.
-        dim_factor = np.sqrt(3.0) if geometry == 'spherical' else np.sqrt(2.0)
-        side = safety * 2.0 * r1 / dim_factor
-        centres = [np.zeros(3)]
-    else:
-        r_mid = 0.5 * (r0 + r1)
-        dim_factor = np.sqrt(3.0) if geometry == 'spherical' else np.sqrt(2.0)
-        side = safety * (r1 - r0) / dim_factor
-        centres = []
-        for _ in range(ncubes):
-            if geometry == 'spherical':
-                v = rng.normal(size=3)
-                v /= np.linalg.norm(v)
-                centres.append(r_mid * v)
-            else:
-                phi = rng.uniform(0.0, 2.0 * np.pi)
-                centres.append(np.array([r_mid * np.cos(phi),
-                                         r_mid * np.sin(phi), 0.0]))
-    if z_range is not None:
-        z_lo, z_hi = z_range
-        side = min(side, safety * (z_hi - z_lo))
-        z_mid = 0.5 * (z_lo + z_hi)
-        for c in centres:
-            c[2] = z_mid
+    aperture_rmax = radius_mpc_h * (
+        np.arange(1, napertures + 1, dtype=np.float64) / napertures
+    )
+    positions = np.asarray(pos, dtype=np.float64).copy()
+    if geometry == 'cylindrical':
+        assert length_mpc_h is not None
+        positions[:, 2] = np.mod(positions[:, 2], length_mpc_h)
 
-    boxsize = np.array([side, side, side])
-    k_ref = None
-    pk_acc = None
-    shot_acc = 0.0
-    n_used = 0
-    for c in centres:
-        lo = np.asarray(c) - side / 2.0
-        sel = np.all((pos >= lo) & (pos < lo + side), axis=1)
-        n_sel = int(sel.sum())
-        if n_sel < 32:
-            continue
-        m_sel = mass[sel]
+    power_k: list[np.ndarray] = []
+    power_pk: list[np.ndarray] = []
+    power_shot: list[float] = []
+    power_spacing: list[float] = []
+    power_boxsize: list[np.ndarray] = []
+    safety = 0.95
+    dimension_factor = np.sqrt(3.0 if geometry == 'spherical' else 2.0)
+    for outer_radius_mpc_h in aperture_rmax:
+        transverse_size_mpc_h = (
+            safety * 2.0 * outer_radius_mpc_h / dimension_factor
+        )
+        if geometry == 'spherical':
+            boxsize_mpc_h = np.full(3, transverse_size_mpc_h)
+            origin_mpc_h = -0.5 * boxsize_mpc_h
+        else:
+            boxsize_mpc_h = np.array([
+                transverse_size_mpc_h,
+                transverse_size_mpc_h,
+                length_mpc_h,
+            ])
+            origin_mpc_h = np.array([
+                -0.5 * transverse_size_mpc_h,
+                -0.5 * transverse_size_mpc_h,
+                0.0,
+            ])
+        selected = np.all(
+            (positions >= origin_mpc_h)
+            & (positions < origin_mpc_h + boxsize_mpc_h),
+            axis=1,
+        )
+        particle_count = int(np.count_nonzero(selected))
+        if particle_count < 32:
+            raise ValueError(
+                f'power aperture r < {outer_radius_mpc_h:g} Mpc/h '
+                f'contains {particle_count} particles; at least 32 are required'
+            )
+        m_sel = mass[selected]
         k, pk, _ = measure_pk(
-            pos[sel] - lo, boxsize, nmesh=pk_nmesh, mass=m_sel,
+            positions[selected] - origin_mpc_h,
+            boxsize_mpc_h,
+            nmesh=pk_nmesh,
+            mass=m_sel,
             method='cic', deconvolve=True, interlace=True,
             subtract_shot=False,
         )
-        shot = side**3 * float(np.sum(m_sel**2)) / float(np.sum(m_sel))**2
-        if pk_acc is None:
-            k_ref, pk_acc = k, np.zeros_like(pk)
-        pk_acc += pk
-        shot_acc += shot
-        n_used += 1
-    if n_used == 0:
-        nan = np.full(1, np.nan)
-        return nan, nan, np.nan, side
-    return k_ref, pk_acc / n_used, shot_acc / n_used, side
+        selected_mass = float(np.sum(m_sel, dtype=np.float64))
+        shot = (
+            float(np.prod(boxsize_mpc_h, dtype=np.float64))
+            * float(np.sum(m_sel**2, dtype=np.float64))
+            / selected_mass**2
+        )
+        power_k.append(k)
+        power_pk.append(pk)
+        power_shot.append(shot)
+        power_spacing.append(float(np.max(d_exp[selected])))
+        power_boxsize.append(boxsize_mpc_h)
+    return (
+        power_k,
+        power_pk,
+        np.asarray(power_shot),
+        np.asarray(power_spacing),
+        aperture_rmax,
+        np.asarray(power_boxsize),
+    )
 
 
 def diagnose(
@@ -151,28 +169,67 @@ def diagnose(
     geometry: str,
     boxsize: float | None,
     nzones: int,
-    ncubes: int,
     pk_nmesh: int,
     nprof: int,
-    seed: int,
+    *,
+    radius_mpc_h: float | None = None,
+    length_mpc_h: float | None = None,
 ) -> dict[str, np.ndarray]:
-    rng = np.random.default_rng(seed)
+    pos = np.asarray(pos, dtype=np.float64)
+    mass = np.asarray(mass, dtype=np.float64)
+    if pos.ndim != 2 or pos.shape[1:] != (3,) or len(pos) == 0:
+        raise ValueError('positions must have shape (n, 3) with n > 0')
+    if (
+        mass.shape != (len(pos),)
+        or not np.all(np.isfinite(mass))
+        or np.any(mass <= 0.0)
+    ):
+        raise ValueError(
+            'masses must be finite and positive with one value per particle'
+        )
+    if not np.all(np.isfinite(pos)):
+        raise ValueError('positions must be finite')
+    if accel is not None and np.asarray(accel).shape != pos.shape:
+        raise ValueError('accelerations must match the position array')
+    if geometry not in ('cubical', 'spherical', 'cylindrical'):
+        raise ValueError('geometry must be cubical, spherical, or cylindrical')
+    if min(nzones, pk_nmesh, nprof) < 1:
+        raise ValueError('zone, power-mesh, and profile counts must be positive')
+    if geometry != 'cubical' and (
+        radius_mpc_h is None
+        or not np.isfinite(radius_mpc_h)
+        or radius_mpc_h <= 0.0
+    ):
+        raise ValueError('radial geometries require a finite positive radius')
+    if geometry == 'cylindrical' and (
+        length_mpc_h is None
+        or not np.isfinite(length_mpc_h)
+        or length_mpc_h <= 0.0
+    ):
+        raise ValueError('cylindrical geometry requires a finite positive length')
     n = len(pos)
-    m_tot = float(mass.sum())
+    m_tot = float(np.sum(mass, dtype=np.float64))
 
     # -- mean density and domain --------------------------------------------
     if geometry == 'cubical':
         lo, hi = pos.min(axis=0), pos.max(axis=0)
+        if boxsize is not None and (not np.isfinite(boxsize) or boxsize <= 0.0):
+            raise ValueError('cubical box size must be finite and positive')
         vol = float(np.prod(hi - lo)) if boxsize is None else boxsize**3
         r = None
         r_max = None
     else:
         r = _radius(pos, geometry)
-        r_max = float(r.max())
+        assert radius_mpc_h is not None
+        r_max = radius_mpc_h
+        radial_tolerance_mpc_h = 8.0 * np.finfo(np.float32).eps * r_max
+        if np.any(r > r_max + radial_tolerance_mpc_h):
+            raise ValueError('particles lie outside the configured radial domain')
         if geometry == 'spherical':
             vol = 4.0 / 3.0 * np.pi * r_max**3
         else:
-            lz = float(pos[:, 2].max() - pos[:, 2].min())
+            assert length_mpc_h is not None
+            lz = length_mpc_h
             vol = np.pi * r_max**2 * lz
     rho_mean = m_tot / vol
     d_exp = np.cbrt(mass / rho_mean)
@@ -248,41 +305,46 @@ def diagnose(
             with np.errstate(invalid='ignore'):
                 results['prof_q'] = np.where(cnt > 0, sum_q / cnt, np.nan)
 
-        # zones by particle-count quantiles of r
+        power = radial_power_apertures(
+            pos,
+            mass,
+            d_exp,
+            r_max,
+            length_mpc_h,
+            geometry,
+            nzones,
+            pk_nmesh,
+        )
+        (
+            power_k,
+            power_pk,
+            power_shot,
+            power_spacing,
+            power_rmax,
+            power_boxsize,
+        ) = power
+        results['power_k'], results['power_count'] = _pad_rows(power_k)
+        results['power_pk'], pk_count = _pad_rows(power_pk)
+        if not np.array_equal(results['power_count'], pk_count):
+            raise RuntimeError('power k and spectrum rows have different lengths')
+        results['power_shot'] = power_shot
+        results['power_spacing'] = power_spacing
+        results['power_rmax'] = power_rmax
+        results['power_boxsize'] = power_boxsize
+
+        # Equal-particle radial zones keep the force comparison balanced.
         zone_edges = np.quantile(r, np.linspace(0.0, 1.0, nzones + 1))
         zone_edges[0], zone_edges[-1] = 0.0, r_max
         results['zone_edges'] = zone_edges
-        z_range = None
-        if geometry == 'cylindrical':
-            z_range = (float(pos[:, 2].min()), float(pos[:, 2].max()))
-
-        zone_k, zone_pk, zone_shot, zone_side, zone_dbar, zone_q = \
-            [], [], [], [], [], []
+        zone_q = []
         for iz in range(nzones):
             r0, r1 = zone_edges[iz], zone_edges[iz + 1]
             in_z = (r >= r0) & (r < r1) if iz < nzones - 1 else (r >= r0)
-            k, pk, shot, side = zone_pk_cubes(
-                pos, mass, r, r0, r1, z_range, geometry,
-                ncubes, pk_nmesh, rng,
-            )
-            zone_k.append(k)
-            zone_pk.append(pk)
-            zone_shot.append(shot)
-            zone_side.append(side)
-            zone_dbar.append(float(np.mean(d_exp[in_z])))
             if has_force:
                 zone_q.append([
                     np.sqrt(np.mean(q[in_z]**2)), np.median(q[in_z]),
                     np.percentile(q[in_z], 99),
                 ])
-        # k-vectors can differ per zone; NaN padding keeps the archive typed.
-        results['zone_k'], results['zone_count'] = _pad_rows(zone_k)
-        results['zone_pk'], pk_count = _pad_rows(zone_pk)
-        if not np.array_equal(results['zone_count'], pk_count):
-            raise RuntimeError("zone k and power rows have different lengths")
-        results['zone_shot'] = np.array(zone_shot, dtype=np.float64)
-        results['zone_side'] = np.array(zone_side, dtype=np.float64)
-        results['zone_dbar'] = np.array(zone_dbar, dtype=np.float64)
         if has_force:
             results['zone_q'] = np.array(zone_q, dtype=np.float64)
     else:
@@ -295,13 +357,13 @@ def diagnose(
             subtract_shot=False,
         )
         shot = b**3 * float(np.sum(mass**2)) / m_tot**2
-        results['zone_k'] = np.asarray([k], dtype=np.float64)
-        results['zone_pk'] = np.asarray([pk], dtype=np.float64)
-        results['zone_count'] = np.array([len(k)], dtype=np.int64)
-        results['zone_shot'] = np.array([shot])
-        results['zone_side'] = np.array([b])
-        results['zone_dbar'] = np.array([float(np.mean(d_exp))])
-        results['zone_edges'] = np.array([0.0, b])
+        results['power_k'] = np.asarray([k], dtype=np.float64)
+        results['power_pk'] = np.asarray([pk], dtype=np.float64)
+        results['power_count'] = np.array([len(k)], dtype=np.int64)
+        results['power_shot'] = np.array([shot])
+        results['power_spacing'] = np.array([float(np.max(d_exp))])
+        results['power_rmax'] = np.array([b])
+        results['power_boxsize'] = np.asarray([[b, b, b]])
         if has_force:
             results['zone_q'] = np.array([[
                 np.sqrt(np.mean(q**2)), np.median(q), np.percentile(q, 99),
@@ -320,13 +382,13 @@ def main() -> None:
     p.add_argument('--geometry', type=str, required=True,
                    choices=['spherical', 'cylindrical', 'cubical'])
     p.add_argument('--nzones', type=int, default=4)
-    p.add_argument('--ncubes', type=int, default=6,
-                   help='Sample cubes per zone for the zoned P(k).')
     p.add_argument('--pk-nmesh', type=int, default=64)
     p.add_argument('--nprof', type=int, default=100,
                    help='Fine radial bins for the profiles.')
-    p.add_argument('--seed', type=int, default=0,
-                   help='RNG seed for cube placement.')
+    p.add_argument('--radius-mpc-h', type=float,
+                   help='Configured sphere or cylinder radius [Mpc/h].')
+    p.add_argument('--length-mpc-h', type=float,
+                   help='Configured periodic cylinder length [Mpc/h].')
     p.add_argument('--tile-lz', type=float, default=None,
                    help='If the snapshot is a tiled torus (rescale.py), '
                         'keep only particles with z < this before '
@@ -349,7 +411,9 @@ def main() -> None:
              accel is not None)
     results = diagnose(
         pos, mass, accel, args.geometry, boxsize,
-        args.nzones, args.ncubes, args.pk_nmesh, args.nprof, args.seed,
+        args.nzones, args.pk_nmesh, args.nprof,
+        radius_mpc_h=args.radius_mpc_h,
+        length_mpc_h=args.length_mpc_h,
     )
     atomic_savez(args.output, **results)
     log.info('Diagnostics written to %s (%d arrays).',

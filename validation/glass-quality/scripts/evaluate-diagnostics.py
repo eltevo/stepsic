@@ -12,18 +12,32 @@ from validation._common.evaluation import archive_provenance, load_npz, malforme
 from validation._common.result import Metric, ValidationResult, upper_bound_check
 
 
-def _zone_ratios(
+def _aperture_ratios(
     glass: dict[str, np.ndarray],
     twin: dict[str, np.ndarray],
 ) -> list[float]:
+    for key in ("power_rmax", "power_boxsize"):
+        glass_window = np.asarray(glass[key], dtype=np.float64)
+        twin_window = np.asarray(twin[key], dtype=np.float64)
+        if glass_window.shape != twin_window.shape or not np.allclose(
+            glass_window,
+            twin_window,
+            rtol=1.0e-12,
+            atol=0.0,
+        ):
+            raise ValueError("glass and twin power apertures are not matched")
     ratios: list[float] = []
     for index, (shot_glass, shot_twin, spacing) in enumerate(
-        zip(glass["zone_shot"], twin["zone_shot"], glass["zone_dbar"])
+        zip(
+            glass["power_shot"],
+            twin["power_shot"],
+            glass["power_spacing"],
+        )
     ):
-        k_glass = np.asarray(glass["zone_k"][index], dtype=np.float64)
-        p_glass = np.asarray(glass["zone_pk"][index], dtype=np.float64)
-        k_twin = np.asarray(twin["zone_k"][index], dtype=np.float64)
-        p_twin = np.asarray(twin["zone_pk"][index], dtype=np.float64)
+        k_glass = np.asarray(glass["power_k"][index], dtype=np.float64)
+        p_glass = np.asarray(glass["power_pk"][index], dtype=np.float64)
+        k_twin = np.asarray(twin["power_k"][index], dtype=np.float64)
+        p_twin = np.asarray(twin["power_pk"][index], dtype=np.float64)
         valid_glass = np.isfinite(k_glass) & np.isfinite(p_glass)
         valid_twin = np.isfinite(k_twin) & np.isfinite(p_twin)
         k_glass, p_glass = k_glass[valid_glass], p_glass[valid_glass]
@@ -36,7 +50,7 @@ def _zone_ratios(
             or shot_glass <= 0.0
             or shot_twin <= 0.0
         ):
-            raise ValueError("zone contains no finite positive power support")
+            raise ValueError("power aperture has no finite positive support")
         particle_k = 2.0 * np.pi / float(spacing)
         x_glass = k_glass / particle_k
         x_twin = k_twin / particle_k
@@ -46,7 +60,9 @@ def _zone_ratios(
             & (x_glass <= x_twin[-1])
         )
         if not np.any(keep):
-            raise ValueError("zone has no common sub-particle-scale modes")
+            raise ValueError(
+                "power aperture has no common sub-particle-scale modes"
+            )
         twin_normalized = np.interp(
             x_glass[keep],
             x_twin,
@@ -76,7 +92,7 @@ def evaluate(
         for geometry, (glass_path, twin_path) in pairs.items():
             glass = load_npz(glass_path)
             twin = load_npz(twin_path)
-            zone_ratios[geometry] = _zone_ratios(glass, twin)
+            zone_ratios[geometry] = _aperture_ratios(glass, twin)
             if not bool(glass["meta_has_force"]) or not bool(twin["meta_has_force"]):
                 raise ValueError(f"{geometry} matched controls require force data")
             global_force_ratios[geometry] = float(glass["q_all"][0] / twin["q_all"][0])

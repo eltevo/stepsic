@@ -259,23 +259,29 @@ _diag_input() {
 
 # -- Step 5: diagnose --------------------------------------------------------
 if vlib::step_check "diagnose"; then
-    DIAG_ARGS=(--nzones "${DIAG_NZONES}" --ncubes "${DIAG_NCUBES}"
+    DIAG_ARGS=(--nzones "${DIAG_NZONES}"
                --pk-nmesh "${DIAG_PK_NMESH}" --nprof "${DIAG_NPROF}")
     for geom in "${GEOMS[@]}"; do
         snap="$(_snap_for "${geom}")"
         [[ -z "${snap}" || ! -f "${snap}" ]] && continue
         force_name="glass_${geom}"
+        GEOMETRY_ARGS=()
         if [[ "${geom}" == "cubical" ]]; then
             force_name="tiled_s1"
+        elif [[ "${geom}" == "spherical" ]]; then
+            GEOMETRY_ARGS=(--radius-mpc-h "${R_3D}")
+        else
+            GEOMETRY_ARGS=(--radius-mpc-h "${R_3D}"
+                           --length-mpc-h "${LZ}")
         fi
         vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/diagnose.py" \
             "$(_diag_input "${force_name}" "${snap}")" \
             -o "${DIAG_DIR}/diag_${geom}.npz" \
-            --geometry "${geom}" "${DIAG_ARGS[@]}"
+            --geometry "${geom}" "${GEOMETRY_ARGS[@]}" "${DIAG_ARGS[@]}"
         vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/diagnose.py" \
             "$(_diag_input "twin_${geom}" "${TWIN_DIR}/twin_${geom}.hdf5")" \
             -o "${DIAG_DIR}/diag_twin_${geom}.npz" \
-            --geometry "${geom}" "${DIAG_ARGS[@]}"
+            --geometry "${geom}" "${GEOMETRY_ARGS[@]}" "${DIAG_ARGS[@]}"
     done
     # Rescaled tori: diagnose one tile (z < LBOX/s).
     if [[ -n "${SNAP_CUBICAL}" && -f "${SNAP_CUBICAL}" ]]; then

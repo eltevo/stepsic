@@ -71,7 +71,7 @@ CAMPAIGNS: dict[str, Campaign] = {
             "NGRID", "NPART", "NRBINS_STEPS", "NSHELL_STEPS",
             "NRBINS_CUBICAL", "NSHELL_CUBICAL", "GLASS_TIME_LIMIT_MIN",
             "GLASS_FIRST_T_OUT", "GLASS_H_OUT", "DIAG_NZONES",
-            "DIAG_NCUBES", "DIAG_PK_NMESH", "DIAG_NPROF",
+            "DIAG_PK_NMESH", "DIAG_NPROF",
             "RESCALE_ASPECTS", "FORCE_TIME_LIMIT_MIN",
         ),
     ),

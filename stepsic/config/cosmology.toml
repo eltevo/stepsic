@@ -77,7 +77,7 @@ KPIVOT = 0.05
 W0 = -1.0
 WA = 0.0
 
-# Dark Energy Survey Year Three (DES Y3; Abbott et al. 2022) ‘3 × 2pt + All Ext.’ (D3A)
+# Dark Energy Survey Year Three (DES Y3; Abbott et al. 2022) '3 x 2pt + All Ext.' (D3A)
 # https://journals.aps.org/prd/abstract/10.1103/PhysRevD.105.023520
 ["D3A-LCDM"]
 H0 = {best = 68.1, mean = 68.0, error = 0.4}

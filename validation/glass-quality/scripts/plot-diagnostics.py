@@ -3,8 +3,9 @@
 Plot glass diagnostics beside the corresponding Poisson measurements.
 
 The four panels show:
-(a) zoned P(k) / P_shot against k / k_p (k_p = 2*pi / d_zone): the
-    glass must fall below the twin's flat Poisson level at k < k_p;
+(a) cumulative-aperture P(k) / P_shot against k / k_p
+    (k_p = 2*pi / d_max): the glass must fall below the twin's flat
+    Poisson level at k < k_p;
 (b) radial density profile rho/rho_mean with mass-level interfaces
     marked;
 (c) nearest-neighbour statistic u = d_NN / (m/rho)^{1/3} vs radius;
@@ -53,21 +54,20 @@ def plot_diagnostics(
     geometry = str(glass['meta_geometry'])
     radial = geometry != 'cubical'
 
-    # -- (a) zoned P(k)/shot -------------------------------------------------
-    nz = len(glass['zone_shot'])
+    # -- (a) cumulative-aperture P(k)/shot ----------------------------------
+    nz = len(glass['power_shot'])
     for iz in range(nz):
-        kp = 2.0 * np.pi / glass['zone_dbar'][iz]
+        kp = 2.0 * np.pi / glass['power_spacing'][iz]
         for d, ls in ((glass, '-'), (twin, '--')):
-            k = np.asarray(d['zone_k'][iz], dtype=np.float64)
-            pk = np.asarray(d['zone_pk'][iz], dtype=np.float64)
-            shot = float(d['zone_shot'][iz])
+            k = np.asarray(d['power_k'][iz], dtype=np.float64)
+            pk = np.asarray(d['power_pk'][iz], dtype=np.float64)
+            shot = float(d['power_shot'][iz])
             if np.all(np.isnan(k)):
                 continue
             lbl = None
             if d is glass:
                 if radial:
-                    lbl = (rf'$r \in [{glass["zone_edges"][iz]:.0f},'
-                           rf'{glass["zone_edges"][iz + 1]:.0f}]$')
+                    lbl = rf'$r < {glass["power_rmax"][iz]:.0f}$'
                 else:
                     lbl = 'glass'
             ax_a.loglog(k / kp, pk / shot, ls=ls, lw=1.2,
@@ -75,7 +75,7 @@ def plot_diagnostics(
     ax_a.axhline(1.0, color='k', lw=0.8, ls=':', zorder=1)
     ax_a.axvline(1.0, color='grey', lw=0.6, ls=':', zorder=1)
     ax_a.set_xlabel(r'$k / k_{\mathrm{p}}$')
-    ax_a.set_title(r'$P(k) / P_{\mathrm{shot}}$ per zone '
+    ax_a.set_title(r'$P(k) / P_{\mathrm{shot}}$ per aperture '
                    r'(solid: glass, dashed: Poisson twin)',
                    loc='left', fontsize=8)
     ax_a.legend(fontsize=5, loc='lower right', frameon=False)
