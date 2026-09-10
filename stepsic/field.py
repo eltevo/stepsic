@@ -222,7 +222,8 @@ def fourier_grid(
     return kvec, kmod
 
 
-def white_noise(nvox: FloatVec3, seed: Seed = None, dtype: np.dtype = np.float64) -> RealField:
+def white_noise(nvox: FloatVec3, seed: Seed = None, dtype: np.dtype = np.float64,
+                ref_nvox: int = None) -> RealField:
     r'''
     Return a complex Gaussian array :math:`W(k)` on the ``rfftn()`` grid
     `(Nx, Ny, Nz//2+1)`, obeying Hermitian constraints that guarantee
@@ -247,7 +248,35 @@ def white_noise(nvox: FloatVec3, seed: Seed = None, dtype: np.dtype = np.float64
         3D array of white noise values.
     '''
     rng = RNG(seed=seed)
-    w_k = scipy.fft.rfftn(rng.normal(size=nvox, seed=seed).astype(dtype), workers=-1)
+    if ref_nvox:
+        # ── Resolution-independent phases ──────────────────────────────────────
+        # The default branch below draws in CONFIGURATION space on the nvox^3 grid, so
+        # `rng.normal(size=nvox)` fills a differently shaped array when the mesh changes
+        # and the SAME seed yields a completely different realization.  Two runs at
+        # different NMESH are then incomparable: measured cross-correlation of the z=0
+        # density fields fell from ~0.95 (same NMESH) to ~0 (NMESH 256 vs 1024).
+        #
+        # With ref_nvox set, the field is drawn once on the ref_nvox^3 mesh and its
+        # k-modes are cropped to nvox^3, so every mesh <= ref_nvox is a strict subset of
+        # one realization -- the standard "fixed phases across resolution" construction.
+        # (M/N)^{3/2} restores the per-mode variance of a native M^3 draw, since numpy's
+        # unnormalised rfftn gives E|w_k|^2 = N^3.
+        N = int(ref_nvox)
+        M = int(np.atleast_1d(nvox)[0])
+        if M > N:
+            raise ValueError(f'PHASE_REF_NMESH ({N}) must be >= NMESH ({M})')
+        w_ref = scipy.fft.rfftn(rng.normal(size=(N, N, N), seed=seed).astype(dtype),
+                                workers=-1)
+        if M < N:
+            sel = np.r_[0:M//2, N-M//2:N]
+            w_k = w_ref[np.ix_(sel, sel, np.arange(M//2+1))] * (M/N)**1.5
+            # cropping breaks Hermitian consistency on the Nyquist planes; restore it
+            w_k = scipy.fft.rfftn(scipy.fft.irfftn(w_k, s=(M, M, M), workers=-1),
+                                  workers=-1)
+        else:
+            w_k = w_ref
+    else:
+        w_k = scipy.fft.rfftn(rng.normal(size=nvox, seed=seed).astype(dtype), workers=-1)
     w_k[0, 0, 0] = 0.0  # set DC=0 (mean density) as we only need fluctuations
     return w_k
 
@@ -262,6 +291,7 @@ def generate_delta_k(
         seed: Seed = None,
         fixed: bool = False,
         paired: bool = False,
+        complementary: bool = False,
         dtype: np.dtype = np.float64
 ) -> ComplexField:
     r'''
@@ -327,9 +357,38 @@ def generate_delta_k(
     else:
         delta_k = field * target_A
 
+    if complementary:
+        # ── Complementary initial conditions ───────────────────────────────────
+        # Racz, Kiessling, Csabai & Szapudi (2022), arXiv:2210.15077.
+        # Rescale each |k| shell so that the PAIR (this run + the original) averages
+        # to the target spectrum, their eq. (9):
+        #       P_C(k) = 2 P_target(k) - P_IC(k).
+        # With r = P_IC/P_target this is a real per-shell factor on the original field:
+        #       compensated   (r < 2):  delta_C = delta * sqrt(2/r - 1)   -> P_C = 2P_t - P_IC
+        #       uncompensated (r >= 2): delta_C = delta / r               -> P_C = P_t^2/P_IC
+        # The second branch is the fallback where exact compensation would demand a
+        # negative power; it still pulls the shell towards the target without the
+        # beat-coupling of an over-corrected mode.  Phases are preserved here and then
+        # flipped below (the sign flip leaves P(k) untouched).
+        kf_shell = np.min(2*np.pi/(np.asarray(nvox)*dk))
+        ish = np.rint(kmod/kf_shell).astype(np.int64)
+        pw = np.abs(delta_k)**2
+        tg = target_A**2
+        nb = int(ish.max()) + 1
+        # delta_k = field * target_A with E|field|^2 = prod(nvox) (unnormalised rfftn),
+        # so the target shell power carries that same factor -- cf. the `fixed` branch
+        # above, which scales by sqrt(prod(nvox)).
+        num = np.bincount(ish.ravel(), weights=pw.ravel(), minlength=nb)
+        den = np.bincount(ish.ravel(), weights=tg.ravel(), minlength=nb) * np.prod(nvox)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            r = np.where(den > 0, num/den, 1.0)
+        r = np.where(np.isfinite(r) & (r > 0), r, 1.0)
+        fac = np.where(r < 2.0, np.sqrt(np.maximum(2.0/r - 1.0, 0.0)), 1.0/r)
+        delta_k = delta_k * fac[ish].astype(delta_k.dtype)
+
     delta_k[0, 0, 0] = 0.0  # set DC=0 (mean density) as we only need fluctuations
 
-    if paired:
+    if paired or complementary:
         delta_k = -delta_k
     return delta_k
 

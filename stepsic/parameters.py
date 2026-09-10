@@ -203,6 +203,11 @@ IC_PARAMS: tuple[Param, ...] = (
     # -- IC type and generation ----------------------------------------
     Param('TYPE', ptype=PType.STRING, label="IC type", choices=('grid', 'random', 'shell', 'glass')),
     Param('NMESH', ptype=PType.INT, label="FFT mesh size", unit="voxels"),
+    # Draw the white noise on a PHASE_REF_NMESH^3 mesh and crop in k-space so runs at
+    # different NMESH share one realization.  0/absent = legacy configuration-space draw.
+    # Optional: the `key in P` condition keeps tomls written before it existed valid.
+    Param('PHASE_REF_NMESH', ptype=PType.INT, label="Phase reference mesh", unit="voxels",
+          condition=lambda P: 'PHASE_REF_NMESH' in P),
     Param('NGRID', ptype=PType.INT, label="Grid size", unit="voxels", condition=lambda P: P.get('TYPE') == 'grid'),
     Param('NPART', ptype=PType.INT, label="N particles (random)", condition=lambda P: P.get('TYPE') == 'random'),
     Param('NSHELL', ptype=PType.INT, label="Particles per shell", condition=lambda P: P.get('TYPE') == 'shell'),
@@ -212,6 +217,10 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('SPHEREMODE', ptype=PType.BOOL, label="Sphere mode", condition=lambda P: P.get('LPTORDER') > 0),
     Param('COMOVING', ptype=PType.BOOL, label="Comoving IC"),
     Param('PAIRED', ptype=PType.BOOL, label="Paired-fixed IC", condition=lambda P: P.get('LPTORDER') > 0),
+    # Complementary IC of Racz+2022 (arXiv:2210.15077): the pair averages to P_target.
+    # Optional, as above.
+    Param('COMPLEMENTARY', ptype=PType.BOOL, label="Complementary IC",
+          condition=lambda P: 'COMPLEMENTARY' in P and P.get('LPTORDER', 0) > 0),
     Param('PHASE_SHIFT', label="Phase shift",  fmt=".2f", unit="degrees", condition=lambda P: P.get('LPTORDER') > 0),
     Param('HINDEPENDENT', ptype=PType.BOOL, label="H-independent units"),
     Param('SEED', ptype=PType.INT, label="Random seed"),

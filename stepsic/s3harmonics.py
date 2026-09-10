@@ -37,6 +37,22 @@ import warnings
 
 from stepsic import pds
 
+
+# Y_lm(theta, phi), portable across the SciPy 1.15 API rename.  SciPy 1.15 added
+# sph_harm_y(l, m, theta, phi) and deprecated sph_harm(m, l, phi, theta); the latter
+# was removed in SciPy 1.17.  The two are numerically identical -- only the name and
+# the argument order/meaning changed.  Resolved once, at import time.
+try:                                    # SciPy >= 1.15
+    from scipy.special import sph_harm_y as _sph_harm_y
+except ImportError:                     # SciPy < 1.15
+    from scipy.special import sph_harm as _sph_harm_legacy
+
+    def _sph_harm_y(l, m, theta, phi):
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')     # scipy sph_harm deprecation
+            return _sph_harm_legacy(m, l, phi, theta)
+
+
 __all__ = [
     'invariant_multiplicity', 'invariant_n_list', 'wavenumber',
     'quat_to_angles', 'hyperspherical_harmonic',
@@ -90,12 +106,10 @@ def hyperspherical_harmonic(n: int, l: int, m: int, q: NDArray) -> NDArray:
     irrelevant for the GRF construction, which only needs a spanning set per degree n).
     Eigenvalue of the S^3 Laplacian: -n(n+2).
     """
-    from scipy.special import eval_gegenbauer, sph_harm
+    from scipy.special import eval_gegenbauer
     chi, theta, phi = quat_to_angles(q)
     radial = np.sin(chi) ** l * eval_gegenbauer(n - l, l + 1, np.cos(chi))
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore')             # scipy sph_harm deprecation
-        Y = sph_harm(m, l, phi, theta)
+    Y = _sph_harm_y(l, m, theta, phi)
     return radial * Y
 
 

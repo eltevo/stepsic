@@ -264,8 +264,10 @@ def main():
             # a specific resolution.
             nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
             # White noise field for complete reproducibility
-            field = white_noise(nvox=nvox, seed=params['SEED'], dtype=params['DTYPE'])
-            delta_k = generate_delta_k(kh, pk, nvox, dk, field=field, dtype=params['DTYPE'])
+            field = white_noise(nvox=nvox, seed=params['SEED'], dtype=params['DTYPE'],
+                                ref_nvox=params.get('PHASE_REF_NMESH') or None)
+            delta_k = generate_delta_k(kh, pk, nvox, dk, field=field, dtype=params['DTYPE'],
+                                       complementary=bool(params.get('COMPLEMENTARY')))
 
             # Phase 7B: when the discrete S^3/I* modes are enabled, high-pass the flat
             # field above the discrete splice scale k(n_max), so the flat path supplies

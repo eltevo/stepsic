@@ -112,7 +112,9 @@ def test_conformal_factor_volume_integral():
     R = 3100.0
     r = np.linspace(0, 400 * R, 4_000_001)
     omega = pds.conformal_factor(np.stack([r, np.zeros_like(r), np.zeros_like(r)], axis=-1), R)
-    integral = np.trapz(omega**3 * 4 * np.pi * r**2, r)
+    # np.trapz was renamed np.trapezoid in NumPy 2.0 and removed in NumPy 2.4
+    trapezoid = getattr(np, "trapezoid", None) or np.trapz
+    integral = trapezoid(omega**3 * 4 * np.pi * r**2, r)
     assert abs(integral / (2 * np.pi**2 * R**3) - 1) < 1e-3
 
 

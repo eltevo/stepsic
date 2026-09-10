@@ -33,27 +33,36 @@ __all__ = ['tangent_basis', 'make_invariant_potential', 'displacement_field']
 def tangent_basis(q: NDArray) -> NDArray:
     """Orthonormal tangent frame at unit quaternion(s) q: (...,3,4), each row perp to q."""
     q = np.asarray(q, dtype=np.float64)
-    # start from the 4 Euclidean axes, remove the q-component, pick the 3 largest-norm,
-    # Gram-Schmidt.  Vectorized per-point.
     M = q.shape[:-1]
-    e = np.zeros(M + (3, 4))
+
+    # Project the 4 Euclidean axes into the tangent space at q:  cand_k = e_k - q_k q,
+    # which has norm sqrt(1 - q_k^2).  Discard the axis most nearly parallel to q
+    # (argmax|q_k|): since sum_k q_k^2 = 1, every *retained* candidate then has
+    # q_k^2 <= 1/2, i.e. norm >= 1/sqrt(2).  The frame is therefore uniformly
+    # well-conditioned and has no degenerate case.
+    #
+    # Taking the first three axes unconditionally instead is wrong: at a coordinate-axis
+    # quaternion (e.g. q = (1,0,0,0), the stereographic origin -- a particle at the box
+    # centre) the parallel candidate vanishes, and near one it is a tiny difference of
+    # large numbers.  Either way a gradient direction is silently lost from the frame,
+    # and Psi = sum_a (grad_a f) e_a then misses that direction entirely.
     cand = np.broadcast_to(np.eye(4), M + (4, 4)).copy()
-    # remove q component from each candidate
     cand = cand - (cand @ q[..., None])[..., 0][..., None] * q[..., None, :]
-    # Gram-Schmidt the candidates, keep first 3 independent
-    idx = 0
-    for k in range(4):
-        if idx == 3:
-            break
-        v = cand[..., k, :].copy()
-        for j in range(idx):
-            v = v - (np.sum(v * e[..., j, :], axis=-1, keepdims=True)) * e[..., j, :]
-        nrm = np.linalg.norm(v, axis=-1, keepdims=True)
-        ok = (nrm[..., 0] > 1e-8)
-        v = np.where(nrm > 1e-8, v / np.where(nrm > 1e-8, nrm, 1.0), 0.0)
-        # only assign where ok (broadcast); for a generic q all first 3 candidates work
-        e[..., idx, :] = v
-        idx += 1
+
+    drop = np.argmax(np.abs(q), axis=-1)                      # (M,)
+    order = np.argsort(np.arange(4) == drop[..., None], axis=-1, kind='stable')
+    cand = np.take_along_axis(cand, order[..., :3, None], axis=-2)
+
+    # Modified Gram-Schmidt with one re-orthogonalization pass; each pass also
+    # re-projects out q so the rows stay perpendicular to it to machine precision.
+    e = np.zeros(M + (3, 4))
+    for a in range(3):
+        v = cand[..., a, :]
+        for _ in range(2):
+            v = v - np.sum(v * q, axis=-1, keepdims=True) * q
+            for j in range(a):
+                v = v - np.sum(v * e[..., j, :], axis=-1, keepdims=True) * e[..., j, :]
+        e[..., a, :] = v / np.linalg.norm(v, axis=-1, keepdims=True)
     return e
 
 
