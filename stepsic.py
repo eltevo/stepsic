@@ -40,7 +40,6 @@ from stepsic.cosmology import (
 )
 from stepsic.data import CosmoData
 from stepsic.field import (
-    _mass_interp_weights,
     create_grid,
     create_nres_mass_map,
     create_particles,
@@ -51,6 +50,7 @@ from stepsic.field import (
 from stepsic.geometry import create_shell_particles
 from stepsic.lpt import log_lpt, lpt1, lpt2
 from stepsic.parameters import CosmoParameters
+from stepsic.multiresolution import _density_samples, _multiresolution_lpt
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -168,43 +168,23 @@ def main():
             # create the final IC.
             nres_tab, mass_tab = create_nres_mass_map(
                 params['NMESHSAMPLES'], ic_orig.mass_list, ic_orig.M_box, params['LBOX'])
-
-            # Each particle linearly mixes the two samples bracketing its
-            # mass, so every sample's contribution can be applied as soon
-            # as its fields are computed.
-            j_lo, j_hi, w_hi = _mass_interp_weights(ic.mass, mass_tab)
-
-            for si, (res, mass) in enumerate(zip(nres_tab, mass_tab)):
-                log.info(f"Generating sample {si+1}/{params['NMESHSAMPLES']}...")
-                log.info(f'Resolution: {res:.0f} voxels, Mass: {mass:.6f} 1e11 Msol/h')
-                nvox, dk = cubic_voxels(res, params['LBOX'])
-                # White noise field for complete reproducibility
+            hierarchy = [cubic_voxels(res, params['LBOX']) for res in nres_tab]
+            displacement, velocity = _multiresolution_lpt(
+                ic_orig.pos, ic_orig.mass, mass_tab, hierarchy,
+                _density_samples(kh, pk, hierarchy, params),
+                order=params['LPTORDER'], g1=g1, g2=g2,
+                aHf1=aHf1, aHf2=aHf2,
+                method=params['INTERPOLATION'], compensate=params['COMPENSATE'])
+            ic.pos += displacement
+            ic.vel = velocity
+            if params['SAVE_WHITE_NOISE']:
+                # Only the final mass sample is exported.
+                nvox, dk = hierarchy[-1]
                 field = white_noise(nvox=nvox, seed=params['SEED'], dtype=params['DTYPE'])
-                delta_k = generate_delta_k(kh, pk, nvox, dk, field=field, paired=params['PAIRED'], fixed=params['FIXED'])
+                delta_k = generate_delta_k(
+                    kh, pk, nvox, dk, field=field,
+                    paired=params['PAIRED'], fixed=params['FIXED'])
 
-                if params['LPTORDER'] == 1:
-                    # Use 1st order Lagrangian PT (Zel'dovich approximation)
-                    xpert, vpert = lpt1(
-                        ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk,
-                        g1=g1, aHf1=aHf1,
-                        method=params['INTERPOLATION'], compensate=params['COMPENSATE'])
-                    log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='1LPT')
-                elif params['LPTORDER'] == 2:
-                    # Use 2nd order Lagrangian PT
-                    xpert, vpert = lpt2(
-                        ic_orig.pos, delta_k=delta_k, nvox=nvox, dk=dk,
-                        g1=g1, g2=g2, aHf1=aHf1, aHf2=aHf2,
-                        method=params['INTERPOLATION'], compensate=params['COMPENSATE'])
-                    log_lpt(x=ic_orig.pos, xpert=xpert, vpert=vpert, title='2LPT')
-
-                # Accumulate this sample's displacement and velocity
-                # contribution for the particles whose mass it brackets
-                coeff = (np.where(j_lo == si, 1.0 - w_hi, 0.0)
-                         + np.where(j_hi == si, w_hi, 0.0))
-                sel = coeff != 0.0
-                cw = coeff[sel, None]
-                ic.pos[sel] += cw * (xpert[sel] - ic_orig.pos[sel])
-                ic.vel[sel] += cw * (vpert[sel] - ic_orig.vel[sel])
         else:
             # If the number of mesh points is specified, the script will
             # generate a single IC with a grid of the specified resolution.
