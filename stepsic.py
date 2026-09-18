@@ -29,7 +29,7 @@ import scipy
 import numpy as np
 
 import stepsic
-from stepsic._util import ensure_run_dir
+from stepsic.io import ensure_run_dir
 from stepsic.cosmology import (
     CAMBCosmology,
     ColossusCosmology,
@@ -40,17 +40,14 @@ from stepsic.cosmology import (
 )
 from stepsic.data import CosmoData
 from stepsic.field import (
-    create_grid,
-    create_nres_mass_map,
-    create_particles,
     cubic_voxels,
     generate_delta_k,
     white_noise,
 )
-from stepsic.geometry import create_shell_particles
+from stepsic.particles import create_grid, create_particles, create_shell_particles
 from stepsic.lpt import log_lpt, lpt1, lpt2
 from stepsic.parameters import CosmoParameters
-from stepsic.multiresolution import _density_samples, _multiresolution_lpt
+from stepsic.multiresolution import create_nres_mass_map, density_samples, multiresolution_lpt
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -169,9 +166,9 @@ def main():
             nres_tab, mass_tab = create_nres_mass_map(
                 params['NMESHSAMPLES'], ic_orig.mass_list, ic_orig.M_box, params['LBOX'])
             hierarchy = [cubic_voxels(res, params['LBOX']) for res in nres_tab]
-            displacement, velocity = _multiresolution_lpt(
+            displacement, velocity = multiresolution_lpt(
                 ic_orig.pos, ic_orig.mass, mass_tab, hierarchy,
-                _density_samples(kh, pk, hierarchy, params),
+                density_samples(kh, pk, hierarchy, params),
                 order=params['LPTORDER'], g1=g1, g2=g2,
                 aHf1=aHf1, aHf2=aHf2,
                 method=params['INTERPOLATION'], compensate=params['COMPENSATE'])

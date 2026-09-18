@@ -22,9 +22,8 @@ import logging
 import scipy
 import numpy as np
 from scipy.interpolate import CubicSpline
-from tabulate import tabulate
 
-from stepsic.rng import RNG, philox_complex_gaussian
+from stepsic.rng import philox_complex_gaussian
 
 log = logging.getLogger(__name__)
 
@@ -47,85 +46,6 @@ def wrap(x: RealField, boxsize: FloatVec3) -> RealField:
         The wrapped coordinates.
     '''
     return np.mod(x+boxsize/2, boxsize)
-
-
-def create_grid(
-        nvox: FloatVec3,
-        dk: float,
-        dtype: np.dtype = np.float64,
-        return_coords: bool = True
-) -> tuple[RealField, RealField] | RealField:
-    '''
-    Create a regular grid for the simulation box.
-
-    Parameters
-    ----------
-    nvox : tuple of int
-        The number of voxels in each dimension of the simulation box.
-    dk : float
-        The uniform step size in each dimension, calculated as the length
-        of the shortest dimension divided by the number of voxels in
-        that dimension.
-    dtype : np.dtype
-        The data type of the returned particle positions. The grid axes
-        are always computed in float64 and cast on assignment, so
-        ``dtype=np.float32`` gives values identical to casting the
-        float64 result.
-    return_coords : bool
-        If `True` (default), also build and return the full 3D coordinate
-        array. Pass `False` to skip that allocation when only the
-        particle positions are needed.
-
-    Returns
-    -------
-    particles : ndarray of shape (N, 3)
-        The particle positions in the simulation box, where N is the total
-        number of particles (voxels).
-    coords : ndarray of shape (3, Nx, Ny, Nz)
-        The grid coordinates in each dimension, where Nx, Ny, Nz are the
-        number of voxels in each dimension. Only returned when
-        ``return_coords`` is `True`.
-    '''
-    mesh = tuple(np.arange(-(n-1)*dk/2, n*dk/2, dk) for n in nvox)
-    shape = tuple(m.size for m in mesh)
-    bcast = (
-        mesh[0][:, None, None],
-        mesh[1][None, :, None],
-        mesh[2][None, None, :],
-    )
-    grid = np.empty((*shape, 3), dtype=dtype)
-    for i in range(3):
-        grid[..., i] = bcast[i]
-    particles = grid.reshape(-1, 3)
-    if not return_coords:
-        return particles
-    coords = np.empty((3, *shape), dtype=np.float64)
-    for i in range(3):
-        coords[i] = bcast[i]
-    return particles, coords
-
-
-def create_particles(npart: int, boxsize: FloatVec3, seed: Seed = None) -> RealField:
-    r'''
-    Create a set of particles uniformly distributed in a cubic box.
-
-    Parameters
-    ----------
-    npart : int
-        The number of particles to create.
-    boxsize : float or list of float
-        Box dimensions in [Mpc]. Can be a scalar for a cubical box or
-        an array in the form of `(Lx, Ly, Lz)` for a rectangular cuboid.
-    seed : int, optional
-        Random seed for reproducibility.
-
-    Returns
-    -------
-    particles : ndarray of shape (npart, 3)
-        Particle positions in the simulation box.
-    '''
-    rng = RNG(seed=seed)
-    return rng.uniform(size=(npart, 3), seed=None) * np.array(boxsize)
 
 
 def cubic_voxels(nmesh: int, boxsize: FloatVec3) -> tuple[FloatVec3, float]:
@@ -429,94 +349,3 @@ def generate_delta_k(
     if paired:
         delta_k = -delta_k
     return delta_k
-
-
-def _mass_interp_weights(
-        mass: RealField,
-        mass_tab: RealField
-) -> tuple[np.ndarray, np.ndarray, RealField]:
-    '''
-    Bracketing sample indices and weights for linear interpolation in mass.
-
-    Parameters
-    ----------
-    mass : ndarray of shape (N,)
-        Particle masses.
-    mass_tab : ndarray of shape (S,)
-        Sample masses ordered from the largest to the smallest, as
-        produced by :func:`create_nres_mass_map`.
-
-    Returns
-    -------
-    j_lo, j_hi : ndarray of shape (N,) of int
-        Indices into ``mass_tab`` of the two samples bracketing each
-        particle's mass.
-    w_hi : ndarray of shape (N,) of float
-        Weight of the ``j_hi`` sample, such that
-        ``(1 - w_hi) * samples[j_lo] + w_hi * samples[j_hi]`` reproduces
-        ``np.interp`` on the ascending mass axis (linear inside the
-        table, constant extrapolation outside).
-    '''
-    mass = np.asarray(mass, dtype=np.float64)
-    mass_tab = np.asarray(mass_tab, dtype=np.float64)
-    nsamp = mass_tab.size
-    if nsamp == 1:
-        zeros = np.zeros(mass.shape, dtype=np.intp)
-        return zeros, zeros, np.zeros(mass.shape)
-
-    asc = mass_tab[::-1]  # ascending masses
-    hi = np.clip(np.searchsorted(asc, mass, side='right'), 1, nsamp - 1)
-    lo = hi - 1
-    span = asc[hi] - asc[lo]
-    # A zero span only occurs for duplicated table masses;
-    # -> weight 0 then selects the lower duplicate.
-    w_hi = np.where(span > 0, (mass - asc[lo]) / np.where(span > 0, span, 1.0), 0.0)
-    w_hi = np.clip(w_hi, 0.0, 1.0)  # constant extrapolation outside the table
-    return nsamp - 1 - lo, nsamp - 1 - hi, w_hi
-
-
-def create_nres_mass_map(
-        n_grid_samples: int,
-        mass_list: RealField,
-        M_box: float,
-        boxsize: FloatVec3
-) -> tuple[RealField, RealField]:
-    '''
-    Creates a lookup table for the number of voxels per mass bin
-    for a variable resolution grid in a regular StePS simulation.
-
-    Parameters
-    ----------
-    n_grid_samples : int
-        Number of grids with different resolutions.
-    mass_list : ndarray
-        Array containing the sorted unique particle masses.
-    M_box : float
-        Total mass in the simulation box (in 1e11 Msol).
-    boxsize : ndarray
-        Box dimensions in [Mpc]. Can be a scalar for a cubical box or
-        an array in the form of `(Lx, Ly, Lz)` for a rectangular cuboid.
-
-    Returns
-    -------
-    nres_tab : ndarray of shape (n_grid_samples,)
-        Array containing the number of resolution elements for each grid.
-    mass_tab : ndarray of shape (n_grid_samples,)
-        Array containing the mass values corresponding to each grid.
-    '''
-    nres_list = np.min(boxsize) // np.cbrt(np.prod(boxsize) * mass_list / M_box)
-    idx = np.linspace(
-        0, mass_list.size - 1, n_grid_samples, endpoint=True, dtype=int)
-    
-    # Populate lookup table by starting with the outermost mass bin
-    nres_tab = nres_list[idx[::-1]]
-    mass_tab = mass_list[idx[::-1]]
-
-    log.info('The generated resolution-mass map:') #The full nresx x nresy x nresz grid resolution is printed here
-    nvox = np.zeros((n_grid_samples, 3), dtype=int)
-    for i in range(n_grid_samples):
-        nvox[i], dk = cubic_voxels(nres_tab[i], boxsize)
-    print(tabulate([*zip(nvox[:,0], nvox[:,1], nvox[:,2], mass_tab)],
-                   headers=['Resolution_x', 'Resolution_y', 'Resolution_z', 'Mass [1e11 Msol/h]'],
-                   floatfmt=('.0f', '.0f', '.0f', '.6f')))
-    return nres_tab, mass_tab
