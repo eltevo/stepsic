@@ -153,6 +153,7 @@ def cubic_voxels(nmesh: int, boxsize: FloatVec3) -> tuple[FloatVec3, float]:
         of the shortest dimension divided by the number of voxels in
         that dimension.
     '''
+    nmesh = nmesh + nmesh % 2
     nvox = np.ceil(boxsize / (np.min(boxsize) / nmesh)).astype(int)
     nvox = (nvox + nvox % 2).astype(int)  # Ensure even number of voxels
     dk = np.min(boxsize) / np.min(nvox)
