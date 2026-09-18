@@ -22,7 +22,6 @@ from pathlib import Path
 
 import numpy as np
 
-from stepsic.field import wrap
 from stepsic.io import CosmoIO
 from stepsic.units import UNIT_L, UNIT_M, UNIT_V
 
@@ -207,7 +206,8 @@ class CosmoData:
         # move the particles to the center of the box
         Lbox_half = np.multiply(params['LBOX'], 0.5)
         mask = self.pos.max(axis=0) > Lbox_half  # `>` filters grid ICs too
-        self.pos = np.where(mask, self.pos - Lbox_half, self.pos)
+        for axis in np.flatnonzero(mask):
+            self.pos[:, axis] -= Lbox_half[axis]
         # center the particles around a Center-of-Interest
         self.pos -= params['COI']
 
@@ -227,5 +227,7 @@ class CosmoData:
         log.info('Periodically shifting the input glass...')
         if periodic is None:
             periodic = params['PERIODIC']
-        if np.any(params['PERIODIC']):
-            self.pos[:, periodic] = wrap(self.pos[:, periodic], params['LBOX'][periodic])
+        for axis in np.flatnonzero(periodic):
+            coordinate = self.pos[:, axis]
+            np.add(coordinate, params['LBOX'][axis] / 2, out=coordinate)
+            np.remainder(coordinate, params['LBOX'][axis], out=coordinate)

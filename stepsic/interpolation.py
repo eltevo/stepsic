@@ -267,9 +267,8 @@ class FieldInterpolator:
     >>> values = interp(field, particle_positions)
     """
 
-    # Process at most 2**20 particles per interpolation pass; for the largest
-    # built-in 6-component float64/TSC case, this caps temporaries near 250 MiB.
-    _CHUNK_SIZE = 1 << 20
+    # Number of particle coordinates and interpolation weights processed together.
+    _PARTICLES_PER_CHUNK = 1_000_000
 
     def __init__(
         self, 
@@ -309,19 +308,35 @@ class FieldInterpolator:
             one particle and one component give a zero-dimensional array.
         """
         field = np.asarray(field, dtype=self.dtype)
-
-        # Shape (N, ncomp)
         result = np.zeros((x.shape[0], field.shape[0]), dtype=self.dtype)
-
-        for start in range(0, x.shape[0], self._CHUNK_SIZE):
-            sl = slice(start, start + self._CHUNK_SIZE)
-            self._eval_chunk(field, x[sl], result[sl])
+        for sl, values in self._iter_component_chunks(tuple(field), x):
+            result[sl] = values
 
         return result.squeeze()
 
-    def _eval_chunk(
+    def _iter_component_chunks(
             self,
-            field: RealField,
+            fields: tuple[RealField, ...],
+            x: RealField,
+        ):
+        """Yield two-dimensional interpolation results for bounded chunks."""
+        if not fields:
+            raise ValueError('at least one field component is required')
+        fields = tuple(np.asarray(field, dtype=self.dtype) for field in fields)
+        grid_shape = tuple(self.geometry.nvox)
+        if any(field.shape != grid_shape for field in fields):
+            raise ValueError(f'field components must have shape {grid_shape}')
+
+        for start in range(0, x.shape[0], self._PARTICLES_PER_CHUNK):
+            stop = min(start + self._PARTICLES_PER_CHUNK, x.shape[0])
+            sl = slice(start, stop)
+            result = np.zeros((stop - start, len(fields)), dtype=self.dtype)
+            self._eval_component_chunk(fields, x[sl], result)
+            yield sl, result
+
+    def _eval_component_chunk(
+            self,
+            fields: tuple[RealField, ...],
             x: RealField,
             result: RealField
         ) -> None:
@@ -353,9 +368,10 @@ class FieldInterpolator:
                     iz = iz % nvox[2] if periodic[2] else np.clip(iz, 0, nvox[2]-1)
 
                     w = wx[dx] * wy[dy] * wz[dz]    # shape (N,)
-                    fvals = field[:, ix, iy, iz].T  # shape (N, ncomp)
-                    np.multiply(fvals, w[:, np.newaxis], out=fvals)
-                    result += fvals
+                    for component, field in enumerate(fields):
+                        fvals = field[ix, iy, iz]
+                        np.multiply(fvals, w, out=fvals)
+                        result[:, component] += fvals
     
 
 class FieldDepositor:
@@ -471,6 +487,30 @@ class FieldDepositor:
                         np.add.at(grid[c], (ix, iy, iz), w * values[:, c])
  
         return grid.squeeze()
+
+
+def _interpolate_field_chunks(
+    x: RealField,
+    fields: tuple[RealField, ...],
+    boxsize: FloatVec3,
+    periodic: BoolVec3 = True,
+    method: str = 'cic',
+    vox_offset: float = 0.0,
+    origin: FloatVec3 | None = None,
+    dtype: np.dtype = np.float64,
+):
+    """Yield bounded interpolation results without joining component grids."""
+    if not fields:
+        raise ValueError('at least one field component is required')
+    geometry = GridGeometry(
+        boxsize=boxsize,
+        nvox=fields[0].shape,
+        vox_offset=vox_offset,
+        origin=origin,
+        periodic=periodic,
+    )
+    interpolator = FieldInterpolator(method, geometry, dtype=dtype)
+    yield from interpolator._iter_component_chunks(fields, x)
 
 
 def interpolate_field(

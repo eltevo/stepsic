@@ -27,6 +27,18 @@ from stepsic.rng import philox_complex_gaussian
 
 log = logging.getLogger(__name__)
 
+# Target byte size for real-valued x-slabs used in spectral calculations.
+_SPECTRAL_SLAB_BUDGET_BYTES = 64_000_000
+
+
+def _x_slabs(shape, dtype):
+    """Yield x-axis slices within the spectral scratch-memory budget."""
+    plane_values = int(np.prod(shape[1:], dtype=np.int64))
+    plane_bytes = max(1, plane_values * np.dtype(dtype).itemsize)
+    depth = max(1, _SPECTRAL_SLAB_BUDGET_BYTES // plane_bytes)
+    for start in range(0, int(shape[0]), depth):
+        yield slice(start, min(start + depth, int(shape[0])))
+
 
 def wrap(x: RealField, boxsize: FloatVec3) -> RealField:
     """
@@ -274,36 +286,52 @@ def generate_delta_k(
         A 3D complex-valued array of shape `(Nx, Ny, Nz//2+1)` representing
         the Fourier modes of the overdensity field.
     """
-    kmod = fourier_kmod(nvox, dk, hermitian=True, dtype=dtype)
-
-    # interpolate the power spectrum in log-log space
+    dtype = np.dtype(dtype)
+    nvox = np.asarray(nvox, dtype=np.int64)
+    shape = (int(nvox[0]), int(nvox[1]), int(nvox[2] // 2 + 1))
+    kx, ky, kz = fourier_vectors(nvox, dk, hermitian=True, dtype=dtype)
     spline = CubicSpline(np.log(kh), np.log(pk), extrapolate=True)
-    pk_grid = np.zeros_like(kmod, dtype=dtype)
-    mask = kmod > 0
-    if np.any(mask):
-        ktarget_log = np.log(kmod[mask])
-        pk_grid[mask] = np.exp(spline(ktarget_log))
-        del ktarget_log
-    del kmod, mask
 
     if field is None:
         field = white_noise(nvox=nvox, seed=seed, dtype=dtype)
+    field = np.asarray(field)
+    if field.shape != shape:
+        raise ValueError(f'field must have shape {shape}')
 
-    # Sirko 2005; Bagla & Padmanabhan 1997; Klypin & Holtzman 1997
-    np.divide(pk_grid, dk**3, out=pk_grid)
-    target_A = np.sqrt(pk_grid, out=pk_grid)
-    if fixed:
-        # Preserve phases while normalizing nonzero modes to unit amplitude.
-        # Angulo & Pontzen 2016
-        amp = np.abs(field)
-        phase = np.zeros_like(field)
-        phase[amp > 0.0] = field[amp > 0.0] / amp[amp > 0.0]
-        delta_k = phase * (np.sqrt(np.prod(nvox)) * target_A)
-    else:
-        delta_k = field * target_A
+    complex_dtype = np.result_type(field.dtype, dtype)
+    delta_k = np.empty(shape, dtype=complex_dtype)
+    norm = np.sqrt(np.prod(nvox))
+
+    for sl in _x_slabs(shape, dtype):
+        amplitude = np.sqrt(
+            kx[sl, None, None]**2
+            + ky[None, :, None]**2
+            + kz[None, None, :]**2
+        )
+        nonzero_k = amplitude > 0.0
+        np.log(amplitude, out=amplitude, where=nonzero_k)
+        spectrum = np.exp(spline(amplitude))
+        amplitude[...] = spectrum
+        amplitude[~nonzero_k] = 0.0
+        np.divide(amplitude, dk**3, out=amplitude)
+        np.sqrt(amplitude, out=amplitude)
+
+        if fixed:
+            field_amplitude = np.abs(field[sl])
+            nonzero_field = field_amplitude > 0.0
+            delta_k[sl].fill(0.0)
+            np.divide(
+                field[sl], field_amplitude, out=delta_k[sl],
+                where=nonzero_field,
+            )
+            np.multiply(delta_k[sl], norm * amplitude, out=delta_k[sl])
+            del field_amplitude, nonzero_field
+        else:
+            np.multiply(field[sl], amplitude, out=delta_k[sl])
+        del amplitude, nonzero_k, spectrum
 
     delta_k[0, 0, 0] = 0.0  # set DC=0 (mean density) as we only need fluctuations
 
     if paired:
-        delta_k = -delta_k
+        np.negative(delta_k, out=delta_k)
     return delta_k

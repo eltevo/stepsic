@@ -15,6 +15,9 @@ from stepsic.lpt import lpt1, lpt2, log_lpt
 
 log = logging.getLogger(__name__)
 
+# Number of selected particle rows added to the final arrays per batch.
+_ACCUMULATION_PARTICLES_PER_CHUNK = 1_000_000
+
 
 def _mass_interp_weights(
         mass: RealField,
@@ -134,7 +137,8 @@ def density_samples(k_h_mpc, power_mpc_h3, hierarchy, params):
         field = white_noise(nvox=nvox, seed=params['SEED'], dtype=params['DTYPE'])
         delta = generate_delta_k(
             k_h_mpc, power_mpc_h3, nvox, cell_mpc_h, field=field,
-            paired=params['PAIRED'], fixed=params['FIXED'])
+            paired=params['PAIRED'], fixed=params['FIXED'],
+            dtype=params['DTYPE'])
         del field
         yield delta
         del delta
@@ -191,18 +195,36 @@ def multiresolution_lpt(
     velocity = np.zeros_like(positions_mpc_h)
     fields = iter(density_fields)
     for si, (nvox, cell) in enumerate(hierarchy):
-        sample_x = positions_mpc_h + (cell - finest_cell) / 2
         delta_k = next(fields)
+        candidate = (j_lo == si) | (j_hi == si)
+        indices = np.flatnonzero(candidate)
+        coeff = (
+            (j_lo[indices] == si) * (1.0 - w_hi[indices])
+            + (j_hi[indices] == si) * w_hi[indices]
+        )
+        nonzero = coeff > 0.0
+        indices = indices[nonzero]
+        coeff = coeff[nonzero]
+        if indices.size == 0:
+            del delta_k
+            continue
+
+        sample_x = positions_mpc_h[indices].copy()
+        sample_x += (cell - finest_cell) / 2
         kwargs = dict(delta_k=delta_k, nvox=nvox, dk=cell, g1=g1,
-                      aHf1=aHf1, method=method, compensate=compensate)
+                      aHf1=aHf1, method=method, compensate=compensate,
+                      dtype=positions_mpc_h.dtype)
         if order == 2:
             kwargs.update(g2=g2, aHf2=aHf2)
         xpert, vpert = (lpt1 if order == 1 else lpt2)(sample_x, **kwargs)
         log_lpt(sample_x, xpert, vpert, title=f'{order}LPT sample {si + 1}')
-        coeff = (np.where(j_lo == si, 1.0 - w_hi, 0.0)
-                 + np.where(j_hi == si, w_hi, 0.0))
-        sel = coeff != 0.0
-        displacement[sel] += coeff[sel, None] * (xpert[sel] - sample_x[sel])
-        velocity[sel] += coeff[sel, None] * vpert[sel]
-        del delta_k, kwargs, xpert, vpert
+        np.subtract(xpert, sample_x, out=xpert)
+        np.multiply(xpert, coeff[:, None], out=xpert)
+        np.multiply(vpert, coeff[:, None], out=vpert)
+        for start in range(0, indices.size, _ACCUMULATION_PARTICLES_PER_CHUNK):
+            stop = min(start + _ACCUMULATION_PARTICLES_PER_CHUNK, indices.size)
+            selected = indices[start:stop]
+            displacement[selected] += xpert[start:stop]
+            velocity[selected] += vpert[start:stop]
+        del delta_k, kwargs, xpert, vpert, sample_x
     return displacement, velocity

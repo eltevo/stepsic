@@ -93,11 +93,9 @@ def main():
         ic_orig = CosmoData(pos=pos.astype(params['DTYPE']))
     ic_orig.rescale_snapshot_mass(params)
     ic_orig.center_snapshot(params)
-    # The output IC will be stored here. The LPTORDER=0 and NMESH=0 paths
-    # mutate ic's arrays in place, so they need full copies; the single-grid
-    # LPT path rebinds ic.pos/ic.vel to fresh arrays and only reads the
-    # rest, so a shallow copy avoids duplicating every particle array.
-    if params['LPTORDER'] == 0 or params['NMESH'] == 0:
+    # The unperturbed path shifts the original arrays in place. LPT paths bind
+    # fresh position and velocity arrays and can share the remaining metadata.
+    if params['LPTORDER'] == 0:
         ic = copy.deepcopy(ic_orig)
     else:
         ic = copy.copy(ic_orig)
@@ -170,15 +168,18 @@ def main():
                 order=params['LPTORDER'], g1=g1, g2=g2,
                 aHf1=aHf1, aHf2=aHf2,
                 method=params['INTERPOLATION'], compensate=params['COMPENSATE'])
-            ic.pos += displacement
+            np.add(displacement, ic_orig.pos, out=displacement)
+            ic.pos = displacement
             ic.vel = velocity
+            del ic_orig
             if params['SAVE_WHITE_NOISE']:
                 # Only the final mass sample is exported.
                 nvox, dk = hierarchy[-1]
                 field = white_noise(nvox=nvox, seed=params['SEED'], dtype=params['DTYPE'])
                 delta_k = generate_delta_k(
                     kh, pk, nvox, dk, field=field,
-                    paired=params['PAIRED'], fixed=params['FIXED'])
+                    paired=params['PAIRED'], fixed=params['FIXED'],
+                    dtype=params['DTYPE'])
 
         else:
             # If the number of mesh points is specified, the script will

@@ -22,10 +22,65 @@ import scipy
 import numpy as np
 
 from stepsic._typing import ComplexField, IntVec3, RealField
-from stepsic.field import fourier_vectors
-from stepsic.interpolation import compensation_factors, interpolate_field
+from stepsic.field import _x_slabs, fourier_vectors
+from stepsic.interpolation import _interpolate_field_chunks, compensation_factors
 
 log = logging.getLogger(__name__)
+
+# Number of particle rows used per displacement and velocity statistics batch.
+_STATISTICS_PARTICLES_PER_CHUNK = 1_000_000
+
+
+def _poisson_solve(
+    source_k: ComplexField,
+    wavevectors: tuple[RealField, RealField, RealField],
+    dtype: np.dtype,
+    *,
+    out: ComplexField | None = None,
+) -> ComplexField:
+    """Return ``-source_k / |k|^2`` using bounded real scratch slabs."""
+    if out is None:
+        out = np.empty(source_k.shape, dtype=np.result_type(source_k.dtype, dtype))
+    kx, ky, kz = wavevectors
+    for sl in _x_slabs(source_k.shape, dtype):
+        k2 = (
+            kx[sl, None, None]**2
+            + ky[None, :, None]**2
+            + kz[None, None, :]**2
+        )
+        if sl.start == 0:
+            k2[0, 0, 0] = np.inf
+        np.divide(source_k[sl], k2, out=out[sl])
+        np.negative(out[sl], out=out[sl])
+        del k2
+    return out
+
+
+def _apply_compensation(
+    field_k: ComplexField,
+    factors: tuple[RealField, RealField, RealField] | None,
+) -> None:
+    if factors is None:
+        return
+    wx, wy, wz = factors
+    field_k *= wx[:, None, None]
+    field_k *= wy[None, :, None]
+    field_k *= wz[None, None, :]
+
+
+def _real_gradient(
+    potential_k: ComplexField,
+    wavevector: RealField,
+    multiplier: complex,
+    scratch_k: ComplexField,
+    nvox: tuple[int, int, int],
+    factors: tuple[RealField, RealField, RealField] | None,
+) -> RealField:
+    np.multiply(potential_k, multiplier * wavevector, out=scratch_k)
+    _apply_compensation(scratch_k, factors)
+    return scipy.fft.irfftn(
+        scratch_k, s=nvox, axes=(0, 1, 2), workers=-1,
+    )
 
 
 def log_lpt(
@@ -49,12 +104,24 @@ def log_lpt(
     title : str, optional
         Label prefix for log messages (e.g. ``'1LPT'``).
     """
-    xabs = np.abs(xpert - x)
-    xmax, xavg = np.max(xabs, axis=0), np.mean(xabs, axis=0)
-    del xabs
-    vabs = np.abs(vpert)
-    vmax, vavg = np.max(vabs, axis=0), np.mean(vabs, axis=0)
-    del vabs
+    if x.shape[0] == 0:
+        raise ValueError('cannot log LPT statistics for an empty particle set')
+    xmax = np.zeros(3, dtype=np.float64)
+    xsum = np.zeros(3, dtype=np.float64)
+    vmax = np.zeros(3, dtype=np.float64)
+    vsum = np.zeros(3, dtype=np.float64)
+    for start in range(0, x.shape[0], _STATISTICS_PARTICLES_PER_CHUNK):
+        stop = min(start + _STATISTICS_PARTICLES_PER_CHUNK, x.shape[0])
+        for axis in range(3):
+            values = np.subtract(xpert[start:stop, axis], x[start:stop, axis])
+            np.abs(values, out=values)
+            xmax[axis] = np.maximum(xmax[axis], np.max(values))
+            xsum[axis] += np.sum(values, dtype=np.float64)
+            values = np.abs(vpert[start:stop, axis])
+            vmax[axis] = np.maximum(vmax[axis], np.max(values))
+            vsum[axis] += np.sum(values, dtype=np.float64)
+    xavg = xsum / x.shape[0]
+    vavg = vsum / x.shape[0]
     for i, xi in enumerate(('x', 'y', 'z')):
         log.info(
             f"{title} '{xi}' displacements: "
@@ -123,43 +190,36 @@ def lpt1(
         The driver divides by ``h`` for km/s and by ``sqrt(a)`` for
         the Gadget snapshot convention.
     """
-    kx, ky, kz = fourier_vectors(nvox, dk, hermitian=True, dtype=dtype)
-    K = (kx[:, None, None], ky[None, :, None], kz[None, None, :])
+    dtype = np.dtype(dtype)
+    nvox = tuple(map(int, nvox))
+    wavevectors = fourier_vectors(nvox, dk, hermitian=True, dtype=dtype)
+    K = (
+        wavevectors[0][:, None, None],
+        wavevectors[1][None, :, None],
+        wavevectors[2][None, None, :],
+    )
     boxsize = np.asarray(nvox, dtype=dtype) * dk
+    factors = (
+        compensation_factors(nvox, dk, boxsize, method=method, dtype=dtype)
+        if compensate else None
+    )
 
-    # Gravitational potential in Fourier space: phi(k) = -delta(k) / |k|^2.
-    # |k|^2 is built on the fly from the 1D vectors (one transient array).
-    # Setting the DC mode to inf forces phi(0)=0 without a boolean mask;
-    # delta_k[0, 0, 0] is already 0, so this only avoids the 0/0 there.
-    k2 = K[0]**2 + K[1]**2 + K[2]**2
-    k2[0, 0, 0] = np.inf
-    phi_k = -delta_k / k2  # inherits delta_k's complex dtype (complex64/128)
-
-    # Separable MAS deconvolution to pre-sharpen the field before interpolation
-    if compensate:
-        wx, wy, wz = compensation_factors(
-            nvox, dk, boxsize, method=method, dtype=dtype)
-
-    # Build the displacement field one axis at a time using the identity
-    #       psi_i(k) = -i k_i phi(k).
-    # One complex buffer is reused for all three axes
-    disp_field = np.empty((3, *nvox), dtype=dtype)
-    psi_i = np.empty_like(phi_k)
-    for i in range(3):
-        np.multiply(phi_k, -1j * K[i], out=psi_i)
-        if compensate:
-            psi_i *= wx[:, None, None]
-            psi_i *= wy[None, :, None]
-            psi_i *= wz[None, None, :]
-        disp_field[i] = scipy.fft.irfftn(
-            psi_i, s=nvox, axes=(0, 1, 2), workers=-1)
-    del phi_k, psi_i, k2
-    disp_field_interp = interpolate_field(
-        x=x, field=disp_field, boxsize=boxsize,
-        origin=-boxsize / 2, method=method, vox_offset=0.5, periodic=True, dtype=dtype)
-    del disp_field
-    xpert = x + g1 * disp_field_interp  # Bernardeau et al. 2002, eq. 98
-    vpert = g1 * aHf1 * disp_field_interp  # Bernardeau et al. 2002, eq. 99
+    phi_k = _poisson_solve(delta_k, wavevectors, dtype)
+    scratch_k = np.empty_like(phi_k)
+    xpert = np.array(x, dtype=np.result_type(x.dtype, dtype), copy=True)
+    vpert = np.zeros(x.shape, dtype=dtype)
+    for axis in range(3):
+        displacement = _real_gradient(
+            phi_k, K[axis], -1j, scratch_k, nvox, factors,
+        )
+        for sl, values in _interpolate_field_chunks(
+            x, (displacement,), boxsize, origin=-boxsize / 2,
+            method=method, vox_offset=0.5, periodic=True, dtype=dtype,
+        ):
+            component = values[:, 0]
+            xpert[sl, axis] += g1 * component
+            vpert[sl, axis] = g1 * aHf1 * component
+        del displacement
     return xpert, vpert
 
 
@@ -237,94 +297,70 @@ def lpt2(
     --------
     lpt1 : First-order (Zel'dovich) displacement only.
     """
-    kx, ky, kz = fourier_vectors(nvox, dk, hermitian=True, dtype=dtype)
-    K = (kx[:, None, None], ky[None, :, None], kz[None, None, :])
+    dtype = np.dtype(dtype)
+    nvox = tuple(map(int, nvox))
+    wavevectors = fourier_vectors(nvox, dk, hermitian=True, dtype=dtype)
+    K = (
+        wavevectors[0][:, None, None],
+        wavevectors[1][None, :, None],
+        wavevectors[2][None, None, :],
+    )
     boxsize = np.asarray(nvox, dtype=dtype) * dk
+    factors = (
+        compensation_factors(nvox, dk, boxsize, method=method, dtype=dtype)
+        if compensate else None
+    )
 
-    # Separable MAS deconvolution factors (applied per axis, in place below)
-    if compensate:
-        wx, wy, wz = compensation_factors(
-            nvox, dk, boxsize, method=method, dtype=dtype)
+    phi1_k = _poisson_solve(delta_k, wavevectors, dtype)
+    scratch_k = np.empty_like(phi1_k)
 
-    # |k|^2 on the fly; DC -> inf forces phi(0)=0 without a boolean mask
-    # (delta_k[0, 0, 0] is already 0). Reused for both Poisson solves below.
-    k2 = K[0]**2 + K[1]**2 + K[2]**2
-    k2[0, 0, 0] = np.inf
-
-    # Both displacement orders share one (6, ...) buffer so a single
-    # interpolation pass below evaluates them at the particle positions.
-    disp_field = np.empty((6, *nvox), dtype=dtype)
-    disp_field1 = disp_field[:3]
-    disp_field2 = disp_field[3:]
-
-    # -- 1. First-order displacement (Psi^(1)) --------------------------------
-    # One complex buffer is reused for every -i k_i phi(k) product below
-    phi1_k = -delta_k / k2  # gravitational potential; inherits delta_k complex dtype
-    psi_i = np.empty_like(phi1_k)
-    for i in range(3):
-        np.multiply(phi1_k, -1j * K[i], out=psi_i)  # -i k_i phi(k)
-        if compensate:  # pre-sharpen before interpolation
-            psi_i *= wx[:, None, None]
-            psi_i *= wy[None, :, None]
-            psi_i *= wz[None, None, :]
-        disp_field1[i] = scipy.fft.irfftn(
-            psi_i, s=nvox, axes=(0, 1, 2), workers=-1)
-
-    # -- 2. Second-order source S(x) from the 1LPT deformation tensor ---------
-    # The derivatives d(Psi_i)/dx_j use the UNCOMPENSATED field. The
-    # source S(x) lives on the original grid, so it must use the
-    # physically correct displacement. Using the identity
-    #       1j * psi1_k[i] * k_j == phi1_k * k_i * k_j ,
-    # each derivative is built directly from phi1_k and the 1D vectors.
-    def _dP(i, j):
+    def deformation(i, j):
+        np.multiply(phi1_k, K[i], out=scratch_k)
+        np.multiply(scratch_k, K[j], out=scratch_k)
         return scipy.fft.irfftn(
-            phi1_k * (K[i] * K[j]), s=nvox, axes=(0, 1, 2), workers=-1)
+            scratch_k, s=nvox, axes=(0, 1, 2), workers=-1,
+        )
 
-    # Accumulate S incrementally so at most three deformation arrays are alive.
-    dPxx, dPyy, dPzz = _dP(0, 0), _dP(1, 1), _dP(2, 2)
-    S = dPxx * dPyy + dPxx * dPzz + dPyy * dPzz
-    del dPxx, dPyy, dPzz
+    dPxx = deformation(0, 0)
+    dPyy = deformation(1, 1)
+    # The diagonal contribution is dPxx*dPyy + dPzz*(dPxx + dPyy).
+    source = np.multiply(dPxx, dPyy)
+    np.add(dPxx, dPyy, out=dPxx)
+    del dPyy
+    dPzz = deformation(2, 2)
+    np.multiply(dPxx, dPzz, out=dPxx)
+    np.add(source, dPxx, out=source)
+    del dPxx, dPzz
+
     for i, j in ((0, 1), (0, 2), (1, 2)):
-        dPij = _dP(i, j)
+        dPij = deformation(i, j)
         np.square(dPij, out=dPij)
-        S -= dPij  # (d Psi_i/dx_j)^2
-    del dPij, phi1_k
-    S_k = scipy.fft.rfftn(S, workers=-1)
-    del S
+        np.subtract(source, dPij, out=source)
+        del dPij
 
-    # -- 3. Second-order displacement (Psi^(2)) -------------------------------
-    # Poisson equation for the source: phi2(k) = -S(k) / |k|^2.
-    # The conventional negative g2 multiplies +grad(phi2), so using its
-    # negative here reverses the physical 2LPT correction.
-    phi2_k = -S_k / k2  # inherits S_k complex dtype
-    del S_k, k2
-    for i in range(3):
-        np.multiply(phi2_k, 1j * K[i], out=psi_i)
-        if compensate:
-            psi_i *= wx[:, None, None]
-            psi_i *= wy[None, :, None]
-            psi_i *= wz[None, None, :]
-        disp_field2[i] = scipy.fft.irfftn(
-            psi_i, s=nvox, axes=(0, 1, 2), workers=-1)
-    del phi2_k, psi_i
+    phi2_k = scipy.fft.rfftn(source, workers=-1, overwrite_x=True)
+    del source
+    _poisson_solve(phi2_k, wavevectors, dtype, out=phi2_k)
 
-    # -- 4. Interpolate and update particle positions and velocities ----------
-    # For each spatial axis, interpolate the displacement fields (both
-    # first- and second-order) from the grid to the particle positions.
-    # A single 6-component pass shares the position-to-grid conversion,
-    # kernel weights, and wrapped index arithmetic between both orders.
-    disp_interp = interpolate_field(
-        x=x, field=disp_field, boxsize=boxsize,
-        origin=-boxsize / 2, method=method, vox_offset=0.5, periodic=True, dtype=dtype)
-    del disp_field, disp_field1, disp_field2  # disp_field1/2 are views pinning the grid
-    disp_field1_interp = disp_interp[:, :3]
-    disp_field2_interp = disp_interp[:, 3:]
-
-    # Accumulate the second-order term per axis, preserving left-to-right
-    # addition while limiting the temporary to one particle column.
-    xpert = x + g1 * disp_field1_interp
-    vpert = g1 * aHf1 * disp_field1_interp
-    for k in range(3):
-        xpert[:, k] += g2 * disp_field2_interp[:, k]
-        vpert[:, k] += g2 * aHf2 * disp_field2_interp[:, k]
+    xpert = np.array(x, dtype=np.result_type(x.dtype, dtype), copy=True)
+    vpert = np.zeros(x.shape, dtype=dtype)
+    for axis in range(3):
+        displacement1 = _real_gradient(
+            phi1_k, K[axis], -1j, scratch_k, nvox, factors,
+        )
+        displacement2 = _real_gradient(
+            phi2_k, K[axis], 1j, scratch_k, nvox, factors,
+        )
+        for sl, values in _interpolate_field_chunks(
+            x, (displacement1, displacement2), boxsize,
+            origin=-boxsize / 2, method=method, vox_offset=0.5,
+            periodic=True, dtype=dtype,
+        ):
+            first = values[:, 0]
+            second = values[:, 1]
+            xpert[sl, axis] += g1 * first
+            xpert[sl, axis] += g2 * second
+            vpert[sl, axis] = g1 * aHf1 * first
+            vpert[sl, axis] += g2 * aHf2 * second
+        del displacement1, displacement2
     return xpert, vpert
