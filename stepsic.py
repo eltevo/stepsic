@@ -35,6 +35,7 @@ from stepsic.cosmology import (
     ColossusCosmology,
     F2_omega,
     F_omega,
+    G2_omega,
     hubble_a,
 )
 from stepsic.data import CosmoData
@@ -122,7 +123,7 @@ def main():
             Neff=params['NNU'], w0=params['W0'], wa=params['WA'], Tcmb0=1e-6)
         g1 = 1
         D1 = g1 * cosmo_colossus.Dzplus0(params['REDSHIFT'])
-        g2 = - 3.0/7.0 * params['OMEGA_M']**(-1/143)
+        g2 = G2_omega(params['SCALE'], params['OMEGA_M'], params['OMEGA_L'])
         D2 = g2 * D1**2  # Bernardeau et al. 2002, eq. 97  # Unused!
         log.info(f"D1(z={params['REDSHIFT']}) = {D1:.6f}")
         log.info(f"D2(z={params['REDSHIFT']}) = {D2:.6f}")

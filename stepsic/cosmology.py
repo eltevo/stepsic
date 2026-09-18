@@ -58,6 +58,16 @@ def hubble_a(a, H0, omega_m, omega_l):
     return H0 * np.sqrt(omega_m / a**3 + (1 - omega_m - omega_l) / a**2 + omega_l)
 
 
+def G2_omega(a, omega_m, omega_l):
+    """Approximate dimensionless D2/D1² at scale factor a in flat ΛCDM.
+
+    Bernardeau et al. (2002), equation 97, uses the matter fraction at
+    the evaluation epoch. Radiation is absent from this background.
+    """
+    omega_a = omega_m / (omega_m + a * (1 - omega_m - omega_l) + a**3 * omega_l)
+    return -3.0 / 7.0 * np.power(omega_a, -1.0 / 143.0)
+
+
 def F_omega(a, omega_m, omega_l):
     r'''
     Computes the linear growth rate factor for first-order Lagrangian
