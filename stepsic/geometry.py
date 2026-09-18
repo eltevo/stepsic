@@ -29,8 +29,7 @@ class SphericalBinner(ABC):
     Base class for radial binning strategies in the non-compact
     (:math:`\mathbb{R}^3`) space of a spherical StePS simulation.
 
-    Subclasses must implement :meth:`r_limit` and :meth:`r_centroid`
-    to define the bin edges and mass-weighted centroids respectively.
+    Subclasses implement :meth:`r_limit` to define the radial bin edges.
     '''
 
     @abstractmethod
@@ -38,10 +37,6 @@ class SphericalBinner(ABC):
         '''Return the outer edge of the i-th radial bin.'''
         ...
 
-    @abstractmethod
-    def r_centroid(self, i: int) -> float:
-        '''Return the mass-weighted centroid of the i-th bin.'''
-        ...
 
     def shell_volume(self, i: int) -> float:
         r'''Volume of the i-th spherical shell.
@@ -52,49 +47,6 @@ class SphericalBinner(ABC):
         r0, r1 = self.r_limit(i), self.r_limit(i + 1)
         return 4.0 / 3.0 * np.pi * (r1**3 - r0**3)
 
-    @staticmethod
-    def centroid(r0: float, r1: float) -> float:
-        r'''
-        Mass-weighted centroid of a spherical shell between :math:`r_0`
-        and :math:`r_1`.
-
-        For a uniform-density shell, the mass-weighted radial centroid
-        is:
-
-        .. math::
-            \bar{r} = \frac{\int_{r_0}^{r_1} r \cdot r^2 \, dr}
-                           {\int_{r_0}^{r_1} r^2 \, dr}
-                    = \frac{3}{4} \;
-                      \frac{r_1^4 - r_0^4}{r_1^3 - r_0^3}
-
-        which can be rewritten as the form used in the code:
-
-        .. math::
-            \bar{r} = \frac{r_1 - r_0}{4} \;
-                      \frac{r_0^2 + 2\,r_0\,r_1 + 3\,r_1^2}
-                           {r_0^2 + r_0\,r_1 + r_1^2}
-                      + r_0
-
-        Parameters
-        ----------
-        r0 : float
-            Inner edge of the shell.
-        r1 : float
-            Outer edge of the shell.
-
-        Returns
-        -------
-        float
-            The mass-weighted radial centroid.
-        '''
-        # Rewritten from 3/4 * (r1^4 - r0^4) / (r1^3 - r0^3) for
-        # numerical stability when r0 ~ r1.
-        return (
-            0.25 * (r1 - r0)
-            * (r0*r0 + 2*r0*r1 + 3*r1*r1)
-            / (r0*r0 + r0*r1 + r1*r1)
-            + r0
-        )
 
     @staticmethod
     def invert_x_minus_sin_x(
@@ -193,9 +145,6 @@ class SphericalLinear(SphericalBinner):
         omega = i * self.d_omega
         return self.r_4d * np.tan(omega)
 
-    def r_centroid(self, i: int) -> float:
-        return self.centroid(self.r_limit(i), self.r_limit(i + 1))
-
 
 class SphericalConstantVolume(SphericalBinner):
     r'''
@@ -241,9 +190,6 @@ class SphericalConstantVolume(SphericalBinner):
         omega = float(np.squeeze(result)) / 2
         return 2.0 * self.r_4d * np.tan(omega / 2)
 
-    def r_centroid(self, i: int) -> float:
-        return self.centroid(self.r_limit(i), self.r_limit(i + 1))
-
 
 class CylindricalBinner(ABC):
     r'''
@@ -257,10 +203,6 @@ class CylindricalBinner(ABC):
         '''Return the outer edge of the *i*-th radial bin.'''
         ...
 
-    @abstractmethod
-    def r_centroid(self, i: int) -> float:
-        '''Return the mass-weighted centroid of the *i*-th bin.'''
-        ...
 
     def shell_volume(self, i: int, Lz: float) -> float:
         r'''Volume of the i-th cylindrical annulus.
@@ -275,32 +217,6 @@ class CylindricalBinner(ABC):
         '''
         r0, r1 = self.r_limit(i), self.r_limit(i + 1)
         return np.pi * (r1**2 - r0**2) * Lz
-
-    @staticmethod
-    def centroid(r0: float, r1: float) -> float:
-        r'''
-        Mass-weighted centroid of a cylindrical annulus between
-        :math:`r_0` and :math:`r_1` (assuming uniform height).
-
-        .. math::
-            \bar{r} = \frac{\int_{r_0}^{r_1} r \cdot r \, dr}
-                           {\int_{r_0}^{r_1} r \, dr}
-                    = \frac{2}{3} \;
-                      \frac{r_1^3 - r_0^3}{r_1^2 - r_0^2}
-
-        Parameters
-        ----------
-        r0 : float
-            Inner edge of the annulus.
-        r1 : float
-            Outer edge of the annulus.
-
-        Returns
-        -------
-        float
-            The mass-weighted radial centroid.
-        '''
-        return 2.0 / 3.0 * (r1**3 - r0**3) / (r1**2 - r0**2)
 
 
 class CylindricalLinear(CylindricalBinner):
@@ -337,9 +253,6 @@ class CylindricalLinear(CylindricalBinner):
     def r_limit(self, i: int) -> float:
         omega = i * self.d_omega
         return self.r_4d * np.tan(omega)
-
-    def r_centroid(self, i: int) -> float:
-        return self.centroid(self.r_limit(i), self.r_limit(i + 1))
 
 
 class CylindricalConstantVolume(CylindricalBinner):
@@ -382,9 +295,6 @@ class CylindricalConstantVolume(CylindricalBinner):
     def r_limit(self, i: int) -> float:
         u = i * self.unit_bin
         return 2.0 * self.r_4d * np.sqrt(u / (2 - u))
-
-    def r_centroid(self, i: int) -> float:
-        return self.centroid(self.r_limit(i), self.r_limit(i + 1))
 
 
 def create_binner(params: dict) -> SphericalBinner | CylindricalBinner:

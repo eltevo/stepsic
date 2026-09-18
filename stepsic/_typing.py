@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from os import PathLike
 from pathlib import Path
-from typing import Literal, TypeAlias
+from typing import TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
@@ -33,8 +33,3 @@ BoolVec3: TypeAlias = bool | tuple[bool, bool, bool] | list[bool] | NDArray[np.b
 
 RealField: TypeAlias = NDArray[np.floating]
 ComplexField: TypeAlias = NDArray[np.complexfloating]
-
-MASMethod: TypeAlias = Literal['ngp', 'cic', 'tsc']
-GeometryName: TypeAlias = Literal['cubical', 'cylindrical', 'spherical']
-SpectrumKind: TypeAlias = Literal['camb', 'input']
-ICType: TypeAlias = Literal['grid', 'random', 'shell', 'glass']

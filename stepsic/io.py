@@ -22,24 +22,15 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from stepsic import (
-    __authors__,
-    __gitbranch__,
-    __githash__,
-    __header__,
-    __programname__,
-    __version__,
-    __year__,
-)
+from stepsic import __githash__, __programname__, __version__
 from stepsic._typing import PathInput
 
 # Gadget IO library for reading Gadget snapshots
 # Download from https://www.github.com/masterdesky/glio
 try:
     import glio
-except ImportError as _err:
+except ImportError:
     glio = None
-    # _GLIO_IMPORT_ERROR = _err
 
 import logging
 
@@ -266,38 +257,6 @@ class CosmoIO:
             boxsize = None
         return boxsize
     
-    @staticmethod
-    def get_simulation_radius(path: Path):
-        '''
-        Retrieves the simulation radius from the snapshot file.
-        This will be useful for re-scaling spherical snapshots.
-
-        Parameters
-        ----------
-        path : pathlib.Path
-            Path to the snapshot file.
-
-        Returns
-        -------
-        boxsize : float
-            The box size in internal units.
-        '''
-        path = path.expanduser().resolve()
-        ext = CosmoIO._get_extension(path)
-        if ext in ['hdf5', 'h5']:
-            with h5py.File(path, 'r') as hdf:
-                boxsize = hdf['/Header'].attrs['SimulationRadius']
-            return boxsize
-        elif ext in ['dat', 'txt']:
-            raise NotImplementedError('Box size retrieval from ASCII files is not implemented.')
-        else:
-            if glio is None:
-                raise UnsupportedFormatError(
-                    f'`{ext}` is an unsupported extension and glio is not installed.'
-                )
-            s = glio.GadgetSnapshot(path)
-            boxsize = s.header.BoxSize
-            return boxsize / 2.0
 
     @staticmethod
     def _match_extension(path: Path):

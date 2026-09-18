@@ -150,8 +150,6 @@ def main():
             kh_log, pk3_log = np.genfromtxt(params['INPUT_SPECTRUM'])
             kh, pk3 = np.exp(kh_log), np.exp(pk3_log)
             pk = pk3 / (kh**3/(2*np.pi**2))
-        # CAMB uses [U/h] units
-        #kh, pk, pk3 = kh/params['H'], pk/params['H']**3, pk3/params['H']**3
 
         log.info('Calculating the displacement and velocity field...')
         if params['NMESH'] == 0:
@@ -264,49 +262,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-#*******************************************************************************#
-
-# Redshift cones code from old stepsic
-
-# if GEOMETRY == 'spherical':
-#     print("Calculating redshifts for the spherical shells...")
-#     #calculating the comoving distances of the particles
-#     shell_limits = np.zeros(np.uint64(Params['NRBINS'])+np.uint64(1), dtype=np.float64)
-#     z_list = np.zeros(np.uint64(Params['NRBINS']), dtype=np.float64)
-#     if Params['BIN_MODE'] == 0:
-#         last_cell_size = Params['NRBINS']*np.pi/(2*np.arctan(Params['RSIM']/Params['D_S']))-Params['NRBINS']
-#     i = np.arange(Params['NRBINS'])
-#     if Params['BIN_MODE'] == 0:
-#         r_list = Calculate_r_i(i, Params['D_S'], Params['NRBINS'], last_cell_size)
-#         if Params['HINDEPENDENTUNITS'] == 1:
-#             r_list *= h
-#     if Params['BIN_MODE'] == 1:
-#         r_list = Calculate_r_i_cvol(i, Params['D_S'], Params['NRBINS'], Params['RSIM'])
-#         if Params['HINDEPENDENTUNITS'] == 1:
-#             r_list *= h
-#     del(i)
-#     i = np.arange(Params['NRBINS']+1)
-#     if Params['BIN_MODE'] == 0:
-#         shell_limits = Calculate_rlimits_i(i, Params['D_S'], Params['NRBINS'], last_cell_size)
-#         if Params['HINDEPENDENTUNITS'] == 1:
-#             shell_limits *= h
-#     if Params['BIN_MODE'] == 1:
-#         shell_limits = Calculate_rlimits_i_cvol(i, Params['D_S'], Params['NRBINS'], Params['RSIM'])
-#         if Params['HINDEPENDENTUNITS'] == 1:
-#             shell_limits *= h
-#     #calculating redshift-comoving distance function for the redshift cone
-#     for i in range(0,len(z_list)):
-#         z_list[i] = z_at_value(cosmo.comoving_distance, r_list[i]*u.Mpc)
-#     if Params['OUTPUTFORMAT'] == 0:
-#         outputfilename = Params['OUTDIR'] + Params['FILEBASE'] + ".dat_zbins"
-#     if Params['OUTPUTFORMAT'] == 2:
-#         outputfilename = Params['OUTDIR'] + Params['FILEBASE'] + ".hdf5_zbins"
-#     np.savetxt(outputfilename, z_list)
-#     if Params['OUTPUTFORMAT'] == 0:
-#         outputfilename = Params['OUTDIR'] + Params['FILEBASE'] + ".dat_zbins_rlimits"
-#     if Params['OUTPUTFORMAT'] == 2:
-#         outputfilename = Params['OUTDIR'] + Params['FILEBASE'] + ".hdf5_zbins_rlimits"
-#     np.savetxt(outputfilename, shell_limits)
-#     print("...done\n")

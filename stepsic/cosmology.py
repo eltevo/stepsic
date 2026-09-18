@@ -375,5 +375,4 @@ class CAMBCosmology:
             keep = np.any(np.isclose(np.asarray(z_out)[:, None], z_req[None, :]), axis=1)
             pk = pk[keep]
         pk3 = pk * kh**3/(2*np.pi**2)  # Save (log(kh), log(pk3)).T for StePS/Gadget
-        #np.savetxt(f'output/power_spectrum_z{z}.txt', np.log10(kh, pk, pk3).T)
         return kh, pk, pk3

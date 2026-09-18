@@ -118,9 +118,3 @@ class RNG:
     def uniform(self, size=None, seed: Seed = None):
         '''Generate uniformly distributed random numbers.'''
         return self._get_rng(seed).uniform(size=size)
-    def normal(self, mean=0.0, std=1.0, size=None, seed: Seed = None):
-        '''Generate normally distributed random numbers.'''
-        return self._get_rng(seed).normal(loc=mean, scale=std, size=size)
-    def integers(self, low, high=None, size=None, seed: Seed = None):
-        '''Generate random integers.'''
-        return self._get_rng(seed).integers(low, high=high, size=size)

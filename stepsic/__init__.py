@@ -48,12 +48,6 @@ def _make_header(Nart: int = 79, Ncop: int = 79, Nwar: int = 79):
     \tAn IC generator python script for
     \tSTEreographically Projected cosmological Simulations
     ''')
-    # cop = dedent(f'''
-    # Copyright (C) ({__year__}) {', '.join(__authors__)}
-    # \tDepartment of Physics of Complex Systems, Eotvos Lorand University | Budapest, Hungary
-    # \tHeavy-ion Physics Research Group, HUN-REN Wigner RCP | Budapest, Hungary
-    # \tDepartment of Physics, University of Helsinki | Helsinki, Finland
-    # ''')
     cop = dedent(f'''
     Copyright (C) ({__year__}) {', '.join(__authors__)}
     \tDepartment of Physics of Complex Systems, Eotvos Lorand University

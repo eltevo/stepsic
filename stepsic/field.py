@@ -77,38 +77,6 @@ def cubic_voxels(nmesh: int, boxsize: FloatVec3) -> tuple[FloatVec3, float]:
     nvox = np.ceil(boxsize / (np.min(boxsize) / nmesh)).astype(int)
     nvox = (nvox + nvox % 2).astype(int)  # Ensure even number of voxels
     dk = np.min(boxsize) / np.min(nvox)
-    #log.info('mesh: Nx={}, Ny={}, Nz={}; step size: {}'.format(*nvox, dk))
-    return nvox, dk
-
-
-def anisotropic_voxels(nmesh: int, boxsize: FloatVec3) -> tuple[FloatVec3, float]:
-    '''
-    Construct a mesh with isotropic physical cell size, anchored to the
-    shortest axis (z by convention).
-
-    Parameters
-    ----------
-    nmesh : int
-        Number of voxels in the shortest dimension.
-    boxsize : float or tuple of float
-        Box dimensions in [Mpc]. Can be a scalar for a cubical box or
-        an array in the form of `(Lx, Ly, Lz)` for a rectangular cuboid.
-
-    Returns
-    -------
-    nvox : ndarray of shape (3,)
-        The number of voxels in each dimension of the grid `(Nx, Ny, Nz)`.
-    dk : float
-        
-    '''
-    dk = np.min(boxsize) / nmesh
-    nvox = np.rint(boxsize / dk).astype(int)
-    # enforce exact consistency (avoid drift)
-    if not np.allclose(nvox * dk, boxsize, rtol=0, atol=1e-10):
-        raise ValueError(
-            "Boxsize not compatible with isotropic cell size.\n"
-            f"boxsize={boxsize}, dk={dk}, nvox={nvox}"
-        )
     return nvox, dk
 
 

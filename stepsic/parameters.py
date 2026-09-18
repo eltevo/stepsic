@@ -62,9 +62,6 @@ class Param:
         is validated but not printed.
     fmt : str or None
         Format spec applied to the value when printing, e.g., ``'.6f'``.
-        Ignored when ``formatter`` is set.
-    group : str
-        Display group name (e.g., ``'cosmo'``, ``'ic'``).
     unit : str
         Physical unit string appended after the value (e.g., ``'eV'``).
     choices : tuple of str or None
@@ -86,16 +83,12 @@ class Param:
         A ``Callable[[dict], bool]`` predicate.  The parameter is only
         validated and displayed when the predicate returns ``True``.
         Receives the full parameter dict.
-    formatter : callable or None
-        Optional ``Callable[[Any, dict], str]`` to fully override
-        display formatting.  Receives ``(value, params_dict)``.
     '''
     key: str
     ptype: PType = PType.SCALAR
     label: str | None = None
     fmt: str | None = None
     unit: str = ""
-    group: str = "ic"
     choices: tuple[str, ...] | tuple[int, ...] | None = None
     array_length: int = 3
     array_dtype: type = np.float64
@@ -103,7 +96,6 @@ class Param:
     h_display: bool = False
     h_precision: int = 2
     condition: Callable[[dict], bool] | None = None
-    formatter: Callable[[Any, dict], str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,33 +126,33 @@ class Constraint:
 
 # Parameter table - cosmological parameters
 COSMO_PARAMS: tuple[Param, ...] = (
-    Param('H0',      label='H0',       fmt=".3f", group='cosmo', unit='km s^-1 Mpc^-1'),
-    Param('OMEGA_M', label='Omega_m',  fmt=".6f", group='cosmo'),
-    Param('OMEGA_B', label='Omega_b',  fmt=".6f", group='cosmo'),
-    Param('OMEGA_L', label='Omega_L',  fmt=".6f", group='cosmo'),
-    Param('NS',      label='n_s',      fmt=".6f", group='cosmo'),
-    Param('AS',      label='A_s',      fmt=".6e", group='cosmo'),
-    Param('SIGMA8',  label='sigma_8',  fmt=".3f", group='cosmo'),
-    Param('YHE',     label='Y_He',     fmt=".6f", group='cosmo'),
-    Param('MNU',     label='M_nu',     fmt=".3f", group='cosmo', unit='eV'),
-    Param('NNU',     label='N_nu',     fmt=".3f", group='cosmo'),
-    Param('ZREI',    label='z_reion.', fmt=".3f", group='cosmo'),
-    Param('TCMB',    label='T_CMB',    fmt=".3f", group='cosmo', unit='K'),
-    Param('KPIVOT',  label='k_pivot',  fmt=".3f", group='cosmo', unit='Mpc^-1'),
-    Param('W0',      label='w0',       fmt=".3f", group='cosmo'),
-    Param('WA',      label='wa',       fmt=".3f", group='cosmo'),
+    Param('H0',      label='H0',       fmt=".3f", unit='km s^-1 Mpc^-1'),
+    Param('OMEGA_M', label='Omega_m',  fmt=".6f"),
+    Param('OMEGA_B', label='Omega_b',  fmt=".6f"),
+    Param('OMEGA_L', label='Omega_L',  fmt=".6f"),
+    Param('NS',      label='n_s',      fmt=".6f"),
+    Param('AS',      label='A_s',      fmt=".6e"),
+    Param('SIGMA8',  label='sigma_8',  fmt=".3f"),
+    Param('YHE',     label='Y_He',     fmt=".6f"),
+    Param('MNU',     label='M_nu',     fmt=".3f", unit='eV'),
+    Param('NNU',     label='N_nu',     fmt=".3f"),
+    Param('ZREI',    label='z_reion.', fmt=".3f"),
+    Param('TCMB',    label='T_CMB',    fmt=".3f", unit='K'),
+    Param('KPIVOT',  label='k_pivot',  fmt=".3f", unit='Mpc^-1'),
+    Param('W0',      label='w0',       fmt=".3f"),
+    Param('WA',      label='wa',       fmt=".3f"),
 )
 
 COSMO_DERIVED: tuple[Param, ...] = (
-    Param('H',        label='h',           fmt=".6f", group='cosmo'),
-    Param('RHO_CRIT', label='rho_crit',    fmt=".3e", group='cosmo', unit='(internal units)'),
-    Param('RHO_MEAN', label='rho_mean',    fmt=".3e", group='cosmo', unit='(internal units)'),
-    Param('OMMH2',    label='Omega_m h^2', fmt=".6f", group='cosmo'),
-    Param('OMCH2',    label='Omega_c h^2', fmt=".6f", group='cosmo'),
-    Param('OMBH2',    label='Omega_b h^2', fmt=".6f", group='cosmo'),
-    Param('OMEGA_K',  label='Omega_k',     fmt=".6f", group='cosmo'),
-    Param('OMEGA_NU', label='Omega_nu',    fmt=".6f", group='cosmo'),
-    Param('OMEGA_C',  label='Omega_c',     fmt=".6f", group='cosmo'),
+    Param('H',        label='h',           fmt=".6f"),
+    Param('RHO_CRIT', label='rho_crit',    fmt=".3e", unit='(internal units)'),
+    Param('RHO_MEAN', label='rho_mean',    fmt=".3e", unit='(internal units)'),
+    Param('OMMH2',    label='Omega_m h^2', fmt=".6f"),
+    Param('OMCH2',    label='Omega_c h^2', fmt=".6f"),
+    Param('OMBH2',    label='Omega_b h^2', fmt=".6f"),
+    Param('OMEGA_K',  label='Omega_k',     fmt=".6f"),
+    Param('OMEGA_NU', label='Omega_nu',    fmt=".6f"),
+    Param('OMEGA_C',  label='Omega_c',     fmt=".6f"),
 )
 
 #  The display order for the cosmological parameter block.
@@ -219,8 +211,6 @@ IC_PARAMS: tuple[Param, ...] = (
 
     # -- Input/output files and format ---------------------------------
     Param('INPUT_GLASS', ptype=PType.PATH, label="Glass input file", condition=lambda P: P.get('TYPE') == 'glass'),
-    # TODO: Param('INPUT_WHITE_NOISE', ptype=PType.PATH, label="White noise input file"),
-    # TODO: Param('INPUT_DELTA_K', ptype=PType.PATH, label="Delta(k) input file"),
     Param('IC_DIR', ptype=PType.PATH_MKDIR, label="IC output directory"),
     Param('IC_PREFIX', ptype=PType.STRING, label="IC name prefix"),
     Param('IC_FORMAT', ptype=PType.STRING, label="Output format", choices=('ascii', 'gadget', 'hdf5')),
@@ -506,10 +496,6 @@ def _format_value(param: Param, value: Any, P: dict) -> str:
     Produce a display string for a single parameter, respecting
     all formatting rules encoded in the ``Param`` descriptor.
     '''
-    # Custom override
-    if param.formatter is not None:
-        return param.formatter(value, P)
-
     # Dual h-display
     if param.h_display:
         h = float(P['H'])
@@ -639,8 +625,6 @@ class CosmoParameters:
         for key, value in config_data[cosmology].items():
             if isinstance(value, dict):
                 self.P.setdefault(key, value[estimate])
-                if estimate == 'mean' and key not in self.P:
-                    self.P[f'{key}_err'] = value['error']
             else:
                 self.P.setdefault(key, value)
 

@@ -19,7 +19,6 @@ from dataclasses import dataclass
 from typing import Dict, Tuple, Type
 
 import numpy as np
-from numpy.typing import NDArray
 
 from stepsic._typing import *
 from stepsic.field import fourier_vectors
@@ -80,16 +79,6 @@ class GridGeometry:
         bshape = (1,) * (x.ndim - 1) + (3,)
         x = np.where(per.reshape(bshape), np.mod(x, box.reshape(bshape)), x)
         return x / self.cell_size - self.vox_offset
-
-    def wrap_indices(self, idx: NDArray[np.integer]) -> NDArray[np.integer]:
-        '''Apply periodic or clamped wrapping to grid indices.'''
-        out = idx.copy()
-
-        per = self.periodic
-        out[..., per] = out[..., per] % self.nvox[per]
-        out[..., not per] = np.clip(out[..., not per], 0, self.nvox[not per] - 1)
-
-        return out
 
 
 # Interpolation kernels
@@ -181,96 +170,6 @@ KERNELS: Dict[str, Type[InterpolationKernel]] = {
     'tsc': TSCKernel,
 }
 
-def compensation_kernel(
-    kvec: RealField,
-    nvox: IntVec3,
-    boxsize: FloatVec3,
-    method: str | InterpolationKernel = 'cic',
-    dtype: np.dtype = np.float64,
-) -> RealField:
-    r'''
-    Compute the deconvolution kernel that compensates for the smoothing
-    introduced by a particle-mesh interpolation scheme.
-
-    An interpolation kernel of order :math:`p` (NGP: 0, CIC: 1, TSC: 2)
-    acts as a low-pass filter in Fourier space with transfer function
-    :math:`\tilde{W}(\mathbf{k}) = \prod_i \mathrm{sinc}^{p+1}(\pi k_i / 2 k_{\mathrm{Ny},i})`.
-    To recover unsmoothed field values after interpolation, the Fourier
-    modes must be multiplied by :math:`\tilde{W}^{-1}` before the
-    inverse FFT.
-
-    Parameters
-    ----------
-    kvec : ndarray of shape (3, nx, ny, nz)
-        Explicit Fourier wavevector components for the stored grid.
-    nvox : tuple of int or array of shape (3,)
-        Number of grid cells in each dimension.
-    boxsize : tuple of float or array of shape (3,)
-        Physical size of the box.
-    method : str or InterpolationKernel
-        Interpolation method: 'ngp', 'cic', 'tsc', or a kernel instance.
-    dtype : np.dtype
-        Numerical precision for the output kernel (default: np.float64).
-
-    Returns
-    -------
-    ndarray of shape ``kvec[0]``
-        Multiplicative correction factor :math:`W^{-1}(\mathbf{k})`.
-
-    Notes
-    -----
-    The correction is:
-
-    .. math::
-        W^{-1}(\mathbf{k}) = \left[
-            \prod_{i=x,y,z} \mathrm{sinc}\!\left(
-                \frac{\pi\, k_i}{2\, k_{\mathrm{Ny},i}}
-            \right)
-        \right]^{-(p+1)}
-
-    where :math:`k_{\mathrm{Ny},i} = \pi N_i / L_i` and :math:`p` is
-    the interpolation order (``kernel.support - 1``).
-
-    This should be applied to Fourier-space fields before ``irfftn``
-    when interpolating onto particles that do not coincide with grid
-    nodes (e.g., glass initial conditions or arbitrary distributions).
-    For particles on a regular lattice matching the grid, the correction
-    is unnecessary.
-
-    References
-    ----------
-    *   Hockney & Eastwood (1988), §5-3; Jing (2005), eq. 20
-    *   monofonIC implementation in ``grid_interpolate.hh``
-    '''
-    if isinstance(method, str):
-        kernel = KERNELS[method.lower()]()
-    else:
-        kernel = method
-
-    nvox = np.asarray(nvox, dtype=dtype)
-    boxsize = np.asarray(boxsize, dtype=dtype)
-
-    # Nyquist wavenumber per axis: k_Ny = pi * N / L
-    k_ny = np.pi * nvox / boxsize  # shape (3,)
-
-    # sinc(pi * k_i / (2 * k_Ny_i)) = sinc(k_i * L_i / (2 * N_i))
-    # Using np.sinc which computes sin(pi*x)/(pi*x), so we need the
-    # argument WITHOUT the pi factor:
-    #   sinc_arg_i = k_i / (2 * k_Ny_i) = k_i * L_i / (2 * pi * N_i)
-    #
-    # But we want sin(pi * k_i / (2*k_Ny)) / (pi * k_i / (2*k_Ny)),
-    # which is np.sinc(k_i / (2*k_Ny)):
-    power = kernel.order + 1  # = kernel.support
-
-    W = np.ones_like(kvec[0])
-    for i in range(3):
-        arg = kvec[i] / (2.0 * k_ny[i])  # dimensionless, in [0, 0.5]
-        W *= np.sinc(arg)**power  # np.sinc(x) = sin(pi*x)/(pi*x)
-
-    # Guard against division by zero near k_Ny
-    # Should not happen for k < k_Ny, but protect anyway
-    return np.where(np.abs(W) > 1e-15, 1.0 / W, 1.0)
-
 
 def compensation_factors(
     nvox: IntVec3,
@@ -280,8 +179,8 @@ def compensation_factors(
     method: str | InterpolationKernel = 'cic',
     dtype: np.dtype = np.float64,
 ) -> Tuple[RealField, RealField, RealField]:
-    r'''
-    Separable 1D form of :func:`compensation_kernel`.
+    r"""
+    Compute per-axis Fourier factors for mass-assignment deconvolution.
 
     The MAS deconvolution kernel factorises over the axes,
 
@@ -300,14 +199,14 @@ def compensation_factors(
     Each returned factor is already raised to the ``-(p+1)`` power. Because
     ``sinc`` is bounded in :math:`[2/\pi, 1]` over the half-open FFT frequency
     range :math:`[-1/2, 1/2)`, it never vanishes and no division guard is
-    needed (unlike the full-grid :func:`compensation_kernel`).
+    needed when ``boxsize / nvox`` equals ``dk``.
 
     Parameters
     ----------
     nvox : tuple of int or array of shape (3,)
         Number of grid cells in each dimension.
     dk : float
-        The uniform step size in each dimension.
+        Physical cell spacing in the same length unit as ``boxsize``.
     boxsize : tuple of float or array of shape (3,)
         Physical size of the box.
     hermitian : bool
@@ -321,13 +220,9 @@ def compensation_factors(
     -------
     wx, wy, wz : ndarray
         1D deconvolution factors of length `Nx`, `Ny`, and `Nz//2+1`
-        (if ``hermitian``) or `Nz`. Their outer product equals
-        :func:`compensation_kernel`.
-
-    See Also
-    --------
-    compensation_kernel : Full 3D kernel (kept for reference/back-compat).
-    '''
+        (if ``hermitian``) or `Nz`. Their outer product is the full
+        three-dimensional deconvolution factor.
+    """
     if isinstance(method, str):
         kernel = KERNELS[method.lower()]()
     else:
