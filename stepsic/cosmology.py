@@ -26,13 +26,13 @@ log = logging.getLogger(__name__)
 
 
 def hubble_a(a, H0, omega_m, omega_l):
-    r'''
+    r"""
     Computes the Hubble parameter :math:`H(a)` at scale factor :math:`a`.
 
     The Hubble parameter is given by
 
     .. math::
-        H(a) = H_0\,\sqrt{\Omega_m\,a^3 + (1 - \Omega_m - \Omega_\Lambda)\,a^2 + \Omega_\Lambda},
+        H(a) = H_0\,\sqrt{\Omega_m/a^3 + (1 - \Omega_m - \Omega_\Lambda)/a^2 + \Omega_\Lambda},
 
     where :math:`a` is the scale factor normalized to 1 at present. :math:`H_0`
     is the Hubble constant, :math:`\Omega_m` is the present-day matter
@@ -54,7 +54,7 @@ def hubble_a(a, H0, omega_m, omega_l):
     -------
     float
         The Hubble parameter :math:`H(a)`.
-    '''
+    """
     return H0 * np.sqrt(omega_m / a**3 + (1 - omega_m - omega_l) / a**2 + omega_l)
 
 
@@ -69,7 +69,7 @@ def G2_omega(a, omega_m, omega_l):
 
 
 def F_omega(a, omega_m, omega_l):
-    r'''
+    r"""
     Computes the linear growth rate factor for first-order Lagrangian
     perturbation.
 
@@ -104,13 +104,13 @@ def F_omega(a, omega_m, omega_l):
     -------
     float
         The linear growth rate :math:`F_\omega(a)`.
-    '''
+    """
     omega_a = omega_m / (omega_m + a * (1 - omega_m - omega_l) + a**3 * omega_l)
     return np.power(omega_a, 5.0/9.0)  # Bernardeau et al. 2002, eq. 101a
 
 
 def F2_omega(a, omega_m, omega_l):
-    r'''
+    r"""
     Computes the second-order growth rate factor for second-order
     Lagrangian perturbation theory corrections.
 
@@ -142,7 +142,7 @@ def F2_omega(a, omega_m, omega_l):
     -------
     float
         The second-order growth rate :math:`F2_\omega(a)`.
-    '''
+    """
     omega_a = omega_m / (omega_m + a * (1 - omega_m - omega_l) + a**3 * omega_l)
     return 2 * np.power(omega_a, 6.0/11.0)  # Bernardeau et al. 2002, eq. 101b
 
@@ -150,7 +150,7 @@ class ColossusCosmology:
     def __init__(self, *,
             H0=67.742, Om0=0.3099, Ob0=0.048891, Ol0=0.6901, sigma8=0.8105,
             ns=0.96822, Neff=3.046, w0=-1.0, wa=0.0, **kwargs):
-        '''
+        r"""
         Wrapper to initialize a Colossus cosmology object.
 
         Parameters
@@ -173,7 +173,7 @@ class ColossusCosmology:
             Dark energy equation of state parameter at redshift 0.
         wa : float
             Dark energy equation of state parameter evolution.
-        '''
+        """
         flat = np.isclose(1 - Ol0 - Om0, 0.0, rtol=1e-5, atol=1e-8)
         de_model = 'w0wa' if wa != 0.0 else 'w0' if w0 != -1.0 else 'lambda'
         self.cosmo = cosmology.setCosmology(
@@ -181,7 +181,7 @@ class ColossusCosmology:
             w0=w0, wa=wa, flat=flat, de_model=de_model, **kwargs)
     
     def Dzplus0(self, z : float) -> float:
-        '''
+        """
         Calculate the linear growth factor :math:`D_+(z)` normalized to
         1 at present.
 
@@ -198,7 +198,7 @@ class ColossusCosmology:
         -------
         float or np.ndarray
             The linear growth factor D_+(z).
-        '''
+        """
         Dzplus = self.cosmo.growthFactorUnnormalized(z)
         D0plus = self.cosmo.growthFactorUnnormalized(0.0)
 
@@ -210,7 +210,7 @@ class CAMBCosmology:
             H0=67.742, ombh2=0.022436, omch2=0.11914, omk=0.0, mnu=0.06,
             nnu=3.046, YHe=0.245421, zrei=7.89, TCMB=2.775, w0=-1.0, wa=0.0,
             nonlinear=False, halofit_version='mead2020', **kwargs):
-        '''
+        """
         Wrapper to initialize a CAMB cosmology object.
         
         Parameters
@@ -243,7 +243,7 @@ class CAMBCosmology:
         halofit_version : str
             Version of the Halofit model to use for non-linear corrections.
             Check ``camb.nonlinear.Halofit`` for available models.
-        '''
+        """
         self.params = camb.CAMBparams()
         self.params.set_cosmology(
             H0=H0, ombh2=ombh2, omch2=omch2, omk=omk, mnu=mnu, nnu=nnu,
@@ -265,7 +265,7 @@ class CAMBCosmology:
             self.params.NonLinear = camb.model.NonLinear_none
 
     def get_sigma8(self, z=0, *, As=2.1064e-09, ns=0.96822, kmax=1.0):
-        r'''
+        r"""
         Calculate the RMS matter fluctuation amplitude :math:`\sigma_8`
         at given redshift ``z`` using CAMB.
         
@@ -287,7 +287,7 @@ class CAMBCosmology:
         float
             The RMS matter fluctuation amplitude :math:`\sigma_8` at
             redshift :math:`z`.
-        '''
+        """
         self.params.InitPower.set_params(As=As, ns=ns)
         self.params.set_matter_power(redshifts=[z], kmax=kmax)
         results = camb.get_results(self.params)
@@ -295,10 +295,10 @@ class CAMBCosmology:
         return sigma8
     
     def _rescale_As(self, target_sigma8, As=2.1064e-09, ns=0.96822, kmax=1.0):
-        '''
+        r"""
         Rescale the matter fluctuation amplitude :math:`A_s` such that
         :math:`\sigma_8(z=0, A_s=\mathrm{new\_As}) = \mathrm{target\_sigma8}`.
-        '''
+        """
         sigma8_now = self.get_sigma8(z=0, As=As, ns=ns, kmax=kmax)
         if target_sigma8 is None or np.isclose(sigma8_now, target_sigma8, rtol=1e-4):
             return sigma8_now, As
@@ -311,7 +311,7 @@ class CAMBCosmology:
     def get_spectrum(self, *,
             z=127, As=2.1064e-09, ns=0.96822, sigma8_init=None,
             kmin=0.01, kmax=1.0, npoints=512, component='delta_cdm'):
-        r'''
+        r"""
         Calculate the matter power spectrum using CAMB.
 
         Parameters
@@ -338,7 +338,7 @@ class CAMBCosmology:
             'delta_tot' for total matter, 'delta_cdm' for cold dark matter,
             'delta_baryon' for baryonic matter, etc. See CAMB documentation
             for more details.
-        '''
+        """
         if self.params.NonLinear != camb.model.NonLinear_none:
             # Non-linear corrections are baked into the transfer functions,
             # so rescaling As requires full recomputations.

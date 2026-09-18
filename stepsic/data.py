@@ -30,15 +30,25 @@ log = logging.getLogger(__name__)
 
 
 class CosmoData:
-    '''
-    Implements a class for handling cosmological snapshot data stored in
-    a conventional Gadget-like structure for StePS simulations.
+    """Store particle arrays and box metadata for a cosmological snapshot.
 
-    Parameters:
-    -----------
-    data : ndarray of shape (N, 7)
-        Array containing the particle data, where N is the number of particles.
-    '''
+    Parameters
+    ----------
+    id : ndarray of shape (N,), optional
+        Particle IDs. Defaults to sequential uint64 values starting at zero.
+    pos : ndarray of shape (N, 3)
+        Particle positions; required.
+    vel : ndarray of shape (N, 3), optional
+        Particle velocities. Defaults to float32 zeros.
+    mass : ndarray of shape (N,), optional
+        Particle masses. Defaults to float32 ones.
+    Lbox : float, optional
+        Box length along the z axis, in the same units as ``pos``.
+
+    Notes
+    -----
+    Arrays are stored by reference. Unit conversions modify them in place.
+    """
     def __init__(self, id=None, pos=None, vel=None, mass=None, Lbox=None):
         if pos is None:
             raise ValueError('Particle positions must be provided!')
@@ -74,20 +84,34 @@ class CosmoData:
         return result
     
     def to_internal_units(self, params):
-        '''TODO'''
+        """Convert positions, velocities, and masses from configured input units to internal units.
+
+        Parameters
+        ----------
+        params : dict
+            Unit scales ``UNIT_L_IN_CM``, ``UNIT_V_IN_KMPS``, and ``UNIT_M_IN_G``.
+            The particle arrays are scaled in place; box metadata is unchanged.
+        """
         self.pos *= params['UNIT_L_IN_CM'] / UNIT_L
         self.vel *= params['UNIT_V_IN_KMPS'] / UNIT_V
         self.mass *= params['UNIT_M_IN_G'] / UNIT_M
 
     def from_internal_units(self, params):
-        '''TODO'''
+        """Convert positions, velocities, and masses from internal units to configured output units.
+
+        Parameters
+        ----------
+        params : dict
+            Unit scales ``UNIT_L_IN_CM``, ``UNIT_V_IN_KMPS``, and ``UNIT_M_IN_G``.
+            The particle arrays are scaled in place; box metadata is unchanged.
+        """
         self.pos /= params['UNIT_L_IN_CM'] / UNIT_L
         self.vel /= params['UNIT_V_IN_KMPS'] / UNIT_V
         self.mass /= params['UNIT_M_IN_G'] / UNIT_M
 
     @classmethod
     def load_snapshot(cls, path: Path, **io_kwargs):
-        '''Load snapshot data from a file.'''
+        """Load snapshot data from a file."""
         ids, pos, vel, mass = CosmoIO.load_snapshot(path, **io_kwargs)
         Lbox = CosmoIO.get_box_size(path)
         if Lbox is None:
@@ -102,19 +126,19 @@ class CosmoData:
         instance = cls(id=ids, pos=pos, vel=vel, mass=mass, Lbox=Lbox)
         return instance
     def save_snapshot(self, path: Path, **io_kwargs):
-        '''Save the snapshot data to a file.'''
+        """Save the snapshot data to a file."""
         CosmoIO.save_snapshot(path, self, **io_kwargs)
         log.info(f'Snapshot saved to {path}.')
 
     def rescale_snapshot_size(self, params):
-        '''
+        """
         Rescale the particle positions to fit the input box size.
         
         Parameters
         ----------
         params : dict
             Dictionary containing the cosmological parameters.
-        '''
+        """
         if self.Lbox is None or not np.isfinite(self.Lbox) or self.Lbox <= 0:
             raise ValueError(
                 f'Cannot rescale snapshot: invalid Lbox={self.Lbox}. '
@@ -138,16 +162,14 @@ class CosmoData:
             raise ValueError(f'Unknown geometry type: {params["GEOMETRY"]}')
 
     def rescale_snapshot_mass(self, params):
-        '''
+        """
         Rescale the particle masses to fit the cosmological parameters.
         
         Parameters
         ----------
         params : dict
             Dictionary containing the cosmological parameters.
-        midx : int, optional; default = 6
-            Index of the mass column in the data array.
-        '''
+        """
         M_tot = np.sum(self.mass)
         if params['GEOMETRY'] == 'spherical':
             V_sim = 4/3 * params['R_3D']**3 * np.pi
@@ -170,7 +192,7 @@ class CosmoData:
         self.M_box = params['RHO_MEAN'] * np.prod(params['LBOX'])
 
     def center_snapshot(self, params):
-        '''
+        """
         Shift data to a Center-of-Interest (COI). First, normalize
         particles to the interval :math:`[-L/2, L/2]`, if they are in
         :math:`[0, L]`. Otherwise, assume they are already in this
@@ -180,7 +202,7 @@ class CosmoData:
         ----------
         params : dict
             Dictionary containing the cosmological parameters.
-        '''
+        """
         log.info('Centering the particles around the Center-of-Interest...')
         # move the particles to the center of the box
         Lbox_half = np.multiply(params['LBOX'], 0.5)
@@ -190,7 +212,7 @@ class CosmoData:
         self.pos -= params['COI']
 
     def periodic_shift(self, params, periodic=None):
-        '''
+        """
         Periodically shift the input glass to the desired box size and
         center it in the box. 
         
@@ -201,7 +223,7 @@ class CosmoData:
         periodic: ndarray, optional
             Boolean array indicating whether the periodic boundary
             conditions are applied in each dimension.
-        '''
+        """
         log.info('Periodically shifting the input glass...')
         if periodic is None:
             periodic = params['PERIODIC']

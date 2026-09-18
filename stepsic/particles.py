@@ -24,7 +24,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from stepsic._typing import FloatVec3, RealField, Seed
+from stepsic._typing import FloatVec3, IntVec3, RealField, Seed
 from stepsic.geometry import CylindricalBinner, SphericalBinner, create_binner
 from stepsic.rng import RNG
 
@@ -32,12 +32,12 @@ log = logging.getLogger(__name__)
 
 
 def create_grid(
-        nvox: FloatVec3,
+        nvox: IntVec3,
         dk: float,
         dtype: np.dtype = np.float64,
         return_coords: bool = True
 ) -> tuple[RealField, RealField] | RealField:
-    '''
+    """
     Create a regular grid for the simulation box.
 
     Parameters
@@ -45,9 +45,7 @@ def create_grid(
     nvox : tuple of int
         The number of voxels in each dimension of the simulation box.
     dk : float
-        The uniform step size in each dimension, calculated as the length
-        of the shortest dimension divided by the number of voxels in
-        that dimension.
+        Physical cell spacing in the same length unit as the box.
     dtype : np.dtype
         The data type of the returned particle positions. The grid axes
         are always computed in float64 and cast on assignment, so
@@ -67,7 +65,7 @@ def create_grid(
         The grid coordinates in each dimension, where Nx, Ny, Nz are the
         number of voxels in each dimension. Only returned when
         ``return_coords`` is `True`.
-    '''
+    """
     mesh = tuple(np.arange(-(n-1)*dk/2, n*dk/2, dk) for n in nvox)
     shape = tuple(m.size for m in mesh)
     bcast = (
@@ -88,8 +86,8 @@ def create_grid(
 
 
 def create_particles(npart: int, boxsize: FloatVec3, seed: Seed = None) -> RealField:
-    r'''
-    Create a set of particles uniformly distributed in a cubic box.
+    r"""
+    Create particles uniformly distributed in ``[0, boxsize)``.
 
     Parameters
     ----------
@@ -105,13 +103,13 @@ def create_particles(npart: int, boxsize: FloatVec3, seed: Seed = None) -> RealF
     -------
     particles : ndarray of shape (npart, 3)
         Particle positions in the simulation box.
-    '''
+    """
     rng = RNG(seed=seed)
     return rng.uniform(size=(npart, 3), seed=None) * np.array(boxsize)
 
 
 def _random_unit_vectors_sphere(n: int, rng: RNG, seed: int | None = None) -> NDArray:
-    r'''
+    r"""
     Generate ``n`` uniformly distributed unit vectors on the 2-sphere.
 
     Parameters
@@ -127,7 +125,7 @@ def _random_unit_vectors_sphere(n: int, rng: RNG, seed: int | None = None) -> ND
     -------
     ndarray of shape (n, 3)
         Unit vectors uniformly distributed on :math:`S^2`.
-    '''
+    """
     vectors = np.empty((n, 3), dtype=np.float64)
     filled = 0
     while filled < n:
@@ -150,7 +148,7 @@ def shell_masses(
     rho_mean: float,
     Lz: float | None = None,
 ) -> NDArray[np.float64]:
-    r'''
+    r"""
     Compute the particle mass in each radial bin.
 
     .. math::
@@ -173,7 +171,7 @@ def shell_masses(
     -------
     masses : ndarray of shape (n_bins,)
         Particle mass for each bin in internal mass units.
-    '''
+    """
     masses = np.empty(n_bins, dtype=np.float64)
     for i in range(n_bins):
         if isinstance(binner, SphericalBinner):
@@ -194,7 +192,7 @@ def _bin_index_for_radius(
     binner: SphericalBinner | CylindricalBinner,
     r: float,
 ) -> int:
-    r'''
+    r"""
     Find the bin index containing radius ``r``.
 
     Performs a linear scan from bin 0, returning the first *i* such
@@ -213,7 +211,7 @@ def _bin_index_for_radius(
     -------
     int
         Zero-based bin index.
-    '''
+    """
     i = 0
     while binner.r_limit(i + 1) <= r:
         i += 1
@@ -222,7 +220,7 @@ def _bin_index_for_radius(
 
 @dataclass(frozen=True, slots=True)
 class _RcritZones:
-    r'''
+    r"""
     Pre-computed two-zone layout for a constant-resolution inner volume.
 
     Parameters
@@ -239,7 +237,7 @@ class _RcritZones:
         Number of particles in the multiresolution exterior shells.
     masses_outside : ndarray of shape (n_bins - i_crit,)
         Per-particle mass for each exterior shell.
-    '''
+    """
     i_crit: int
     n_inside: int
     mass_inside: float
@@ -255,7 +253,7 @@ def _compute_rcrit_zones(
     r_crit: float,
     Lz: float | None = None,
 ) -> _RcritZones:
-    r'''
+    r"""
     Compute the two-zone particle layout for a constant-resolution interior.
 
     Given a critical radius, this function determines how many particles
@@ -280,7 +278,7 @@ def _compute_rcrit_zones(
     -------
     _RcritZones
         The pre-computed zone layout.
-    '''
+    """
     i_crit = _bin_index_for_radius(binner, r_crit)
 
     if i_crit >= n_bins:
@@ -350,7 +348,7 @@ def create_spherical_shells(
     seed: int | None = None,
     r_crit: float | None = None,
 ) -> tuple[NDArray, NDArray]:
-    r'''
+    r"""
     Generate particles in concentric spherical shells for a spherical
     (:math:`\mathbb{R}^3`) StePS simulation.
 
@@ -387,7 +385,7 @@ def create_spherical_shells(
         Particle positions in Cartesian coordinates [Mpc/h].
     mass : ndarray of shape (N_total,)
         Particle masses in internal mass units.
-    '''
+    """
     rng = RNG(seed=seed)
 
     if r_crit is not None:
@@ -468,7 +466,7 @@ def create_cylindrical_shells(
     seed: int | None = None,
     r_crit: float | None = None,
 ) -> tuple[NDArray, NDArray]:
-    r'''
+    r"""
     Generate particles in concentric cylindrical annuli for a
     cylindrical (:math:`S^1 \times \mathbb{R}^2`) StePS simulation.
 
@@ -508,7 +506,7 @@ def create_cylindrical_shells(
         The z-coordinate is in :math:`[0, L_z]`.
     mass : ndarray of shape (N_total,)
         Particle masses in internal mass units.
-    '''
+    """
     rng = RNG(seed=seed)
 
     if r_crit is not None:
@@ -594,7 +592,7 @@ def create_cylindrical_shells(
 
 
 def create_shell_particles(params: dict) -> tuple[NDArray, NDArray]:
-    r'''
+    r"""
     High-level factory for shell-based particle generation.
 
     Constructs the appropriate binner from the parameter dictionary
@@ -611,9 +609,9 @@ def create_shell_particles(params: dict) -> tuple[NDArray, NDArray]:
     params : dict
         Full parameter dictionary.  Must contain:
         ``'GEOMETRY'``, ``'BIN_MODE'``, ``'D_4D'``, ``'NRBINS'``,
-        ``'R_3D'``, ``'NSHELL'``, ``'SEED'``, ``'H0'``, ``'RHO_MEAN'``,
-        ``'OMEGA_M'``, ``'H'``, and ``'LBOX'`` (for cylindrical).
-        Optional: ``'RCRIT'`` (only for ``BIN_MODE='omega'``).
+        ``'R_3D'``, ``'NSHELL'``, ``'RHO_MEAN'``, and ``'LBOX'``
+        (for cylindrical). Optional: ``'SEED'`` and ``'RCRIT'``
+        (only for ``BIN_MODE='omega'``).
 
     Returns
     -------
@@ -621,7 +619,7 @@ def create_shell_particles(params: dict) -> tuple[NDArray, NDArray]:
         Particle positions [Mpc/h].
     mass : ndarray of shape (N,)
         Particle masses in internal mass units.
-    '''
+    """
     geometry = params['GEOMETRY']
     if geometry == 'cubical':
         raise ValueError(

@@ -36,7 +36,7 @@ _PHILOX_W1 = 0xBB67AE8584CAA73B
 
 
 def _mulhilo64(x: np.ndarray, multiplier: int) -> tuple[np.ndarray, np.ndarray]:
-    '''Return the high and low uint64 words of x * multiplier.'''
+    """Return the high and low uint64 words of x * multiplier."""
     x = np.asarray(x, dtype=np.uint64)
     m = np.uint64(multiplier)
     x_lo = x & _UINT32_MASK
@@ -59,7 +59,7 @@ def _mulhilo64(x: np.ndarray, multiplier: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 def philox4x64_10(counter, key) -> np.ndarray:
-    '''Evaluate Philox4x64-10 for one or more 256-bit counters.
+    """Evaluate Philox4x64-10 for one or more 256-bit counters.
 
     Parameters
     ----------
@@ -69,7 +69,7 @@ def philox4x64_10(counter, key) -> np.ndarray:
         random_raw(4) call, matching NumPy pre-increment convention.
     key : array-like of uint64, shape (2,)
         Two-word Philox key. StePS uses (seed, 0) for white-noise modes.
-    '''
+    """
     counter = np.asarray(counter, dtype=np.uint64)
     if counter.shape[-1:] != (4,):
         raise ValueError("counter must have shape (..., 4)")
@@ -99,7 +99,7 @@ def philox4x64_10(counter, key) -> np.ndarray:
 
 
 def philox_complex_gaussian(counter, key) -> np.ndarray:
-    '''Return unit complex Gaussian variates from Philox counter blocks.'''
+    """Return unit complex Gaussian variates from Philox counter blocks."""
     words = philox4x64_10(counter, key)
     u1 = ((words[..., 0] >> np.uint64(11)).astype(np.float64) + 1.0) * 2.0**-53
     u2 = (words[..., 1] >> np.uint64(11)).astype(np.float64) * 2.0**-53
@@ -110,11 +110,11 @@ class RNG:
     def __init__(self, seed: Seed = None):
         self.rng = np.random.default_rng(seed)
     def _get_rng(self, seed: Seed = None):
-        '''
+        """
         Returns a new generator if seed is provided, otherwise returns
         the existing one.
-        '''
+        """
         return np.random.default_rng(seed) if seed is not None else self.rng
     def uniform(self, size=None, seed: Seed = None):
-        '''Generate uniformly distributed random numbers.'''
+        """Generate uniformly distributed random numbers."""
         return self._get_rng(seed).uniform(size=size)

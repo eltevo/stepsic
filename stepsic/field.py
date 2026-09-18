@@ -15,7 +15,7 @@
 #*****************************************************************************#
 
 from __future__ import annotations
-from stepsic._typing import ComplexField, FloatVec3, RealField, Seed
+from stepsic._typing import ComplexField, FloatVec3, IntVec3, RealField, Seed
 
 import logging
 
@@ -29,9 +29,8 @@ log = logging.getLogger(__name__)
 
 
 def wrap(x: RealField, boxsize: FloatVec3) -> RealField:
-    '''
-    Wraps the coordinates in ``x`` to be within the periodic box defined
-    by ``boxsize`` to the inverval :math:`(0, L]`
+    """
+    Shift centered coordinates by half a box and wrap to ``[0, L)``.
 
     Parameters
     ----------
@@ -44,35 +43,31 @@ def wrap(x: RealField, boxsize: FloatVec3) -> RealField:
     -------
     wrapped : ndarray
         The wrapped coordinates.
-    '''
+    """
     return np.mod(x+boxsize/2, boxsize)
 
 
-def cubic_voxels(nmesh: int, boxsize: FloatVec3) -> tuple[FloatVec3, float]:
-    '''
-    Defines a rectangular cuboid mesh with the specified number of
-    voxels in each dimensions, ensuring that the voxels are cubic.
-    The function calculates the number of voxels in each dimension
-    `(Nx, Ny, Nz)` based on the shortest dimension of the cuboid and
-    scales the other dimensions accordingly.
+def cubic_voxels(nmesh: int, boxsize: FloatVec3) -> tuple[IntVec3, float]:
+    """
+    Choose even mesh dimensions with cubic cells.
+
+    The shortest box dimension sets the cell spacing; other dimensions
+    are rounded up to an even number of cells.
 
     Parameters
     ----------
     nmesh : int
         Number of voxels in the shortest dimension.
     boxsize : float or tuple of float
-        Box dimensions in [Mpc]. Can be a scalar for a cubical box or
-        an array in the form of `(Lx, Ly, Lz)` for a rectangular cuboid.
+        Box dimensions as an array ``(Lx, Ly, Lz)`` in a common length unit.
 
     Returns
     -------
     nvox : ndarray of shape (3,)
         The number of voxels in each dimension of the grid `(Nx, Ny, Nz)`.
     dk : float
-        The uniform step size in each dimension, calculated as the length
-        of the shortest dimension divided by the number of voxels in
-        that dimension.
-    '''
+        Physical cell spacing in the same length unit as the box.
+    """
     nmesh = nmesh + nmesh % 2
     nvox = np.ceil(boxsize / (np.min(boxsize) / nmesh)).astype(int)
     nvox = (nvox + nvox % 2).astype(int)  # Ensure even number of voxels
@@ -81,12 +76,12 @@ def cubic_voxels(nmesh: int, boxsize: FloatVec3) -> tuple[FloatVec3, float]:
 
 
 def fourier_vectors(
-        nvox: FloatVec3,
+        nvox: IntVec3,
         dk: float,
         hermitian: bool = False,
         dtype: np.dtype = np.float64
 ) -> tuple[RealField, RealField, RealField]:
-    r'''
+    r"""
     Construct the 1D per-axis wavevectors of a Fourier-space grid.
 
     Parameters
@@ -94,9 +89,7 @@ def fourier_vectors(
     nvox : tuple of int
         The number of voxels in each dimension of the grid `(Nx, Ny, Nz)`.
     dk : float
-        The uniform step size in each dimension, calculated as the length
-        of the shortest dimension divided by the number of voxels in
-        that dimension.
+        Physical cell spacing in the same length unit as the box.
     hermitian : bool
         If `True`, use the reduced ``rfftfreq`` frequencies along the last
         axis (length `Nz//2+1`); otherwise the full ``fftfreq`` set.
@@ -109,7 +102,7 @@ def fourier_vectors(
     kx, ky, kz : ndarray
         1D wavevector components of length `Nx`, `Ny`, and
         `Nz//2+1` (if ``hermitian``) or `Nz`, respectively.
-    '''
+    """
     kx = (scipy.fft.fftfreq(nvox[0]) * 2 * np.pi / dk).astype(dtype)
     ky = (scipy.fft.fftfreq(nvox[1]) * 2 * np.pi / dk).astype(dtype)
     if hermitian:
@@ -120,12 +113,12 @@ def fourier_vectors(
 
 
 def fourier_kmod(
-        nvox: FloatVec3,
+        nvox: IntVec3,
         dk: float,
         hermitian: bool = False,
         dtype: np.dtype = np.float64
 ) -> RealField:
-    r'''
+    r"""
     Compute only the wavevector magnitude :math:`|\mathbf{k}|`.
 
     Parameters
@@ -133,7 +126,7 @@ def fourier_kmod(
     nvox : tuple of int
         The number of voxels in each dimension of the grid `(Nx, Ny, Nz)`.
     dk : float
-        The uniform step size in each dimension.
+        Physical cell spacing in the same length unit as the box.
     hermitian : bool
         If `True`, assume Hermitian symmetry (reduced last axis).
     dtype : np.dtype
@@ -144,15 +137,15 @@ def fourier_kmod(
     kmod : ndarray
         The wavevector magnitude at each grid point,
         :math:`\sqrt{k_x^2 + k_y^2 + k_z^2}`.
-    '''
+    """
     kx, ky, kz = fourier_vectors(nvox, dk, hermitian=hermitian, dtype=dtype)
     kmod = np.sqrt(
         kx[:, None, None]**2 + ky[None, :, None]**2 + kz[None, None, :]**2)
     return kmod.astype(dtype, copy=False)
 
 
-def white_noise(nvox: FloatVec3, seed: Seed = None, dtype: np.dtype = np.float64) -> ComplexField:
-    r'''
+def white_noise(nvox: IntVec3, seed: Seed = None, dtype: np.dtype = np.float64) -> ComplexField:
+    r"""
     Return a complex Gaussian array W(k) on the rfftn grid
     (Nx, Ny, Nz//2+1), obeying Hermitian constraints that guarantee
     irfftn(W) is real.
@@ -183,7 +176,7 @@ def white_noise(nvox: FloatVec3, seed: Seed = None, dtype: np.dtype = np.float64
     -------
     w_k : ndarray
         Complex white-noise values on the rfftn grid.
-    '''
+    """
     nvox = np.asarray(nvox, dtype=np.int64)
     if nvox.shape != (3,):
         raise ValueError('nvox must contain exactly three axes')
@@ -237,35 +230,32 @@ def white_noise(nvox: FloatVec3, seed: Seed = None, dtype: np.dtype = np.float64
 def generate_delta_k(
         kh,
         pk,
-        nvox: FloatVec3,
+        nvox: IntVec3,
         dk: float,
         *,
-        field: RealField = None,
+        field: ComplexField | None = None,
         seed: Seed = None,
         fixed: bool = False,
         paired: bool = False,
         dtype: np.dtype = np.float64
 ) -> ComplexField:
-    r'''
-    Generates the Fourier modes of an arbitrary input field from a
-    given power spectrum.
+    r"""
+    Generate Fourier-space overdensity modes from a power spectrum.
 
     Parameters
     ----------
     kh : ndarray
-        1D array of wavenumbers `k`, in [Mpc].
+        Positive wavenumbers in h/Mpc, in strictly increasing order.
     pk : ndarray
-        1D array of the matter power spectrum `P(k)` at the initial redshift.
+        Positive power spectrum values in (Mpc/h)^3 at the target redshift.
     nvox : tuple of int
         The number of voxels in each dimension of the grid `(Nx, Ny, Nz)`.
     dk : float
-        The uniform step size in each dimension, calculated as the length
-        of the shortest dimension divided by the number of voxels in
-        that dimension.
+        Physical cell spacing in Mpc/h.
     field : ndarray
-        Fourier transform of the real-valued overdensity field
-        :math:`\delta(\mathbf{x})` defined on a regular grid, where
-        :math:`\mathbf{x}` are the comoving coordinates.
+        Complex white-noise modes with the normalization returned by
+        :func:`white_noise`, of shape ``(Nx, Ny, Nz//2+1)``. If omitted,
+        generate them with ``seed``.
     seed : int
         The seed for the random number generator.
     fixed : bool
@@ -276,14 +266,14 @@ def generate_delta_k(
         If `True`, generates a paired field by applying a global sign
         flip to the Fourier-space density field.
     dtype : np.dtype
-        The data type of the generated field (e.g., `np.float32` or `np.float64`).
+        Real precision used for the spectrum grid and generated white noise.
 
     Returns
     -------
     delta_k : ndarray
         A 3D complex-valued array of shape `(Nx, Ny, Nz//2+1)` representing
         the Fourier modes of the overdensity field.
-    '''
+    """
     kmod = fourier_kmod(nvox, dk, hermitian=True, dtype=dtype)
 
     # interpolate the power spectrum in log-log space
@@ -303,7 +293,7 @@ def generate_delta_k(
     np.divide(pk_grid, dk**3, out=pk_grid)
     target_A = np.sqrt(pk_grid, out=pk_grid)
     if fixed:
-        # Flips phase and sets amplitude to 1 for every mode.
+        # Preserve phases while normalizing nonzero modes to unit amplitude.
         # Angulo & Pontzen 2016
         amp = np.abs(field)
         phase = np.zeros_like(field)

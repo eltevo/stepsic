@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Tuple
 
 import scipy
 import numpy as np
@@ -36,7 +35,7 @@ def log_lpt(
     *,
     title: str | None = None
 ) -> None:
-    '''Log per-axis displacement and velocity statistics for an LPT step.
+    """Log per-axis displacement and velocity statistics for an LPT step.
 
     Parameters
     ----------
@@ -45,10 +44,11 @@ def log_lpt(
     xpert : ndarray of shape (N, 3)
         Perturbed particle positions [Mpc/h].
     vpert : ndarray of shape (N, 3)
-        Particle velocities [km/s].
+        Velocity values as supplied; raw LPT values precede the driver
+        conversion to km/s and the snapshot convention.
     title : str, optional
         Label prefix for log messages (e.g. ``'1LPT'``).
-    '''
+    """
     xabs = np.abs(xpert - x)
     xmax, xavg = np.max(xabs, axis=0), np.mean(xabs, axis=0)
     del xabs
@@ -75,8 +75,8 @@ def lpt1(
     compensate: bool = False,
     method: str = 'cic',
     dtype: np.dtype = np.float64,
-) -> Tuple[RealField, RealField]:
-    r'''
+) -> tuple[RealField, RealField]:
+    r"""
     Apply the Zel'dovich approximation (1LPT) to displace particles.
 
     Computes first-order displacements and velocities from the Fourier-space
@@ -85,11 +85,11 @@ def lpt1(
 
     .. math::
         \mathbf{\Psi}^{(1)}(\mathbf{k}) =
-            -i \frac{\mathbf{k}}{|\mathbf{k}|^2} \delta(\mathbf{k}),
+            i \frac{\mathbf{k}}{|\mathbf{k}|^2} \delta(\mathbf{k}),
         \qquad
         \mathbf{x} = \mathbf{q} + D_1 \mathbf{\Psi}^{(1)},
         \qquad
-        \mathbf{v} = a H f \, \mathbf{\Psi}^{(1)}.
+        \mathbf{v} = D_1 a H f \, \mathbf{\Psi}^{(1)}.
 
     Parameters
     ----------
@@ -100,11 +100,11 @@ def lpt1(
     nvox : (int, int, int)
         Grid dimensions ``(Nx, Ny, Nz)``.
     dk : float
-        Fourier-space spacing [h/Mpc].
+        Physical cell spacing [Mpc/h].
     g1 : float
         First-order growth coefficient (usually 1).
     aHf1 : float
-        Velocity prefactor :math:`a H(a) f(a)` [km/s / (Mpc/h)].
+        Velocity prefactor :math:`a H(a) f(a)` [km/s/Mpc].
     compensate : bool
         Apply MAS deconvolution before interpolation. Required for
         off-grid particle loads (e.g. glass); must be False for
@@ -119,8 +119,10 @@ def lpt1(
     xpert : ndarray of shape (N, 3)
         Perturbed positions [Mpc/h].
     vpert : ndarray of shape (N, 3)
-        Peculiar velocities [km/s].
-    '''
+        Raw velocities: displacement [Mpc/h] times the velocity prefactor.
+        The driver divides by ``h`` for km/s and by ``sqrt(a)`` for
+        the Gadget snapshot convention.
+    """
     kx, ky, kz = fourier_vectors(nvox, dk, hermitian=True, dtype=dtype)
     K = (kx[:, None, None], ky[None, :, None], kz[None, None, :])
     boxsize = np.asarray(nvox, dtype=dtype) * dk
@@ -174,7 +176,7 @@ def lpt2(
     method: str = 'cic',
     dtype: np.dtype = np.float64
 ) -> tuple[RealField, RealField]:
-    r'''
+    r"""
     Apply second-order LPT (2LPT) to displace particles.
 
     Extends the Zel'dovich approximation with the second-order correction
@@ -205,16 +207,16 @@ def lpt2(
     nvox : (int, int, int)
         Grid dimensions ``(Nx, Ny, Nz)``.
     dk : float
-        Fourier-space spacing [h/Mpc].
+        Physical cell spacing [Mpc/h].
     g1 : float
         First-order growth coefficient (usually 1).
     g2 : float
         Second-order growth coefficient
         (typically :math:`-\tfrac{3}{7}\,\Omega_m^{-1/143}`).
     aHf1 : float
-        First-order velocity prefactor :math:`a H f_1` [km/s / (Mpc/h)].
+        First-order velocity prefactor :math:`a H f_1` [km/s/Mpc].
     aHf2 : float
-        Second-order velocity prefactor [km/s / (Mpc/h)].
+        Second-order velocity prefactor :math:`a H f_2` [km/s/Mpc].
     compensate : bool
         Apply MAS deconvolution before interpolation (see `lpt1`).
     method : {'ngp', 'cic', 'tsc'}
@@ -227,12 +229,14 @@ def lpt2(
     xpert : ndarray of shape (N, 3)
         Perturbed positions [Mpc/h].
     vpert : ndarray of shape (N, 3)
-        Peculiar velocities [km/s].
+        Raw velocities: displacement [Mpc/h] times the velocity prefactor.
+        The driver divides by ``h`` for km/s and by ``sqrt(a)`` for
+        the Gadget snapshot convention.
 
     See Also
     --------
     lpt1 : First-order (Zel'dovich) displacement only.
-    '''
+    """
     kx, ky, kz = fourier_vectors(nvox, dk, hermitian=True, dtype=dtype)
     K = (kx[:, None, None], ky[None, :, None], kz[None, None, :])
     boxsize = np.asarray(nvox, dtype=dtype) * dk
@@ -316,11 +320,8 @@ def lpt2(
     disp_field1_interp = disp_interp[:, :3]
     disp_field2_interp = disp_interp[:, 3:]
 
-    # Hack: in-place, per-axis accumulation of the trailing term. Numpy
-    # evaluates `a + b + c` as `(a + b) + c` elementwise, so this gives
-    # bit-identical values while the largest temporary is one column
-    # instead of a full (N, 3) array (float64 for vpert, as the aHf
-    # prefactors promote it).
+    # Accumulate the second-order term per axis, preserving left-to-right
+    # addition while limiting the temporary to one particle column.
     xpert = x + g1 * disp_field1_interp
     vpert = g1 * aHf1 * disp_field1_interp
     for k in range(3):

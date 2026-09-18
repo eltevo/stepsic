@@ -16,17 +16,16 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Tuple, Type
 
 import numpy as np
 
-from stepsic._typing import *
+from stepsic._typing import BoolVec3, FloatVec3, IntVec3, RealField
 from stepsic.field import fourier_vectors
 
 
 @dataclass(frozen=True)
 class GridGeometry:
-    '''
+    """
     Defines the mapping between physical coordinates and grid indices.
 
     Parameters
@@ -42,19 +41,19 @@ class GridGeometry:
         - vox_offset = 0.0: node-centered (grid points at cell corners)
         - vox_offset = 0.5: voxel-centered (grid points at voxel centers)
     origin : float, array of shape (3,) or None
-        Physical coordinate of the box corner (where index 0 maps to).
-        Default is 0.0. For a centered grid, use -boxsize/2.
+        Physical coordinate of the box corner, before ``vox_offset`` is
+        applied. ``None`` selects zero. For a centered grid, use -boxsize/2.
     periodic : array of shape (3,) of bool
         Periodicity in each dimension.
-    '''
+    """
     nvox: IntVec3
     boxsize: FloatVec3
     vox_offset: float
-    origin: FloatVec3
+    origin: FloatVec3 | None
     periodic: BoolVec3
 
     def __post_init__(self) -> None:
-        '''Normalize inputs to 1D arrays of length 3.'''
+        """Normalize inputs to 1D arrays of length 3."""
         nvox = np.broadcast_to(self.nvox, (3,)).astype(np.int32)
         object.__setattr__(self, 'nvox', nvox)
         boxsize = np.broadcast_to(self.boxsize, (3,)).astype(np.float64)
@@ -72,7 +71,7 @@ class GridGeometry:
         return self.boxsize / self.nvox
 
     def pos_to_grid(self, x: RealField) -> RealField:
-        '''Convert physical positions to fractional grid coordinates.'''
+        """Convert physical positions to fractional grid coordinates."""
         x = x - self.origin  # shift to box-local coordinates [0, boxsize)
         box = self.boxsize
         per = self.periodic
@@ -92,33 +91,33 @@ class GridGeometry:
 # to the `KERNELS` registry.
 
 class InterpolationKernel(ABC):
-    '''Base class for separable interpolation kernels.'''
+    """Base class for separable interpolation kernels."""
 
     @property
     @abstractmethod
     def support(self) -> int:
-        '''Number of grid points the kernel spans.'''
+        """Number of grid points the kernel spans."""
         pass
 
     @property
     @abstractmethod
     def base_offset(self) -> int:
-        '''Offset from floor(g) to the first grid point involved.'''
+        """Offset from floor(g) to the first grid point involved."""
         pass
 
     @abstractmethod
-    def weights(self, dx: RealField) -> Tuple[RealField, ...]:
-        '''Compute interpolation weights for fractional position dx in [0, 1).'''
+    def weights(self, dx: RealField) -> tuple[RealField, ...]:
+        """Compute interpolation weights for fractional position dx in [0, 1)."""
         pass
 
     @property
     def order(self) -> int:
-        '''Interpolation order.'''
+        """Interpolation order."""
         return self.support - 1
 
 
 class NGPKernel(InterpolationKernel):
-    '''Implements Nearest Grid Point (NGP) interpolation.'''
+    """Implements Nearest Grid Point (NGP) interpolation."""
     @property
     def support(self) -> int:
         return 1
@@ -127,12 +126,12 @@ class NGPKernel(InterpolationKernel):
     def base_offset(self) -> int:
         return 0
 
-    def weights(self, dx: RealField) -> Tuple[RealField, ...]:
+    def weights(self, dx: RealField) -> tuple[RealField, ...]:
         return (np.ones_like(dx),)
 
 
 class CICKernel(InterpolationKernel):
-    '''Implements Cloud-in-Cell (CIC) interpolation.'''
+    """Implements Cloud-in-Cell (CIC) interpolation."""
 
     @property
     def support(self) -> int:
@@ -142,12 +141,12 @@ class CICKernel(InterpolationKernel):
     def base_offset(self) -> int:
         return 0
 
-    def weights(self, dx: RealField) -> Tuple[RealField, ...]:
+    def weights(self, dx: RealField) -> tuple[RealField, ...]:
         return (1.0 - dx, dx)
 
 
 class TSCKernel(InterpolationKernel):
-    '''Implements Triangular Shaped Cloud (TSC) interpolation.'''
+    """Implements Triangular Shaped Cloud (TSC) interpolation."""
 
     @property
     def support(self) -> int:
@@ -157,14 +156,14 @@ class TSCKernel(InterpolationKernel):
     def base_offset(self) -> int:
         return -1
 
-    def weights(self, dx: RealField) -> Tuple[RealField, ...]:
+    def weights(self, dx: RealField) -> tuple[RealField, ...]:
         w0 = 0.5 * (1.0 - dx)**2
         w1 = 0.75 - (dx - 0.5)**2
         w2 = 0.5 * dx**2
         return (w0, w1, w2)
 
 # Kernel registry
-KERNELS: Dict[str, Type[InterpolationKernel]] = {
+KERNELS: dict[str, type[InterpolationKernel]] = {
     'ngp': NGPKernel,
     'cic': CICKernel,
     'tsc': TSCKernel,
@@ -178,7 +177,7 @@ def compensation_factors(
     hermitian: bool = True,
     method: str | InterpolationKernel = 'cic',
     dtype: np.dtype = np.float64,
-) -> Tuple[RealField, RealField, RealField]:
+) -> tuple[RealField, RealField, RealField]:
     r"""
     Compute per-axis Fourier factors for mass-assignment deconvolution.
 
@@ -241,7 +240,7 @@ def compensation_factors(
 
 
 class FieldInterpolator:
-    '''
+    """
     Interpolates a 3D field to particle positions using separable kernels.
 
     This is the adjoint of :class:`FieldDepositor`.
@@ -266,7 +265,7 @@ class FieldInterpolator:
     ... )
     >>> interp = FieldInterpolator('cic', geom)
     >>> values = interp(field, particle_positions)
-    '''
+    """
 
     # Process at most 2**20 particles per interpolation pass; for the largest
     # built-in 6-component float64/TSC case, this caps temporaries near 250 MiB.
@@ -291,21 +290,24 @@ class FieldInterpolator:
             field: RealField,
             x: RealField
         ) -> RealField:
-        '''
+        """
         Evaluate the gridded vector ``field`` at arbitrary positions.
 
         Parameters
         ----------
         field : ndarray
-            Grid values, shape ``(ncomp, Nx, Ny, Nz)`` or ``(Nx, Ny, Nz)``.
+            Grid values, shape ``(ncomp, Nx, Ny, Nz)``. Scalar fields
+            require an explicit leading axis of length one.
         x : ndarray of shape (N, 3)
             Particle positions in physical coordinates.
 
         Returns
         -------
         ndarray
-            Interpolated field values at the input positions, shape ``(N, ncomp)``.
-        '''
+            Values of shape ``(N, ncomp)`` with all singleton axes removed.
+            One particle gives ``(ncomp,)``; one component gives ``(N,)``;
+            one particle and one component give a zero-dimensional array.
+        """
         field = np.asarray(field, dtype=self.dtype)
 
         # Shape (N, ncomp)
@@ -323,7 +325,7 @@ class FieldInterpolator:
             x: RealField,
             result: RealField
         ) -> None:
-        '''Accumulate interpolated values for one particle chunk into ``result``.'''
+        """Accumulate interpolated values for one particle chunk into ``result``."""
         # Convert positions to fractional grid coordinates
         g = self.geometry.pos_to_grid(x)  # (N, 3)
         g_int = np.floor(g).astype(np.int32, copy=False)
@@ -357,7 +359,7 @@ class FieldInterpolator:
     
 
 class FieldDepositor:
-    r'''
+    r"""
     Deposit particle-carried quantities onto a regular 3D grid using
     separable mass-assignment kernels.
  
@@ -386,7 +388,7 @@ class FieldDepositor:
     ... )
     >>> dep = FieldDepositor('cic', geom)
     >>> density = dep(x, values=None)  # number-count field
-    '''
+    """
  
     def __init__(
         self,
@@ -407,7 +409,7 @@ class FieldDepositor:
         x: RealField,
         values: RealField | None = None,
     ) -> RealField:
-        r'''
+        r"""
         Scatter particle values onto the grid.
  
         Parameters
@@ -425,7 +427,7 @@ class FieldDepositor:
             output is a scalar grid ``(nx, ny, nz)``.  If ``values`` has
             ``ncomp > 1`` columns, the output has a leading component
             axis matching :class:`FieldInterpolator`'s field layout.
-        '''
+        """
         N = x.shape[0]
         nvox = self.geometry.nvox
  
@@ -481,7 +483,7 @@ def interpolate_field(
     origin: FloatVec3 | None = None,
     dtype: np.dtype = np.float64,
 ) -> RealField:
-    '''
+    """
     Interpolate a 3D field at particle positions.
 
     Parameters
@@ -504,9 +506,10 @@ def interpolate_field(
 
     Returns
     -------
-    values : ndarray of shape (N, ncomp)
-        Interpolated field values.
-    '''
+    values : ndarray
+        Interpolated values of shape ``(N, ncomp)`` with singleton axes
+        removed, including a zero-dimensional array when both are one.
+    """
     geometry = GridGeometry(
         boxsize=boxsize,
         nvox=field.shape[1:],
@@ -528,7 +531,7 @@ def deposit_field(
     vox_offset: float = 0.5,
     origin: FloatVec3 | None = None,
 ) -> RealField:
-    r'''
+    r"""
     Deposit particle quantities onto a regular 3D grid.
  
     Parameters
@@ -557,7 +560,7 @@ def deposit_field(
     -------
     grid : ndarray of shape (nx, ny, nz) or (ncomp, nx, ny, nz)
         The deposited field.
-    '''
+    """
     geometry = GridGeometry(
         boxsize=boxsize,
         nvox=nvox,

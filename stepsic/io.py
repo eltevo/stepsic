@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from collections.abc import Sequence
 
 import h5py
 import numpy as np
@@ -38,7 +39,7 @@ log = logging.getLogger(__name__)
 
 
 def _resolution_tag(params: dict) -> str:
-    '''
+    """
     Build a compact resolution descriptor for the directory name.
 
     The tag depends on the IC generation mode:
@@ -57,7 +58,7 @@ def _resolution_tag(params: dict) -> str:
     -------
     str
         Resolution tag without leading underscore.
-    '''
+    """
     ic_type = params['TYPE']
     parts: list[str] = []
 
@@ -84,7 +85,7 @@ def _resolution_tag(params: dict) -> str:
 
 
 def _run_dirname(params: dict) -> str:
-    '''
+    """
     Construct a run-specific directory name from simulation parameters.
 
     Encodes geometry, resolution, redshift, and numerical method so
@@ -99,7 +100,7 @@ def _run_dirname(params: dict) -> str:
     -------
     str
         The generated directory name (no path separators).
-    '''
+    """
     parts = [params['IC_PREFIX']]
 
     parts.append(params['GEOMETRY'])
@@ -123,7 +124,7 @@ def _run_dirname(params: dict) -> str:
 
 
 def ensure_run_dir(params: dict) -> Path:
-    '''
+    """
     Build, create, and return the full output directory for this IC run.
 
     Constructs the path ``{IC_DIR}/{run_name}/`` where ``run_name`` is
@@ -140,7 +141,7 @@ def ensure_run_dir(params: dict) -> Path:
     -------
     pathlib.Path
         The resolved run directory (guaranteed to exist on return).
-    '''
+    """
     run_dir = Path(params['IC_DIR']) / _run_dirname(params)
     run_dir.mkdir(parents=True, exist_ok=True)
     log.info(f'Output directory: {run_dir}')
@@ -148,36 +149,44 @@ def ensure_run_dir(params: dict) -> Path:
 
 
 class UnsupportedFormatError(RuntimeError):
-    '''Raised when CosmoIO encounters an unknown file format.'''
+    """Raised when CosmoIO encounters an unknown file format."""
 
 
 class CosmoIO:
-    '''
-    A stateless class for loading cosmological snapshots from various
-    formats (ASCII, HDF5, NPY, Gadget) and returning them as a
-    structured numpy array.
-    '''
+    """Read snapshot arrays and write HDF5 snapshots.
+
+    Readers handle ASCII tables, HDF5 datasets, and Gadget binaries through
+    optional ``glio``. Snapshot data are returned as tuples of arrays.
+    """
     @staticmethod
     def load_snapshot(path: Path, *args, **kwargs):
-        '''
-        Loads a Gadget-format snapshot of a cosmological simulation from
-        either an ASCII, HDF5, NPY or Gadget-format input file.
+        """Load arrays from the snapshot files matching a path.
 
         Parameters
         ----------
-        fname : str
-            Path to the *first* snapshot file on disk. All accompanying
-            parts (e.g. ``snap_001``, ``snap_002``, etc.) are detected
-            and concatenated automatically for Gadget or HDF5 inputs.
-        part_type : int
-            The particle type to load. For Gadget snapshots, this is the
-            part type index (1 for gas, 2 for dark matter, etc.). For HDF5
-            snapshots, this is the part type group (e.g. 'PartType1').
-        constant_res : bool
-            If True, the snapshot is assumed to have constant mass resolution.
-        dtype : numpy.dtype
-            The data type to use for the snapshot. If not specified, float32 is used.
-        '''
+        path : pathlib.Path
+            Path to a snapshot file. Matching numbered parts are collected and
+            sorted before dispatch to the reader.
+        *args : str
+            HDF5 dataset names, in return order. Defaults to ``ParticleIDs``,
+            ``Coordinates``, ``Velocities``, and ``Masses``.
+        **kwargs
+            Reader options. ``part_type`` defaults to 1 (dark matter) for HDF5
+            and Gadget. ASCII uses ``dtype`` (default float32); HDF5 retains
+            dataset dtypes and accepts ``constant_res`` for mass scaling.
+
+        Returns
+        -------
+        tuple of ndarray or None
+            IDs, positions, velocities, and masses by default. HDF5 returns
+            requested datasets in order, with ``None`` for missing datasets.
+
+        Notes
+        -----
+        ASCII files use columns ID, x, y, z, vx, vy, vz, mass. HDF5 reads
+        ``PartType{part_type}`` groups. Other extensions use the optional
+        Gadget reader.
+        """
         path = path.expanduser().resolve()
         if not path.parent.exists():
             raise FileNotFoundError(path.parent)
@@ -191,26 +200,26 @@ class CosmoIO:
     
     @staticmethod
     def save_snapshot(path: Path, data: "CosmoData", fmt: str, **kwargs):
-        '''
+        """
         Saves a cosmological snapshot to a file. Currently, only HDF5
         format is supported for writing.
 
         Parameters
         ----------
-        fname : pathlib.Path
+        path : pathlib.Path
             Path to the output snapshot file.
-        data : stepsic.CosmoData
-            A structured array containing the particle data.
+        data : stepsic.data.CosmoData
+            Particle arrays and snapshot metadata.
         fmt : str
             The file format to save the snapshot in.
-        '''
+        """
         path = path.expanduser().resolve()
         saver = CosmoIO._find_saver(fmt)
         saver(path, data=data, **kwargs)
 
     @staticmethod
     def get_box_size(path: Path):
-        '''
+        """
         Retrieves the box size from the snapshot file.
 
         If the header contains a missing, zero, or clearly invalid
@@ -228,7 +237,7 @@ class CosmoIO:
         boxsize : float or None
             The box size in internal units, or ``None`` if the header
             value is missing or invalid.
-        '''
+        """
         path = path.expanduser().resolve()
         ext = CosmoIO._get_extension(path)
         boxsize = None
@@ -260,7 +269,7 @@ class CosmoIO:
 
     @staticmethod
     def _match_extension(path: Path):
-        '''
+        """
         Detects the file extension of the given path.
 
         Parameters
@@ -273,7 +282,7 @@ class CosmoIO:
         match : re.Match or None
             A match object if the path matches a valid pattern, or `None` if
             it does not.
-        '''
+        """
         parser_re = re.compile(
             r"^(?P<stem>.*?)"
             r"(?:"
@@ -291,7 +300,7 @@ class CosmoIO:
     
     @staticmethod
     def _get_extension(path: Path):
-        '''
+        """
         Returns the file extension of the given path without the leading dot.
 
         Parameters
@@ -304,7 +313,7 @@ class CosmoIO:
         ext : str or None
             The file extension without the leading dot, or `None` if no
             valid extension is found.
-        '''
+        """
         match = CosmoIO._match_extension(path)
         if match:
             parts = match.groupdict()
@@ -313,7 +322,7 @@ class CosmoIO:
 
     @staticmethod
     def _collect_files(path: Path):
-        '''
+        """
         Gathers all snapshot files belonging to the same group.
 
         Parameters
@@ -327,7 +336,7 @@ class CosmoIO:
             A sorted list of Path objects for all files in the snapshot.
             Returns an empty list if the filepath does not match a valid
             pattern.
-        '''
+        """
         match = CosmoIO._match_extension(path)
 
         if match:
@@ -353,7 +362,7 @@ class CosmoIO:
 
     @staticmethod
     def _find_loader(ext: str):
-        '''Return the appropriate backend reader for ``path``.'''
+        """Return the backend reader for a file extension."""
         _LOADER_MAP = {
             "dat": lambda f, **kw: CosmoIO._load_ascii(f, **kw),
             "txt": lambda f, **kw: CosmoIO._load_ascii(f, **kw),
@@ -373,7 +382,7 @@ class CosmoIO:
 
     @staticmethod
     def _find_saver(ext: str):
-        '''Return the appropriate backend writer for the save method.'''
+        """Return the appropriate backend writer for the save method."""
         _SAVER_MAP = {
             "ascii": lambda p, **kw: CosmoIO._save_ascii(p, **kw),
             "gadget": lambda p, **kw: CosmoIO._save_gadget(p, **kw),
@@ -385,8 +394,8 @@ class CosmoIO:
         raise UnsupportedFormatError('Only HDF5 files are supported.')
 
     @staticmethod
-    def _load_ascii(files: PathInput, **kwargs):
-        '''Load a cosmological snapshot from an ASCII file.'''
+    def _load_ascii(files: Sequence[PathInput], **kwargs):
+        """Load a cosmological snapshot from an ASCII file."""
         dtype = kwargs.get('dtype', np.float32)
         particleIDs, coordinates, velocities, masses = [], [], [], []
         log.info(f'Reading the input ASCII files ...')
@@ -405,7 +414,7 @@ class CosmoIO:
 
     @staticmethod
     def _load_gadget(path: Path, **kwargs):
-        '''Load a cosmological snapshot from a Gadget binary.'''
+        """Load a cosmological snapshot from a Gadget binary."""
         part_type = kwargs.get('part_type', 1)
         log.info(f'Reading the input Gadget files ...')
         log.info(f'Opening Gadget file {path}...')
@@ -417,8 +426,8 @@ class CosmoIO:
         return particleIDs, coordinates, velocities, masses
 
     @staticmethod
-    def _load_hdf5(files: PathInput, *args, **kwargs):
-        '''Load a cosmological snapshot from an HDF5 file.'''
+    def _load_hdf5(files: Sequence[PathInput], *args, **kwargs):
+        """Load a cosmological snapshot from an HDF5 file."""
         log.info(f'Reading the input HDF5 files ...')
         part_type = kwargs.get('part_type', 1)
         if not args:
@@ -451,8 +460,8 @@ class CosmoIO:
     
     @staticmethod
     def _save_ascii(path: Path, data: "CosmoData", **kwargs):
+        """Save a cosmological snapshot to an ASCII file."""
         path = path.with_suffix('.dat')
-        '''Save a cosmological snapshot to an ASCII file.'''
         raise NotImplementedError
     
     @staticmethod
@@ -461,7 +470,7 @@ class CosmoIO:
 
     @staticmethod
     def _save_hdf5(path: Path, data: "CosmoData", **kwargs):
-        '''
+        """
         Saves data of a single particle type in GADGET-format HDF5 file.
 
         Compatible with GADGET, GIZMO and StePS.
@@ -470,18 +479,19 @@ class CosmoIO:
         ----------
         path : Path
             The file path to save the snapshot.
-        data : stepsic.CosmoData
+        data : stepsic.data.CosmoData
             The cosmological data to save.
 
-        .. Optional Parameters:
-        *header arguments*
-            Additional parameters for the snapshot header. TODO.
         part_type : int
             The particle type to save (e.g. 1 for dark matter in Gadget).
-        dtype : numpy.dtype
-            The data type to use for the snapshot positions, velocities
-            and masses.
-        '''
+        dtype : numpy.dtype, optional
+            Precision for positions, velocities, and masses (default float32).
+        **kwargs
+            Header values: Redshift, BoxSize, SimulationRadius,
+            NumFilesPerSnapshot, Omega0, OmegaLambda, HubbleParam, and
+            the Gadget Flag_* fields written below. Numeric values default
+            to zero, except NumFilesPerSnapshot, which defaults to one.
+        """
         path = path.with_suffix('.hdf5')
         with h5py.File(path, 'w') as hdf_file:
             part_type = kwargs.get('part_type', 1)

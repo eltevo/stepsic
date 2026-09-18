@@ -21,7 +21,8 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import numpy as np
 import toml
@@ -32,11 +33,11 @@ log = logging.getLogger(__name__)
 
 
 class PType(Enum):
-    '''
+    """
     Parameter storage types.
 
     Each variant maps to a specific validation and casting rule.
-    '''
+    """
     SCALAR = 'scalar'          # Cast to dtype (default: float64)
     INT = 'int'                # Cast to int
     BOOL = 'bool'              # Must be bool
@@ -48,7 +49,7 @@ class PType(Enum):
 
 @dataclass(frozen=True, slots=True)
 class Param:
-    r'''
+    r"""
     Declarative descriptor for a single configuration parameter.
 
     Parameters
@@ -83,7 +84,7 @@ class Param:
         A ``Callable[[dict], bool]`` predicate.  The parameter is only
         validated and displayed when the predicate returns ``True``.
         Receives the full parameter dict.
-    '''
+    """
     key: str
     ptype: PType = PType.SCALAR
     label: str | None = None
@@ -100,7 +101,7 @@ class Param:
 
 @dataclass(frozen=True, slots=True)
 class Constraint:
-    r'''
+    r"""
     A cross-parameter validation rule.
 
     A ``Constraint`` enforces compatibility between two or more already
@@ -118,7 +119,7 @@ class Constraint:
     level : str
         - ``'error'`` (default) raises ``ValueError``
         - ``'warning'`` broadcasts a log warning and continues.
-    '''
+    """
     check: Callable[[dict], bool]
     message: Callable[[dict], str]
     level: str = "error"
@@ -287,7 +288,7 @@ IC_CONSTRAINTS: tuple[Constraint, ...] = (
     ),
 
     # -- NMESH / TYPE compatibility ------------------------------------
-    Constraint(  # Include shells mode too if ever implement glass generation
+    Constraint(
         check=lambda P: P.get('NMESH', 1) != 0 or P.get('TYPE') == 'glass',
         message=lambda P: (
             f"NMESH=0 (variable-resolution mode) requires TYPE='glass'. "
@@ -341,7 +342,7 @@ IC_CONSTRAINTS: tuple[Constraint, ...] = (
 def _validate_constraints(
     constraints: Sequence[Constraint], P: dict,
 ) -> None:
-    '''
+    """
     Run all cross-parameter constraints against the parameter dict.
 
     Parameters
@@ -355,7 +356,7 @@ def _validate_constraints(
     ------
     ValueError
         On the first ``level='error'`` constraint that fails.
-    '''
+    """
     for c in constraints:
         if not c.check(P):
             if c.level == "error":
@@ -364,7 +365,7 @@ def _validate_constraints(
 
 
 def _validate_and_cast(param: Param, P: dict) -> None:
-    '''
+    """
     Validate and cast a single parameter in-place inside ``P``.
 
     Raises
@@ -377,7 +378,7 @@ def _validate_and_cast(param: Param, P: dict) -> None:
         If a string parameter has an invalid choice.
     FileNotFoundError
         If a path parameter points to a non-existent location.
-    '''
+    """
     if param.condition is not None and not param.condition(P):
         return  # Skip conditional params whose predicate is False
 
@@ -443,13 +444,13 @@ def _validate_and_cast(param: Param, P: dict) -> None:
 
 
 def _validate_group(params: Sequence[Param], P: dict) -> None:
-    '''Validate and cast every parameter in a group.'''
+    """Validate and cast every parameter in a group."""
     for p in params:
         _validate_and_cast(p, P)
 
 
 def _compute_derived_cosmo(P: dict) -> None:
-    '''Compute derived cosmological quantities from base parameters.'''
+    """Compute derived cosmological quantities from base parameters."""
     h = P['H0'] / 100.0
     P["H"] = h
     P["RHO_CRIT"] = 3 * (100 / UNIT_V)**2 / (8*np.pi) # h^2 as we use [U/h] internally
@@ -463,27 +464,27 @@ def _compute_derived_cosmo(P: dict) -> None:
 
 
 def _compute_derived_ic(P: dict) -> None:
-    '''Compute derived IC quantities from base parameters.'''
+    """Compute derived IC quantities from base parameters."""
     P["SCALE"] = 1.0 / (P["REDSHIFT"] + 1.0)
     P["DTYPE"] = np.float64 if P["USE_DOUBLE"] else np.float32
 
 
 def _fmt_arr(x: object, *, precision: int = 2) -> str:
-    '''Pretty fixed-width formatting for scalars or small arrays.'''
+    """Pretty fixed-width formatting for scalars or small arrays."""
     return np.array2string(np.asarray(x), precision=precision, floatmode='fixed')
 
 
 def _fmt_with_h(
     value: object, h: float, unit: str, *, hindependent: bool, precision: int = 2,
 ) -> str:
-    r'''
+    r"""
     Format a value with optional dual h-dependent / h-independent view.
 
     When ``HINDEPENDENT`` is True the value is already in ``unit``
     (typically Mpc/h) and is printed as-is.  When False the internal
     value is in ``unit`` (Mpc) but was multiplied by ``h``, so both the
     physical and ``h``-scaled representations are shown.
-    '''
+    """
     if hindependent:
         return f'{_fmt_arr(value, precision=precision)} {unit}'
     left = _fmt_arr(np.asarray(value) / h, precision=precision)
@@ -492,10 +493,10 @@ def _fmt_with_h(
 
 
 def _format_value(param: Param, value: Any, P: dict) -> str:
-    '''
+    """
     Produce a display string for a single parameter, respecting
     all formatting rules encoded in the ``Param`` descriptor.
-    '''
+    """
     # Dual h-display
     if param.h_display:
         h = float(P['H'])
@@ -526,7 +527,7 @@ def _format_value(param: Param, value: Any, P: dict) -> str:
 
 
 def _render_kv_block(title: str, rows: list[tuple[str, str]]) -> str:
-    '''Render a titled key/value block with aligned colon columns.'''
+    """Render a titled key/value block with aligned colon columns."""
     if not rows:
         return title
     width = max(len(k) for k, _ in rows)
@@ -536,7 +537,7 @@ def _render_kv_block(title: str, rows: list[tuple[str, str]]) -> str:
 
 
 def _display_params(title: str, params: Sequence[Param], P: dict) -> None:
-    '''
+    """
     Format and log a group of parameters as an aligned key/value block.
 
     Parameters
@@ -550,7 +551,7 @@ def _display_params(title: str, params: Sequence[Param], P: dict) -> None:
         tables.
     P : dict
         The full parameter dictionary (values + metadata).
-    '''
+    """
     rows: list[tuple[str, str]] = []
     for p in params:
         if p.label is None or p.key not in P:
@@ -563,7 +564,7 @@ def _display_params(title: str, params: Sequence[Param], P: dict) -> None:
 
 
 class CosmoParameters:
-    '''
+    """
     Reads, validates, casts, derives, and pretty-prints the full set of
     parameters needed by ``stepsic``.
 
@@ -576,10 +577,8 @@ class CosmoParameters:
     -----
     Every parameter is declared exactly once in the module-level
     ``COSMO_PARAMS``, ``IC_PARAMS``, ``COSMO_DERIVED`` or ``IC_DERIVED``
-    tuples.  Adding a new parameter is a one-liner: append a ``Param``
-    entry to the appropriate table and, if it's derived, add its
-    computation in ``_compute_derived_*``.
-    '''
+    tuples. Derived values are computed by ``_compute_derived_*``.
+    """
 
     def __init__(self, path: Path) -> None:
         with open(path, 'r') as f:
@@ -588,7 +587,7 @@ class CosmoParameters:
         self._process()
 
     def get_parameters(self) -> dict[str, Any]:
-        '''Return the fully-processed parameter dictionary.'''
+        """Return the fully-processed parameter dictionary."""
         return self.P
 
     def _load_default_cosmology(
@@ -597,7 +596,7 @@ class CosmoParameters:
         cosmology: str = "Planck2018EE+BAO+SN",
         estimate: str = "best",
     ) -> None:
-        '''
+        """
         Populate ``self.P`` with default cosmological values from the
         bundled ``cosmology.toml`` file.  User-supplied values in the
         input config take precedence via ``dict.setdefault``.
@@ -609,7 +608,7 @@ class CosmoParameters:
         estimate : str
             ``'best'`` for best-fit values, ``'mean'`` for the mean of
             the posterior.
-        '''
+        """
         if estimate not in ('best', 'mean'):
             raise ValueError("'estimate' must be 'best' or 'mean'!")
 
@@ -629,10 +628,10 @@ class CosmoParameters:
                 self.P.setdefault(key, value)
 
     def _process(self) -> None:
-        '''
+        """
         Validate, cast, compute derived parameters, and display all
         parameters in the correct order.
-        '''
+        """
         # cosmo parameters
         _validate_group(COSMO_PARAMS, self.P)
         _compute_derived_cosmo(self.P)

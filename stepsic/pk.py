@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Tuple
 
 import scipy
 import numpy as np
@@ -31,7 +30,7 @@ log = logging.getLogger(__name__)
 
 
 def _cell_size(nvox: NDArray[np.int64], boxsize: NDArray[np.float64]) -> float:
-    r'''
+    r"""
     Compute the isotropic cell size for a cubic-voxel mesh.
 
     Parameters
@@ -52,7 +51,7 @@ def _cell_size(nvox: NDArray[np.int64], boxsize: NDArray[np.float64]) -> float:
     ValueError
         If the per-axis cell sizes deviate by more than 0.1 % from the
         isotropic value (indicating a non-cubic voxel grid).
-    '''
+    """
     dcell = boxsize / nvox
     dk = np.min(boxsize) / np.min(nvox)
     if not np.allclose(dcell, dk, rtol=1e-3):
@@ -74,7 +73,7 @@ def _deposit_overdensity_k(
     method: str,
     origin: FloatVec3,
 ) -> ComplexField:
-    r'''
+    r"""
     Deposit particles and return the Fourier-space overdensity field.
 
     Parameters
@@ -96,7 +95,7 @@ def _deposit_overdensity_k(
     -------
     delta_k : complex ndarray of shape (Nx, Ny, Nz//2+1)
         Fourier-space overdensity from ``rfftn``.
-    '''
+    """
     N_cells = int(np.prod(nvox))
     rho_grid = deposit_field(
         x, nvox=nvox, boxsize=boxsize, values=mass,
@@ -118,7 +117,7 @@ def _weight_rfft_modes(
     nvox: IntVec3,
     shape: tuple[int, ...],
 ) -> RealField:
-    r'''
+    r"""
     Return conjugate-pair weights for an ``rfftn``-stored Fourier grid.
 
     Notes
@@ -129,7 +128,7 @@ def _weight_rfft_modes(
     The self-conjugate planes ``k_z = 0`` and, for even ``nvox[2]``, the
     Nyquist plane ``k_z = k_\mathrm{Ny}`` are stored only once and carry
     weight 1.
-    '''
+    """
     if len(shape) != 3:
         raise ValueError(
             f'Expected a 3D Fourier grid shape, got {shape!r}.'
@@ -157,7 +156,7 @@ def _build_k_bin_edges(
     kmax: float | None = None,
     dk_bin: float | None = None,
 ) -> RealField:
-    r'''
+    r"""
     Construct isotropic shell bin edges for power-spectrum estimation.
 
     Parameters
@@ -182,7 +181,7 @@ def _build_k_bin_edges(
     smallest fundamental frequency across all axes.  This is the most
     conservative default for isotropic binning of an anisotropic box. The
     default Nyquist cutoff is ``pi / dk``.
-    '''
+    """
     boxsize = np.broadcast_to(boxsize, (3,)).astype(np.float64)
 
     k_fund = 2.0 * np.pi / np.max(boxsize)
@@ -217,8 +216,8 @@ def _bin_isotropic_modes(
     kmin: float | None = None,
     kmax: float | None = None,
     dk_bin: float | None = None,
-) -> Tuple[RealField, RealField, NDArray[np.int64]]:
-    r'''
+) -> tuple[RealField, RealField, NDArray[np.int64]]:
+    r"""
     Bin a per-mode scalar field over isotropic Fourier shells.
 
     Parameters
@@ -245,7 +244,7 @@ def _bin_isotropic_modes(
         Weighted shell average of ``values``.
     nmodes : ndarray
         Number of independent Fourier modes in each populated shell.
-    '''
+    """
     if values.shape != kmod.shape:
         raise ValueError(
             'values and kmod must have identical shapes, got '
@@ -303,8 +302,8 @@ def measure_pk_from_delta_k(
     kmin: float | None = None,
     kmax: float | None = None,
     dk_bin: float | None = None,
-) -> Tuple[RealField, RealField, NDArray[np.int64]]:
-    r'''
+) -> tuple[RealField, RealField, NDArray[np.int64]]:
+    r"""
     Measure the isotropic power spectrum directly from a Fourier overdensity field.
 
     Parameters
@@ -329,7 +328,7 @@ def measure_pk_from_delta_k(
     -------
     k_centres, pk, nmodes : tuple of ndarray
         Binned isotropic power spectrum and independent mode counts.
-    '''
+    """
     boxsize = np.broadcast_to(boxsize, (3,)).astype(np.float64)
     nvox = np.asarray(nvox, dtype=np.int64)
 
@@ -379,8 +378,8 @@ def measure_pk(
     kmin: float | None = None,
     kmax: float | None = None,
     dk_bin: float | None = None,
-) -> Tuple[RealField, RealField, NDArray[np.int64]]:
-    r'''
+) -> tuple[RealField, RealField, NDArray[np.int64]]:
+    r"""
     Measure the isotropic power spectrum from a particle distribution
     in a periodic box.
 
@@ -414,18 +413,15 @@ def measure_pk(
     deconvolve : bool
         If ``True`` (default), divide out the Fourier-space window of
         the mass-assignment kernel so that the recovered P(k) is not
-        suppressed near the Nyquist frequency. When ``interlace=True``,
-        deconvolution is always applied (the leading aliasing term that
-        normally contaminates naive deconvolution is cancelled by the
-        interlacing).
+        suppressed near the Nyquist frequency. This option is independent
+        of ``interlace``; interlacing does not enable deconvolution.
     interlace : bool
         If ``True``, use the interlacing technique of Sefusatti et al.
         (2016) to suppress aliasing. Two density assignments are
         performed - one at the normal grid origin and one shifted by
         half a cell in every direction - then averaged in Fourier space
         with the appropriate phase correction. This doubles the cost
-        of the deposit step but allows accurate deconvolution up to
-        :math:`\sim 0.9\,k_\mathrm{Ny}`.
+        of the deposit step and reduces aliasing near the Nyquist frequency.
     subtract_shot : bool
         If ``True`` (default), subtract the Poisson shot-noise floor
         :math:`P_\mathrm{shot} = V_\mathrm{box} / N_\mathrm{part}`.
@@ -473,23 +469,19 @@ def measure_pk(
 
     Examples
     --------
-    Measure the power spectrum of a periodic grid IC at z = 49:
+    Given perturbed positions ``perturbed_pos`` in a centered periodic box:
 
     >>> import numpy as np
-    >>> from stepsic.field import cubic_voxels, white_noise, generate_delta_k
-    >>> from stepsic.lpt import lpt1
-    >>> from stepsic.analysis import measure_pk
+    >>> from stepsic.pk import measure_pk
     >>> Lbox = np.array([500.0, 500.0, 500.0])  # Mpc/h
     >>> nmesh = 64
-    >>> nvox, dk = cubic_voxels(nmesh, Lbox)
-    >>> # ... generate IC with lpt1 ...
     >>> # Shift particles from [-L/2, L/2] to [0, L] if needed:
-    >>> pos_shifted = perturbed_pos + Lbox / 2
+    >>> pos_shifted = (perturbed_pos + Lbox / 2) % Lbox
     >>> k, pk, modes = measure_pk(
     ...     pos_shifted, Lbox, nmesh,
     ...     method='cic', interlace=True,
     ... )
-    '''
+    """
     boxsize = np.broadcast_to(boxsize, (3,)).astype(np.float64)
     N_part = x.shape[0]
 

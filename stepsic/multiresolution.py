@@ -20,7 +20,7 @@ def _mass_interp_weights(
         mass: RealField,
         mass_tab: RealField
 ) -> tuple[np.ndarray, np.ndarray, RealField]:
-    '''
+    """
     Bracketing sample indices and weights for linear interpolation in mass.
 
     Parameters
@@ -41,7 +41,7 @@ def _mass_interp_weights(
         ``(1 - w_hi) * samples[j_lo] + w_hi * samples[j_hi]`` reproduces
         ``np.interp`` on the ascending mass axis (linear inside the
         table, constant extrapolation outside).
-    '''
+    """
     mass = np.asarray(mass, dtype=np.float64)
     mass_tab = np.asarray(mass_tab, dtype=np.float64)
     nsamp = mass_tab.size
@@ -66,29 +66,30 @@ def create_nres_mass_map(
         M_box: float,
         boxsize: FloatVec3
 ) -> tuple[RealField, RealField]:
-    '''
-    Creates a lookup table for the number of voxels per mass bin
-    for a variable resolution grid in a regular StePS simulation.
+    """
+    Map ascending particle masses to a coarse-to-fine mesh hierarchy.
 
     Parameters
     ----------
     n_grid_samples : int
         Number of grids with different resolutions.
     mass_list : ndarray
-        Array containing the sorted unique particle masses.
+        Nonempty array of unique particle masses in ascending order.
     M_box : float
-        Total mass in the simulation box (in 1e11 Msol).
+        Total mass in the simulation box, in the same units as ``mass_list``.
     boxsize : ndarray
-        Box dimensions in [Mpc]. Can be a scalar for a cubical box or
-        an array in the form of `(Lx, Ly, Lz)` for a rectangular cuboid.
+        Box lengths ``(Lx, Ly, Lz)`` in Mpc/h.
 
     Returns
     -------
     nres_tab : ndarray of shape (n_grid_samples,)
-        Array containing the number of resolution elements for each grid.
+        Shortest-axis resolution requests, stored as floating-point values.
+        Pass each to :func:`~stepsic.field.cubic_voxels` to obtain three
+        even mesh dimensions and the physical cell spacing.
     mass_tab : ndarray of shape (n_grid_samples,)
-        Array containing the mass values corresponding to each grid.
-    '''
+        Corresponding sample masses in descending order. The coarsest
+        mesh represents the largest mass.
+    """
     nres_list = np.min(boxsize) // np.cbrt(np.prod(boxsize) * mass_list / M_box)
     idx = np.linspace(
         0, mass_list.size - 1, n_grid_samples, endpoint=True, dtype=int)
@@ -97,7 +98,7 @@ def create_nres_mass_map(
     nres_tab = nres_list[idx[::-1]]
     mass_tab = mass_list[idx[::-1]]
 
-    log.info('The generated resolution-mass map:') #The full nresx x nresy x nresz grid resolution is printed here
+    log.info('The generated resolution-mass map:')
     nvox = np.zeros((n_grid_samples, 3), dtype=int)
     for i in range(n_grid_samples):
         nvox[i], dk = cubic_voxels(nres_tab[i], boxsize)
@@ -108,6 +109,27 @@ def create_nres_mass_map(
 
 
 def density_samples(k_h_mpc, power_mpc_h3, hierarchy, params):
+    """Yield Fourier-space density fields in hierarchy order.
+
+    Parameters
+    ----------
+    k_h_mpc : ndarray
+        Positive input wavenumbers in h/Mpc, in strictly increasing order.
+    power_mpc_h3 : ndarray
+        Positive power spectrum values in (Mpc/h)^3 at the target redshift.
+    hierarchy : sequence of tuple
+        Each entry contains three integer mesh dimensions and a physical
+        cell spacing in Mpc/h, ordered from coarse to fine.
+    params : dict
+        ``SEED`` and ``DTYPE`` control white noise; ``PAIRED`` and ``FIXED``
+        control density generation. Each mesh uses the same seed.
+
+    Yields
+    ------
+    ndarray of complex
+        Density modes of shape ``(Nx, Ny, Nz//2+1)`` for the current mesh.
+        The generator releases its field reference before advancing.
+    """
     for nvox, cell_mpc_h in hierarchy:
         field = white_noise(nvox=nvox, seed=params['SEED'], dtype=params['DTYPE'])
         delta = generate_delta_k(
@@ -122,11 +144,42 @@ def multiresolution_lpt(
     positions_mpc_h, masses, mass_levels, hierarchy, density_fields, *,
     order, g1, g2, aHf1, aHf2, method, compensate,
 ):
-    """Return unwrapped displacements [Mpc/h] and raw LPT velocities.
+    """Interpolate LPT displacements and velocities between mass levels.
 
-    Each hierarchy entry is (three mesh dimensions, physical cell size in
-    Mpc/h). FFT index zero is registered to the finest mesh's voxel centre.
-    Raw velocities receive the Hubble and snapshot scaling in the driver.
+    Parameters
+    ----------
+    positions_mpc_h : ndarray of shape (N, 3)
+        Unperturbed particle positions in Mpc/h.
+    masses : ndarray of shape (N,)
+        Particle masses, in the same units as ``mass_levels``.
+    mass_levels : ndarray
+        Sample masses in descending order, one per hierarchy entry.
+    hierarchy : sequence of tuple
+        Nonempty coarse-to-fine sequence of (three mesh dimensions,
+        physical cell spacing in Mpc/h). Sampling aligns FFT index zero
+        with the finest mesh's voxel center.
+    density_fields : iterable of ndarray
+        Fourier-space density fields in hierarchy order, each of shape
+        ``(Nx, Ny, Nz//2+1)``. Consumed one at a time.
+    order : {1, 2}
+        LPT order.
+    g1, g2 : float
+        First- and second-order displacement growth coefficients.
+    aHf1, aHf2 : float
+        Velocity prefactors in km/s/Mpc for each order.
+    method : {'ngp', 'cic', 'tsc'}
+        Particle interpolation method.
+    compensate : bool
+        Apply mass-assignment deconvolution before interpolation.
+
+    Returns
+    -------
+    displacement : ndarray of shape (N, 3)
+        Unwrapped displacements in Mpc/h, linearly interpolated in mass.
+        Masses outside the table use the nearest endpoint.
+    velocity : ndarray of shape (N, 3)
+        Raw LPT velocities. The driver divides by ``h`` for km/s and by
+        ``sqrt(a)`` for the Gadget snapshot convention.
     """
     if order not in (1, 2) or len(hierarchy) != len(mass_levels) or not hierarchy:
         raise ValueError('LPT order and mass hierarchy must be valid')

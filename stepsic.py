@@ -121,7 +121,7 @@ def main():
         g1 = 1
         D1 = g1 * cosmo_colossus.Dzplus0(params['REDSHIFT'])
         g2 = G2_omega(params['SCALE'], params['OMEGA_M'], params['OMEGA_L'])
-        D2 = g2 * D1**2  # Bernardeau et al. 2002, eq. 97  # Unused!
+        D2 = g2 * D1**2  # Bernardeau et al. 2002, eq. 97
         log.info(f"D1(z={params['REDSHIFT']}) = {D1:.6f}")
         log.info(f"D2(z={params['REDSHIFT']}) = {D2:.6f}")
 

@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Union
 
 import numpy as np
 from numpy.typing import NDArray
@@ -25,37 +24,37 @@ from scipy.optimize import root
 
 
 class SphericalBinner(ABC):
-    r'''
+    r"""
     Base class for radial binning strategies in the non-compact
     (:math:`\mathbb{R}^3`) space of a spherical StePS simulation.
 
     Subclasses implement :meth:`r_limit` to define the radial bin edges.
-    '''
+    """
 
     @abstractmethod
     def r_limit(self, i: int) -> float:
-        '''Return the outer edge of the i-th radial bin.'''
+        """Return the outer edge of the i-th radial bin."""
         ...
 
 
     def shell_volume(self, i: int) -> float:
-        r'''Volume of the i-th spherical shell.
+        r"""Volume of the i-th spherical shell.
 
         .. math::
             V_i = \frac{4\pi}{3}\left(r_{i+1}^3 - r_i^3\right)
-        '''
+        """
         r0, r1 = self.r_limit(i), self.r_limit(i + 1)
         return 4.0 / 3.0 * np.pi * (r1**3 - r0**3)
 
 
     @staticmethod
     def invert_x_minus_sin_x(
-        y: Union[float, NDArray[np.floating]],
+        y: float | NDArray[np.floating],
         *,
         method: str = 'hybr',
         tol: float = 1e-06,
     ) -> NDArray[np.floating]:
-        r'''
+        r"""
         Solve :math:`x - \sin(x) = y` for :math:`x \in [0, 2\pi]`.
 
         The function :math:`f(x) = x - \sin(x)` is monotonically
@@ -81,7 +80,7 @@ class SphericalBinner(ABC):
         -------
         x : ndarray
             Solution(s) in :math:`[0, 2\pi]`.
-        '''
+        """
         y = np.atleast_1d(np.asarray(y, dtype=np.float64))
         if not np.all((y >= 0.0) & (y <= 2 * np.pi + 1e-10)):
             raise ValueError(f'y must be in [0, 2π], got y={y}')
@@ -108,21 +107,18 @@ class SphericalBinner(ABC):
 
 
 class SphericalLinear(SphericalBinner):
-    r'''
+    r"""
     Equal angular-step binning in the non-compact :math:`\mathbb{R}^3`
     space.
 
-    Uses an internal half-angle parametrization
-    :math:`\alpha \equiv \omega/2`, where :math:`\omega` is the
-    hyperspherical arc angle from Racz (2018). The angular step is
-    :math:`\Delta\alpha`, and the radial limit of the *i*-th bin is:
+    The angular step is :math:`\Delta\alpha`, and the radial limit
+    of the *i*-th bin is:
 
     .. math::
         r_i = R_{4D} \, \tan(i \, \Delta\alpha)
 
-    where :math:`R_{4D} = D_{4D}/2`.  This is equivalent to the paper
-    formula :math:`r = 2 R_{4D} \tan(\omega/2)` with
-    :math:`\alpha = \omega/2`.
+    where :math:`R_{4D} = D_{4D}/2`. The angular coordinate here is
+    defined by :math:`\alpha = \arctan(r/R_{4D})`.
 
     Parameters
     ----------
@@ -133,7 +129,7 @@ class SphericalLinear(SphericalBinner):
     last_cell_size : float
         Fractional size of the outermost cell relative to the
         uniform angular step.
-    '''
+    """
 
     def __init__(self, r_4d: float, n_bins: int, last_cell_size: float):
         self.r_4d = r_4d
@@ -147,7 +143,7 @@ class SphericalLinear(SphericalBinner):
 
 
 class SphericalConstantVolume(SphericalBinner):
-    r'''
+    r"""
     Constant-volume binning on the compact 3-sphere.
 
     Each bin encloses the same volume on :math:`S^3`, which translates
@@ -155,7 +151,7 @@ class SphericalConstantVolume(SphericalBinner):
     space.  The bin boundaries are found by inverting the relation
     :math:`x - \sin(x) = y`.
 
-    The stereographic projection follows [CITE: Racz+ 2018, Eq. 4–5]:
+    The stereographic projection is:
 
     .. math::
         r = D_s \, \tan\!\left(\frac{\omega}{2}\right), \qquad
@@ -173,7 +169,7 @@ class SphericalConstantVolume(SphericalBinner):
         Number of radial bins.
     r_3d : float
         Maximum simulation radius in the non-compact space.
-    '''
+    """
 
     def __init__(self, r_4d: float, n_bins: int, r_3d: float):
         self.r_4d = r_4d
@@ -192,20 +188,20 @@ class SphericalConstantVolume(SphericalBinner):
 
 
 class CylindricalBinner(ABC):
-    r'''
+    r"""
     Base class for radial binning strategies in the non-compact
     :math:`\mathbb{R}^2` plane of a cylindrical
     (:math:`S^1 \times \mathbb{R}^2`) StePS simulation.
-    '''
+    """
 
     @abstractmethod
     def r_limit(self, i: int) -> float:
-        '''Return the outer edge of the *i*-th radial bin.'''
+        """Return the outer edge of the *i*-th radial bin."""
         ...
 
 
     def shell_volume(self, i: int, Lz: float) -> float:
-        r'''Volume of the i-th cylindrical annulus.
+        r"""Volume of the i-th cylindrical annulus.
 
         .. math::
             V_i = \pi\,(r_{i+1}^2 - r_i^2) \, L_z
@@ -214,13 +210,13 @@ class CylindricalBinner(ABC):
         ----------
         Lz : float
             Height of the cylinder (periodic direction).
-        '''
+        """
         r0, r1 = self.r_limit(i), self.r_limit(i + 1)
         return np.pi * (r1**2 - r0**2) * Lz
 
 
 class CylindricalLinear(CylindricalBinner):
-    r'''
+    r"""
     Equal angular-step binning for a cylindrical simulation.
 
     Uses the same internal half-angle parametrization as
@@ -230,7 +226,7 @@ class CylindricalLinear(CylindricalBinner):
     .. math::
         r_i = R_{4D} \, \tan(i \, \Delta\alpha)
 
-    where :math:`\alpha = \omega/2` is the half-angle
+    where :math:`\alpha = \arctan(r/R_{4D})`
     (see :class:`SphericalLinear` for details).
 
     Parameters
@@ -242,7 +238,7 @@ class CylindricalLinear(CylindricalBinner):
     last_cell_size : float
         Fractional size of the outermost cell relative to the
         uniform angular step.
-    '''
+    """
 
     def __init__(self, r_4d: float, n_bins: int, last_cell_size: float):
         self.r_4d = r_4d
@@ -256,7 +252,7 @@ class CylindricalLinear(CylindricalBinner):
 
 
 class CylindricalConstantVolume(CylindricalBinner):
-    r'''
+    r"""
     Constant-volume binning for a cylindrical simulation.
 
     Each annulus encloses the same area on the compact 2-sphere
@@ -284,7 +280,7 @@ class CylindricalConstantVolume(CylindricalBinner):
         Number of radial bins.
     r_3d : float
         Maximum simulation radius in the non-compact space.
-    '''
+    """
 
     def __init__(self, r_4d: float, n_bins: int, r_3d: float):
         self.r_4d = r_4d
@@ -298,7 +294,7 @@ class CylindricalConstantVolume(CylindricalBinner):
 
 
 def create_binner(params: dict) -> SphericalBinner | CylindricalBinner:
-    r'''
+    r"""
     Create the appropriate radial binner from a parameter dictionary.
 
     Parameters
@@ -311,7 +307,7 @@ def create_binner(params: dict) -> SphericalBinner | CylindricalBinner:
     -------
     SphericalBinner or CylindricalBinner
         The constructed binner instance.
-    '''
+    """
     geometry = params['GEOMETRY']
     bin_mode = params['BIN_MODE']
     r_4d = params['D_4D'] / 2.0
@@ -350,5 +346,5 @@ def create_binner(params: dict) -> SphericalBinner | CylindricalBinner:
             "Cubical geometry does not use radial binning. "
             "Use TYPE='grid' or TYPE='random' instead of TYPE='shell'."
         )
-    else:  # parameters.py already checks this, but you can never be too careful
+    else:
         raise ValueError(f"Unknown GEOMETRY '{geometry}'.")

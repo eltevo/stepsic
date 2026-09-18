@@ -1,6 +1,6 @@
-'''
+"""
 StePS initial-condition generator package.
-'''
+"""
 
 import subprocess
 from textwrap import dedent
