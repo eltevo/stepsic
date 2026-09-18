@@ -308,9 +308,9 @@ def white_noise(nvox: FloatVec3, seed: Seed = None, dtype: np.dtype = np.float64
         log.info('white_noise seed: %d', int(seed))
     key = np.array((np.uint64(seed), np.uint64(0)), dtype=np.uint64)
 
-    ix = (scipy.fft.fftfreq(nx) * nx).astype(np.int64)
-    iy = (scipy.fft.fftfreq(ny) * ny).astype(np.int64)
-    iz = (scipy.fft.rfftfreq(nz) * nz).astype(np.int64)
+    ix = np.rint(scipy.fft.fftfreq(nx) * nx).astype(np.int64)
+    iy = np.rint(scipy.fft.fftfreq(ny) * ny).astype(np.int64)
+    iz = np.rint(scipy.fft.rfftfreq(nz) * nz).astype(np.int64)
     nz_half = nz // 2 + 1
 
     w_k = np.empty((nx, ny, nz_half), dtype=np.result_type(dtype, np.complex64))
