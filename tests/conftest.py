@@ -4,72 +4,59 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import toml
+from scipy.integrate import quad
 
 from stepsic.cosmology import CAMBCosmology
-from stepsic.field import white_noise
-from stepsic.interpolation import GridGeometry
-from stepsic.parameters import CosmoParameters
 
 
-SEEDS = (0, 42, 112358)
-TESTS_DIR = Path(__file__).parent
+TINY_CONFIG = Path(__file__).parent / "data" / "tiny-config.toml"
 
 
-@pytest.fixture(scope="session")
-def wn16() -> np.ndarray:
-    return white_noise((16, 16, 16), seed=42)
+def linear_growth(a: float, omega_m: float) -> float:
+    """Growing mode D(a) = (5/2) Omega_m E(a) int_0^a da' / (a' E)^3, D -> a early.
+
+    Exact for flat matter + Lambda without radiation (Heath 1977).
+    """
+    E = lambda x: np.sqrt(omega_m / x**3 + 1.0 - omega_m)
+    integral = quad(lambda x: (x * E(x)) ** -3, 0.0, a, epsabs=0.0, epsrel=1e-12)[0]
+    return 2.5 * omega_m * E(a) * integral
 
 
-@pytest.fixture(scope="session")
-def wn32() -> np.ndarray:
-    return white_noise((32, 32, 32), seed=42)
-
-
-@pytest.fixture
-def grid_geom():
-    def make(
-        *,
-        nvox=(8, 8, 8),
-        boxsize=(8.0, 8.0, 8.0),
-        vox_offset=0.5,
-        origin=(0.0, 0.0, 0.0),
-        periodic=True,
-    ) -> GridGeometry:
-        return GridGeometry(
-            nvox=np.asarray(nvox, dtype=np.int64),
-            boxsize=np.broadcast_to(boxsize, (3,)).astype(np.float64),
-            vox_offset=vox_offset,
-            origin=np.broadcast_to(origin, (3,)).astype(np.float64),
-            periodic=periodic,
-        )
-
-    return make
-
-
-@pytest.fixture(scope="session")
-def tiny_params() -> dict:
-    return CosmoParameters(TESTS_DIR / "data" / "tiny-config.toml").get_parameters()
+def growth_rate(a: float, omega_m: float) -> float:
+    """f = dln D / dln a of `linear_growth`, differentiated analytically."""
+    E2 = omega_m / a**3 + 1.0 - omega_m
+    integral = linear_growth(a, omega_m) / (2.5 * omega_m * np.sqrt(E2))
+    return -1.5 * omega_m / (a**3 * E2) + 1.0 / (a**2 * E2**1.5 * integral)
 
 
 @pytest.fixture
-def params_factory():
-    def make(**overrides) -> dict:
-        params = {
-            "GEOMETRY": "spherical",
-            "BIN_MODE": "volume",
-            "D_4D": 20.0,
-            "NRBINS": 8,
-            "R_3D": 30.0,
-            "RHO_MEAN": 2.0,
-            "NSHELL": 16,
-            "LBOX": np.array([60.0, 60.0, 20.0]),
-            "SEED": 42,
-            "RCRIT": 0.0,
-        }
-        params.update(overrides)
-        return params
+def write_config(tmp_path):
+    """Write the tiny config with overrides; each call gets its own IC_DIR."""
+    counter = iter(range(1000))
 
-    return make
+    def write(**overrides) -> Path:
+        index = next(counter)
+        config = toml.load(TINY_CONFIG)
+        config["IC_DIR"] = str(tmp_path / f"ics-{index}")
+        config.update(overrides)
+        path = tmp_path / f"config-{index}.toml"
+        path.write_text(toml.dumps(config))
+        return path
+
+    return write
+
+
+@pytest.fixture
+def tiny_chunks(monkeypatch):
+    """Shrink the memory-bounding chunk sizes so every chunked loop runs many times."""
+    monkeypatch.setattr("stepsic.field._SPECTRAL_SLAB_BUDGET_BYTES", 1)
+    monkeypatch.setattr(
+        "stepsic.interpolation.FieldInterpolator._PARTICLES_PER_CHUNK", 7
+    )
+    monkeypatch.setattr(
+        "stepsic.multiresolution._ACCUMULATION_PARTICLES_PER_CHUNK", 5
+    )
 
 
 @pytest.fixture(scope="session")

@@ -66,9 +66,8 @@ known_first_party = ["stepsic"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-ra --strict-markers -m 'not slow'"
+addopts = "-ra --strict-markers"
 markers = [
-    "slow: >2s; excluded from default run",
     "camb: requires CAMB/Colossus calls",
 ]
 filterwarnings = ["error"]
