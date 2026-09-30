@@ -140,7 +140,8 @@ def main():
                 YHe=params['YHE'], TCMB=params['TCMB'], zrei=params['ZREI'],
                 w0=params['W0'], wa=params['WA'], nonlinear=False)
             kh, pk, pk3 = cosmo_camb.get_spectrum(
-                z=0, As=params['AS'], ns=params['NS'], sigma8_init=params['SIGMA8'],
+                z=0, As=params['AS'], ns=params['NS'],
+                sigma8_init=params['SIGMA8'] if params['RESCALE_SIGMA8'] else None,
                 kmin=1/np.min(params['LBOX']), kmax=100, npoints=2048)
             pk = pk[0]*D1**2  # Backscale P(k,z=0) with D1^2 to desired `z`
         elif params['SPECTRUM'] == 'input':

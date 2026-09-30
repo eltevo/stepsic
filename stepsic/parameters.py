@@ -235,6 +235,7 @@ IC_PARAMS: tuple[Param, ...] = (
 
     # -- Power spectrum ------------------------------------------------
     Param('SPECTRUM', ptype=PType.STRING, label="Spectrum type", choices=('input', 'camb')),
+    Param('RESCALE_SIGMA8', ptype=PType.BOOL, label="Rescale A_s to sigma_8", condition=lambda P: P.get('SPECTRUM') == 'camb'),
     Param('NONLINEAR', ptype=PType.BOOL, label="Use nonlinear spectrum", condition=lambda P: P.get('SPECTRUM') == 'camb'),
     Param('HALOFIT', ptype=PType.STRING, label="Halofit version", condition=lambda P: P.get('SPECTRUM') == 'camb' and P.get('NONLINEAR', False)),
     Param('INPUT_SPECTRUM', ptype=PType.PATH, label="Input spectrum file", condition=lambda P: P.get('SPECTRUM') == 'input'),

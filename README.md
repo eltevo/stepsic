@@ -153,7 +153,7 @@ The `NMESHSAMPLES` parameter sets the number of sampled mesh levels.
 
 ### Cosmology, spectrum, units, and output
 
-`COSMOLOGY` selects a built-in parameter set from [stepsic/config/cosmology.toml](stepsic/config/cosmology.toml); any explicitly set cosmological parameter in the run config overrides the selected baseline. `SPECTRUM = "camb"` computes the linear power spectrum internally, while `SPECTRUM = "input"` reads a tabulated spectrum from `INPUT_SPECTRUM`.
+`COSMOLOGY` selects a built-in parameter set from [stepsic/config/cosmology.toml](stepsic/config/cosmology.toml); any explicitly set cosmological parameter in the run config overrides the selected baseline. `SPECTRUM = "camb"` computes the linear total-matter power spectrum internally, while `SPECTRUM = "input"` reads a tabulated spectrum from `INPUT_SPECTRUM`. With `RESCALE_SIGMA8 = true`, `AS` is rescaled so that this spectrum has $\sigma_8$ = `SIGMA8` at $z=0$; with `false`, `AS` is used as given.
 
 `COMOVING`, `HINDEPENDENT`, and the `UNIT_*` parameters define the unit conventions. The defaults are chosen for StePS-compatible internal units.
 

@@ -264,10 +264,11 @@ class CAMBCosmology:
             log.info('Using linear theory only.')
             self.params.NonLinear = camb.model.NonLinear_none
 
-    def get_sigma8(self, z=0, *, As=2.1064e-09, ns=0.96822, kmax=1.0):
+    def get_sigma8(self, z=0, *, As=2.1064e-09, ns=0.96822, kmax=1.0,
+            component='delta_tot'):
         r"""
-        Calculate the RMS matter fluctuation amplitude :math:`\sigma_8`
-        at given redshift ``z`` using CAMB.
+        Calculate the RMS linear fluctuation amplitude :math:`\sigma_8` of
+        one spectrum component at given redshift ``z`` using CAMB.
         
         Parameters
         ----------
@@ -281,36 +282,42 @@ class CAMBCosmology:
             Scalar spectral index.
         kmax : float
             Maximum wavenumber in :math:`h^{-1}\,\mathrm{Mpc}`.
+        component : str
+            CAMB spectrum variable, e.g. 'delta_tot' for total matter.
 
         Returns
         -------
         float
-            The RMS matter fluctuation amplitude :math:`\sigma_8` at
-            redshift :math:`z`.
+            The RMS fluctuation amplitude :math:`\sigma_8` of ``component``
+            at redshift :math:`z`.
         """
         self.params.InitPower.set_params(As=As, ns=ns)
         self.params.set_matter_power(redshifts=[z], kmax=kmax)
         results = camb.get_results(self.params)
-        sigma8 = results.get_sigma8()[0]
-        return sigma8
+        return results.get_sigmaR(
+            8.0, var1=component, var2=component, hubble_units=True)[0]
     
-    def _rescale_As(self, target_sigma8, As=2.1064e-09, ns=0.96822, kmax=1.0):
+    def _rescale_As(self, target_sigma8, As=2.1064e-09, ns=0.96822, kmax=1.0,
+            component='delta_tot'):
         r"""
         Rescale the matter fluctuation amplitude :math:`A_s` such that
-        :math:`\sigma_8(z=0, A_s=\mathrm{new\_As}) = \mathrm{target\_sigma8}`.
+        :math:`\sigma_8(z=0, A_s=\mathrm{new\_As}) = \mathrm{target\_sigma8}`
+        for ``component``.
         """
-        sigma8_now = self.get_sigma8(z=0, As=As, ns=ns, kmax=kmax)
+        sigma8_now = self.get_sigma8(
+            z=0, As=As, ns=ns, kmax=kmax, component=component)
         if target_sigma8 is None or np.isclose(sigma8_now, target_sigma8, rtol=1e-4):
             return sigma8_now, As
         scale = (target_sigma8 / sigma8_now)**2
         log.info(f'Rescaling matter-fluctuation amplitude by {scale:.3g}')
         As_new = As * scale
-        sigma8_new = self.get_sigma8(z=0, As=As_new, ns=ns, kmax=kmax)
+        sigma8_new = self.get_sigma8(
+            z=0, As=As_new, ns=ns, kmax=kmax, component=component)
         return sigma8_new, As_new
 
     def get_spectrum(self, *,
             z=127, As=2.1064e-09, ns=0.96822, sigma8_init=None,
-            kmin=0.01, kmax=1.0, npoints=512, component='delta_cdm'):
+            kmin=0.01, kmax=1.0, npoints=512, component='delta_tot'):
         r"""
         Calculate the matter power spectrum using CAMB.
 
@@ -324,9 +331,9 @@ class CAMBCosmology:
             scales, typically set to match the observed :math:`\sigma_8`.
         ns : float
             Scalar spectral index.
-        sigma8_init : float
-            Rescale the matter power spectrum to the given :math:`\sigma_8`
-            value.
+        sigma8_init : float or None
+            If given, rescale ``As`` so that the returned ``component`` has
+            this :math:`\sigma_8` at :math:`z=0`.
         kmin : float
             Minimum wavenumber in :math:`h^{-1}\,\mathrm{Mpc}`.
         kmax : float
@@ -342,7 +349,8 @@ class CAMBCosmology:
         if self.params.NonLinear != camb.model.NonLinear_none:
             # Non-linear corrections are baked into the transfer functions,
             # so rescaling As requires full recomputations.
-            sigma8, As = self._rescale_As(sigma8_init, As=As, ns=ns, kmax=kmax)
+            sigma8, As = self._rescale_As(
+                sigma8_init, As=As, ns=ns, kmax=kmax, component=component)
             log.info(f'Value for matter fluctuation amplitude used: {sigma8 = :.4f}')
             self.params.set_matter_power(redshifts=np.atleast_1d(z).tolist(), kmax=kmax)
             results = camb.get_results(self.params)
@@ -357,14 +365,20 @@ class CAMBCosmology:
             self.params.InitPower.set_params(As=As, ns=ns)
             self.params.set_matter_power(redshifts=z_calc, kmax=kmax)
             results = camb.get_results(self.params)
-            sigma8 = results.get_sigma8_0()
+
+            def sigma8_z0():
+                # CAMB orders redshifts by increasing time, so z=0 is last.
+                return results.get_sigmaR(
+                    8.0, var1=component, var2=component, hubble_units=True)[-1]
+
+            sigma8 = sigma8_z0()
             if sigma8_init is not None and not np.isclose(sigma8, sigma8_init, rtol=1e-4):
                 scale = (sigma8_init / sigma8)**2
                 log.info(f'Rescaling matter-fluctuation amplitude by {scale:.3g}')
                 As = As * scale
                 self.params.InitPower.set_params(As=As, ns=ns)
                 results.power_spectra_from_transfer(self.params.InitPower)
-                sigma8 = results.get_sigma8_0()
+                sigma8 = sigma8_z0()
             log.info(f'Value for matter fluctuation amplitude used: {sigma8 = :.4f}')
 
         kh, z_out, pk = results.get_matter_power_spectrum(
