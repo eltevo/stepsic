@@ -24,9 +24,8 @@ For each padding ratio and seed, the archive records:
 * normalized antipodal boundary-shell displacement correlation (the
   direct periodic-image signature), for every alpha including the
   reference;
-* mass-weighted P(k) of the central region (common spherical/cylindrical
-  window, identical particles, so the ratio to the reference is window-
-  independent);
+* mass-weighted P(k) of the central region, measured through the same
+  spherical or cylindrical aperture for every padding factor;
 * monopole diagnostics after displacement: mass fraction remaining
   inside the domain, mean radial displacement of the boundary shell,
   mean |Psi_r| at the boundary and the implied surface-flux estimate
@@ -57,11 +56,11 @@ import scipy.fft
 from scipy.spatial import cKDTree
 
 from stepsic.field import white_noise, generate_delta_k, wrap
-from stepsic.geometry import create_shell_particles
+from stepsic.particles import create_shell_particles
 from stepsic.pk import measure_pk
 from stepsic.units import UNIT_V
 
-from validation._common.cosmology_fields import (
+from validation._common.fields import (
     ArrayF,
     ArrayI,
     GrowthData,
@@ -444,7 +443,7 @@ def run_padding_sweep(
             mono_abspsi_r[i_seed, i_a] = abspsi
             mono_pred_flux[i_seed, i_a] = s_over_v * abspsi
 
-            # Core-region mass-weighted P(k) (common window across alpha).
+            # Core-region mass-weighted P(k), using a common aperture across alpha.
             core_pos = wrap(xpert[core_mask] - core_lo, core_box)
             k_c, pk_c, _ = measure_pk(
                 core_pos, core_box, nvox=core_nvox, mass=mass[core_mask],
