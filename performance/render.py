@@ -65,7 +65,7 @@ def render_figure(
          nmesh**3 * np.log2(nmesh), r'$N^3\log_2 N$ reference'),
         ('peak_rss_bytes', GIB, 'Peak RSS [GiB]', nmesh**3, r'$N^3$ reference'),
     )
-    for axis, (metric, unit, label, guide, guide_label) in zip(axes, panels):
+    for axis, letter, (metric, unit, label, guide, guide_label) in zip(axes, 'ab', panels):
         for order in LPT_ORDERS:
             median, low, high = np.asarray(
                 [summary[(order, size)][metric] for size in GRID_SIZES]
@@ -81,9 +81,10 @@ def render_figure(
             nmesh, guide * summary[(1, 256)][metric][0] / unit / guide[anchor],
             color='0.45', linestyle='--', linewidth=1.1, label=guide_label,
         )
-        axis.set_ylabel(label)
+        axis.set_title(label, loc='left', fontsize=8)
+        axis.text(.03, .91, f'({letter})', transform=axis.transAxes, va='top', ha='left')
         axis.legend(
-            frameon=False, loc='upper left', handlelength=1.5, handletextpad=.5,
+            frameon=False, loc='lower right', handlelength=1.5, handletextpad=.5,
         )
     for axis in axes:
         axis.set_xscale('log', base=2)
