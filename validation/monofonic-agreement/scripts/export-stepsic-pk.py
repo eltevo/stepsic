@@ -41,8 +41,9 @@ import numpy as np
 
 
 from stepsic.cosmology import CAMBCosmology
+from stepsic.parameters import compute_derived_cosmo
 
-from validation._common.cosmology_fields import VALIDATION_COSMOLOGY, VALIDATION_COSMOLOGY_NAME
+from validation._common.fields import VALIDATION_COSMOLOGY, VALIDATION_COSMOLOGY_NAME
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
@@ -84,9 +85,10 @@ def export_transfer(
     expects).
     '''
     cosmo = _load_cosmology(cosmology_name)
-    h = cosmo['H0'] / 100.0
-    ombh2 = cosmo['OMEGA_B'] * h**2
-    omch2 = (cosmo['OMEGA_M'] - cosmo['OMEGA_B']) * h**2
+    # stepsic derives the CDM density with the massive-neutrino density removed.
+    derived = dict(cosmo)
+    compute_derived_cosmo(derived)
+    ombh2, omch2 = derived['OMBH2'], derived['OMCH2']
 
     log.info('Cosmology: %s', cosmology_name)
     log.info('  H0=%.3f, Omega_m=%.4f, sigma8=%.4f, ns=%.5f',

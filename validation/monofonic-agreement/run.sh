@@ -24,17 +24,26 @@ set -euo pipefail
 #    3. run_monofonic   - write config + run monofonIC
 #    4. compare         - measure P(k), displacement, and velocity differences
 #    5. plot            - 3-panel comparison figure
+#    6. evaluate        - checks written to result.json
+#    7. isolated_orders      - per-order amplitude ratio and correlation of the
+#                              displacement modes of the 1LPT and 2LPT runs
+#    8. plot_isolated_orders - article figure isolated-orders.pdf
+#  Steps 7-8 run only in the medium run root, from the custom runs of the
+#  profiles monofonic-{64,128,256}-lpt{1,2} (ISOLATED_NMESH); a run of any
+#  other profile skips them.
 #
 #  Usage:
 #    bash run.sh [OPTIONS]
 #
 #  Options:
-#    --size=SIZE    small, medium (default), or approved large profile
-#    --step=N       Start from step N (1–5, default 1)
-#    --plot-only    Jump to step 5 (plotting only)
+#    --size=SIZE    small or medium (default)
+#    --step=N       Start from step N (1–6, default 1)
+#    --plot-only    Jump to step 5 (plotting and evaluation)
 #    --force        Re-run all steps regardless of cached outputs
+#    --force-step=A,B  Re-run the named steps
 #    --clean        Delete cache/ before running
 #    --config=PATH  Select a typed custom TOML profile
+#    --evaluation=MODE  gate (default), report, or skip
 #    --list-steps   Print the step list and exit
 #    -h, --help     Print this help text and exit
 #
@@ -42,14 +51,13 @@ set -euo pipefail
 #    --skip-build   Skip step 2 (assume monofonIC binary already exists)
 #    --use-class    Use CLASS instead of CAMB_file for the transfer function
 #
-#  Configuration (edit config.env or export before running):
-#    STEPSIC_SRC, STEPSIC_PY, STEPSIC_ENV
-#    MONOFONIC_REPO, MONOFONIC_ENV
-#    N_MPI, OMP_NUM_THREADS
-#    LBOX, NMESH, Z_INIT, LPT_ORDER, MAS_METHOD, SEED
-#    COSMO_H0, COSMO_OMEGA_M, COSMO_OMEGA_B, COSMO_OMEGA_L,
-#    COSMO_NS, COSMO_AS, COSMO_SIGMA8, COSMO_TCMB, COSMO_YHE,
-#    COSMO_MNU, COSMO_KPIVOT, COSMO_W0, COSMO_WA, COSMO_NUR
+#  Configuration:
+#    Profile keys:  LBOX, NMESH, LPT_ORDER
+#    config.env:    STEPSIC_SRC, STEPSIC_PY, STEPSIC_ENV,
+#                   MONOFONIC_REPO, MONOFONIC_ENV, Z_INIT, MAS_METHOD, SEED,
+#                   ISOLATED_NMESH
+#    Environment:   N_MPI, OMP_NUM_THREADS, and any value above
+#    Cosmology:     Planck2018EE+BAO from _common/cosmology/
 #
 #  Examples:
 #    # Full pipeline from scratch
@@ -68,22 +76,49 @@ source "${BASEDIR}/../_common/lib.sh"
 vlib::parse_args "$@"
 vlib::prepare_campaign monofonic-agreement "${BASEDIR}" "${BASEDIR}/config.env"
 
-vlib::declare_steps run_stepsic build_monofonic run_monofonic compare plot evaluate
+# The isolated-orders steps aggregate finished custom runs into the medium run.
+ISOLATED_ORDERS=0
+if [[ "${VLIB_SIZE}" == medium && -n "${ISOLATED_NMESH}" ]]; then
+    ISOLATED_ORDERS=1
+fi
+vlib::declare_steps run_stepsic build_monofonic run_monofonic compare plot evaluate \
+    isolated_orders plot_isolated_orders
 vlib::manifest_implementation run_stepsic \
     "${BASEDIR}/scripts/export-stepsic-pk.py"
 vlib::manifest_implementation build_monofonic \
     "${BASEDIR}/scripts/prepare-monofonic-source.py"
 vlib::manifest_implementation compare \
-    "${BASEDIR}/scripts/compare-monofonic-run.py"
+    "${BASEDIR}/scripts/compare-monofonic-run.py" \
+    "${BASEDIR}/scripts/particles.py"
 vlib::manifest_implementation plot \
     "${BASEDIR}/scripts/compare-monofonic-plot.py"
 vlib::manifest_evaluator evaluate "${BASEDIR}/scripts/evaluate.py"
+vlib::manifest_implementation isolated_orders \
+    "${BASEDIR}/scripts/compare-orders.py" \
+    "${BASEDIR}/scripts/particles.py"
+vlib::manifest_implementation plot_isolated_orders \
+    "${BASEDIR}/scripts/plot-isolated-orders.py"
 if (( VLIB_LIST_STEPS )); then
     vlib::profile_summary
     vlib::list_steps
     exit 0
 fi
 vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
+
+# Run root of the custom run of profile monofonic-<N>-lpt<order>.
+_isolated_run() {
+    local profile="${BASEDIR}/../_profiles/experiments/monofonic-${1}-lpt${2}.toml"
+    echo "${BASEDIR}/runs/custom/$(sha256sum "${profile}" | awk '{print $1}')"
+}
+if (( ISOLATED_ORDERS )); then
+    for _n in ${ISOLATED_NMESH}; do
+        for _order in 1 2; do
+            vlib::manifest_input isolated_orders \
+                "$(_isolated_run "${_n}" "${_order}")/cache/stepsic/ic.hdf5" \
+                "$(_isolated_run "${_n}" "${_order}")/cache/monofonic/monofonic_ics.hdf5"
+        done
+    done
+fi
 
 # Parse monofonic-specific flags from VLIB_EXTRA_ARGS.
 SKIP_BUILD=0
@@ -114,6 +149,7 @@ MONO_CACHE="${VLIB_CACHE_DIR}/monofonic"
 MONOFONIC_DIR="${MONOFONIC_DIR:-${BASEDIR}/monofonic}"
 MONOFONIC_BUILD="${MONOFONIC_BUILD:-${MONOFONIC_DIR}/build}"
 MONOFONIC_BIN="${MONOFONIC_BUILD}/monofonIC"
+vlib::manifest_implementation run_monofonic "${MONOFONIC_BIN}"
 
 # Stable paths for outputs.
 STEPSIC_TOML="${CONFIGS_DIR}/stepsic_monofonic.toml"
@@ -121,7 +157,12 @@ MONOFONIC_CONF="${CONFIGS_DIR}/monofonic.conf"
 STEPSIC_IC="${STEPSIC_CACHE}/ic.hdf5"
 STEPSIC_NOISE="${STEPSIC_CACHE}/ic_white_noise.hdf5"
 CAMB_PK_FILE="${STEPSIC_CACHE}/camb_transfer.dat"
-MONOFONIC_IC="${MONO_CACHE}/monofonic_ics.hdf5"
+MONOFONIC_OUTPUT_BASE="${MONO_CACHE}/monofonic_ics.hdf5"
+if (( N_MPI == 1 )); then
+    MONOFONIC_IC="${MONOFONIC_OUTPUT_BASE}"
+else
+    MONOFONIC_IC="${MONO_CACHE}/monofonic_ics.0.hdf5"
+fi
 COMPARISON_NPZ="${OUTPUT}/monofonic_comparison.npz"
 PLOT_OUTPUT="${OUTPUT}/validation-monofonic.pdf"
 
@@ -152,55 +193,7 @@ echo ""
 
 # -- Helpers -----------------------------------------------------------------
 
-# Write the stepsic TOML for the monofonic cross-validation.
-# Uses USE_DOUBLE=true and HINDEPENDENT=true (h-dependent units = Mpc/h).
-_write_stepsic_toml() {
-    vlib::atomic_text "${STEPSIC_TOML}" <<EOF
-GEOMETRY = "cubical"
-LBOX = [${LBOX}, ${LBOX}, ${LBOX}]
-PERIODIC = [1, 1, 1]
-R_3D = 0
-D_4D = 0
-RCRIT = 0
-BIN_MODE = "omega"
-NRBINS = 1
-COI = [0, 0, 0]
-TYPE = "grid"
-NGRID = ${NMESH}
-NPART = 0
-NSHELL = 0
-INPUT_GLASS = "none"
-IC_DIR = "${STEPSIC_CACHE}"
-IC_PREFIX = "stepsic"
-IC_FORMAT = "hdf5"
-SAVE_WHITE_NOISE = true
-USE_DOUBLE = true
-COSMOLOGY = "${COSMOLOGY_NAME}"
-SPECTRUM = "camb"
-NONLINEAR = false
-HALOFIT = "mead2020"
-SEED = ${SEED}
-COMOVING = true
-HINDEPENDENT = true
-LPTORDER = ${LPT_ORDER}
-NMESH = ${NMESH}
-REDSHIFT = ${Z_INIT}
-INTERPOLATION = "${MAS_METHOD}"
-COMPENSATE = false
-SPHEREMODE = false
-PAIRED = false
-FIXED = false
-NMESHSAMPLES = 1
-ROTATE = 0.0
-UNIT_L_IN_CM = 3.085678e24
-UNIT_M_IN_G = 1.989e44
-UNIT_V_IN_KMPS = 20.738652969844207
-INPUT_SPECTRUM = "none"
-INPUT_SPECTRUM_UNIT_L_IN_CM = 3.085678e24
-EOF
-}
-
-# Enforce the grid_fft.cc reset ordering required for valid FFT dimensions.
+# Prepare grid_fft.cc: FFT reset ordering and unscaled constraint-field import.
 _prepare_monofonic_source() {
     local source_path="${MONOFONIC_DIR}/src/grid_fft.cc"
     python3 "${BASEDIR}/scripts/prepare-monofonic-source.py" "${source_path}"
@@ -218,17 +211,6 @@ _ensure_monofonic_env() {
     echo "  -> ${MONOFONIC_ENV} created."
 }
 
-# Remove the monofonIC build environment; it is only needed to compile the
-# binary and is unnecessary once the build succeeds.
-_cleanup_monofonic_env() {
-    if ! conda env list | awk '{print $1}' | grep -Fxq "${MONOFONIC_ENV}"; then
-        return 0
-    fi
-    echo "  Removing build env '${MONOFONIC_ENV}'..."
-    conda env remove --yes -n "${MONOFONIC_ENV}"
-    echo "  -> ${MONOFONIC_ENV} removed."
-}
-
 # ============================================================================
 # Steps
 # ============================================================================
@@ -236,7 +218,26 @@ _cleanup_monofonic_env() {
 # -- Step 1: run_stepsic -----------------------------------------------------
 if vlib::step_check "run_stepsic" "${STEPSIC_IC}"; then
     vlib::clear_dir "${STEPSIC_CACHE}"
-    _write_stepsic_toml
+    vlib::stepsic::write_toml "${STEPSIC_TOML}" \
+        "GEOMETRY=cubical" \
+        "LBOX=[${LBOX}, ${LBOX}, ${LBOX}]" \
+        "PERIODIC=[1, 1, 1]" \
+        "R_3D=0" \
+        "D_4D=0" \
+        "RCRIT=0" \
+        "NRBINS=1" \
+        "TYPE=grid" \
+        "NGRID=${NMESH}" \
+        "NPART=0" \
+        "NSHELL=0" \
+        "IC_DIR=${STEPSIC_CACHE}" \
+        "SAVE_WHITE_NOISE=true" \
+        "USE_DOUBLE=true" \
+        "SEED=${SEED}" \
+        "LPTORDER=${LPT_ORDER}" \
+        "NMESH=${NMESH}" \
+        "REDSHIFT=${Z_INIT}" \
+        "INTERPOLATION=${MAS_METHOD}"
     echo "  Config: ${STEPSIC_TOML}"
     vlib::run_in_env "${STEPSIC_ENV}" python "${STEPSIC_PY}" "${STEPSIC_TOML}"
 
@@ -273,7 +274,7 @@ if (( SKIP_BUILD )); then
         echo "ERROR: --skip-build specified but binary not found: ${MONOFONIC_BIN}" >&2
         exit 1
     fi
-    echo "  build_monofonic - skipped (--skip-build; binary: ${MONOFONIC_BIN})"
+    vlib::step_skip "build_monofonic" "--skip-build" "${MONOFONIC_BIN}"
 elif vlib::step_check "build_monofonic" "${MONOFONIC_BIN}"; then
     if [[ ! -d "${MONOFONIC_DIR}" ]]; then
         echo "  Cloning monofonIC from ${MONOFONIC_REPO}..."
@@ -367,7 +368,6 @@ Omega_b         = ${COSMO_OMEGA_B}
 Omega_L         = ${COSMO_OMEGA_L}
 H0              = ${COSMO_H0}
 n_s             = ${COSMO_NS}
-A_s             = ${COSMO_AS}
 sigma_8         = ${COSMO_SIGMA8}
 Tcmb            = ${COSMO_TCMB}
 YHe             = ${COSMO_YHE}
@@ -378,7 +378,7 @@ m_nu2           = 0.0
 m_nu3           = 0.0
 w_0             = ${COSMO_W0}
 w_a             = ${COSMO_WA}
-ZeroRadiation   = false
+ZeroRadiation   = true
 
 ${_transfer_block}
 
@@ -392,8 +392,8 @@ ConstraintFieldName = ic_white_noise
 NumThreads      = ${OMP_NUM_THREADS}
 
 [output]
-format          = gadget_hdf5
-filename        = ${MONOFONIC_IC}
+format          = gadget_hdf5_double
+filename        = ${MONOFONIC_OUTPUT_BASE}
 EOF
 
     echo "  Config: ${MONOFONIC_CONF}"
@@ -408,7 +408,6 @@ EOF
         echo "ERROR: monofonIC did not produce ${MONOFONIC_IC}." >&2; exit 1
     fi
     echo "  -> ${MONOFONIC_IC}"
-    _cleanup_monofonic_env
     vlib::step_done "run_monofonic"
 fi
 
@@ -456,6 +455,38 @@ if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
         --figure "${PLOT_OUTPUT}" \
         --output "${OUTPUT}/result.json"
     vlib::step_done "evaluate"
+fi
+# -- Steps 7-8: isolated orders (medium run root only) -----------------------
+ISOLATED_ARCHIVES=()
+if (( ISOLATED_ORDERS )); then
+    for _n in ${ISOLATED_NMESH}; do
+        ISOLATED_ARCHIVES+=("${VLIB_CACHE_DIR}/isolated-orders-${_n}.npz")
+    done
+    if vlib::step_check "isolated_orders" "${ISOLATED_ARCHIVES[@]}"; then
+        for _n in ${ISOLATED_NMESH}; do
+            _one="$(_isolated_run "${_n}" 1)/cache"
+            _two="$(_isolated_run "${_n}" 2)/cache"
+            vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/compare-orders.py" \
+                --stepsic-one "${_one}/stepsic/ic.hdf5" \
+                --stepsic-two "${_two}/stepsic/ic.hdf5" \
+                --monofonic-one "${_one}/monofonic/monofonic_ics.hdf5" \
+                --monofonic-two "${_two}/monofonic/monofonic_ics.hdf5" \
+                --nmesh "${_n}" \
+                --box-mpc-h "${LBOX}" \
+                --redshift "${Z_INIT}" \
+                --output "${VLIB_CACHE_DIR}/isolated-orders-${_n}.npz"
+        done
+        vlib::step_done "isolated_orders"
+    fi
+    if vlib::step_check "plot_isolated_orders" "${OUTPUT}/isolated-orders.pdf"; then
+        vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot-isolated-orders.py" \
+            "${ISOLATED_ARCHIVES[@]}" \
+            --output "${OUTPUT}/isolated-orders.pdf"
+        vlib::step_done "plot_isolated_orders"
+    fi
+else
+    vlib::step_skip "isolated_orders" "medium run root with ISOLATED_NMESH only"
+    vlib::step_skip "plot_isolated_orders" "medium run root with ISOLATED_NMESH only"
 fi
 
 vlib::report_done

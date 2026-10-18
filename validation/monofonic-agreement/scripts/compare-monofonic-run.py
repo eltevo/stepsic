@@ -24,97 +24,29 @@ import argparse
 import logging
 import time
 from pathlib import Path
-from typing import TypeAlias
 
-import h5py
 import numpy as np
 
 from validation._common.evaluation import atomic_savez
-from numpy.typing import NDArray
 
 from stepsic.field import cubic_voxels
 from stepsic.pk import measure_pk
 
+from particles import (
+    ArrayF,
+    lagrangian_lattice_from_id,
+    read_gadget_hdf5,
+    sort_by_id,
+    wrap_periodic,
+)
+
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
-
-ArrayF: TypeAlias = NDArray[np.float64]
-
-
-# ---------------------------------------------------------------------------
-# Read initial conditions from HDF5.
-# ---------------------------------------------------------------------------
-
-def _read_gadget_hdf5(
-    path: str,
-    part_type: int = 1,
-) -> tuple[ArrayF, ArrayF, ArrayF]:
-    '''
-    Read positions, velocities, and IDs from a Gadget HDF5 IC file.
-
-    Returns
-    -------
-    pos : ndarray of shape (N, 3)
-        Particle positions.
-    vel : ndarray of shape (N, 3)
-        Particle velocities.
-    ids : ndarray of shape (N,)
-        Particle IDs.
-    '''
-    with h5py.File(path, 'r') as f:
-        grp = f[f'PartType{part_type}']
-        pos = grp['Coordinates'][:].astype(np.float64)
-        vel = grp['Velocities'][:].astype(np.float64)
-        ids = grp['ParticleIDs'][:].astype(np.int64)
-    return pos, vel, ids
-
-
-def _sort_by_id(
-    pos: ArrayF, vel: ArrayF, ids: ArrayF,
-) -> tuple[ArrayF, ArrayF, ArrayF]:
-    '''Sort arrays by particle ID so the same particles can be compared.'''
-    order = np.argsort(ids)
-    return pos[order], vel[order], ids[order]
-
-
-# ---------------------------------------------------------------------------
-#  Grid reconstruction
-# ---------------------------------------------------------------------------
-
-def _lagrangian_lattice_from_id(
-    ids: NDArray[np.int64],
-    nmesh: int,
-    dx: float,
-    *,
-    cell_offset: float,
-) -> ArrayF:
-    '''
-    Reconstruct each particle's unperturbed Lagrangian position from its ID.
-
-    Both stepsic and monofonIC index particles as
-    ``id = (ix * N + iy) * N + iz`` (C-order, z-fastest), but they place
-    them at different points within the cell:
-
-    - ``cell_offset = 0.5``: cell-centered, at ``(i + 0.5) * dx`` (stepsic).
-    - ``cell_offset = 0.0``: cell-corner, at ``i * dx`` (monofonIC ``sc``).
-
-    Returns positions in the [0, L) convention used by the Gadget output.
-    '''
-    ix = ids // (nmesh * nmesh)
-    iy = (ids // nmesh) % nmesh
-    iz = ids % nmesh
-    grid = np.stack([ix, iy, iz], axis=1).astype(np.float64)
-    return (grid + cell_offset) * dx
 
 
 # ---------------------------------------------------------------------------
 #  Per-particle residuals
 # ---------------------------------------------------------------------------
-
-def _wrap_periodic(d: ArrayF, lbox: float) -> ArrayF:
-    '''Wrap a displacement vector to [-L/2, +L/2] (periodic BCs).'''
-    return d - np.round(d / lbox) * lbox
-
 
 def _per_particle_residuals(
     field_a: ArrayF,
@@ -222,11 +154,11 @@ def run_comparison(
 
     # -- Read both IC files --
     log.info('Reading stepsic IC: %s', stepsic_ic)
-    pos_s, vel_s, ids_s = _read_gadget_hdf5(stepsic_ic)
+    pos_s, vel_s, ids_s = read_gadget_hdf5(stepsic_ic)
     log.info('  N = %d particles', len(ids_s))
 
     log.info('Reading monofonIC IC: %s', monofonic_ic)
-    pos_m, vel_m, ids_m = _read_gadget_hdf5(monofonic_ic)
+    pos_m, vel_m, ids_m = read_gadget_hdf5(monofonic_ic)
     log.info('  N = %d particles', len(ids_m))
 
     if len(ids_s) != len(ids_m):
@@ -239,16 +171,13 @@ def run_comparison(
     # Both codes should assign IDs 0..N-1 in grid order, but the
     # grid traversal order (C vs Fortran, x-fast vs z-fast) may differ.
     log.info('Sorting by particle ID...')
-    pos_s, vel_s, ids_s = _sort_by_id(pos_s, vel_s, ids_s)
-    pos_m, vel_m, ids_m = _sort_by_id(pos_m, vel_m, ids_m)
+    pos_s, vel_s, ids_s = sort_by_id(pos_s, vel_s, ids_s)
+    pos_m, vel_m, ids_m = sort_by_id(pos_m, vel_m, ids_m)
 
     if not np.array_equal(ids_s, ids_m):
-        log.warning(
-            'Particle ID sets do not match exactly. This likely means '
-            'the two codes use different ID conventions. Proceeding '
-            'with sorted order, but per-particle residuals may be '
-            'meaningless. Consider matching by grid position instead.'
-        )
+        raise ValueError('Particle identities must match exactly for field comparison')
+    if not np.array_equal(ids_s, np.arange(nmesh**3)):
+        raise ValueError('Particle identities must be the complete zero-based lattice')
 
     n_part = len(ids_s)
 
@@ -265,10 +194,10 @@ def run_comparison(
         '(stepsic offset=%g, monofonIC offset=%g cells)',
         nmesh, dk, stepsic_offset, monofonic_offset,
     )
-    lattice_s = _lagrangian_lattice_from_id(
+    lattice_s = lagrangian_lattice_from_id(
         ids_s, nmesh, dk, cell_offset=stepsic_offset,
     )
-    lattice_m = _lagrangian_lattice_from_id(
+    lattice_m = lagrangian_lattice_from_id(
         ids_m, nmesh, dk, cell_offset=monofonic_offset,
     )
 
@@ -288,18 +217,15 @@ def run_comparison(
     # -- Displacements --
     # Ψ = pos - lattice, wrapped to [-L/2, +L/2] for periodicity.
     log.info('Computing displacements...')
-    disp_s = _wrap_periodic(pos_s - lattice_s, lbox)
-    disp_m = _wrap_periodic(pos_m - lattice_m, lbox)
+    disp_s = wrap_periodic(pos_s - lattice_s, lbox)
+    disp_m = wrap_periodic(pos_m - lattice_m, lbox)
+    del lattice_s, lattice_m
 
     log.info(
         '  median |Ψ| stepsic = %.4e, monofonIC = %.4e Mpc/h',
         np.median(np.linalg.norm(disp_s, axis=1)),
         np.median(np.linalg.norm(disp_m, axis=1)),
     )
-
-    # Convert to kpc/h for better readability at high z.
-    disp_s_kpc = disp_s * 1e3  # [kpc/h]
-    disp_m_kpc = disp_m * 1e3
 
     abs_res_disp, rel_res_disp = _per_particle_residuals(disp_s, disp_m)
     abs_res_disp_kpc = abs_res_disp * 1e3  # [kpc/h]
@@ -328,35 +254,6 @@ def run_comparison(
         np.nanmedian(rel_res_vel), np.nanpercentile(rel_res_vel, 99),
     )
 
-    # -- P(k) --
-    log.info('Measuring P(k) from stepsic IC...')
-    nvox, dk = cubic_voxels(nmesh, boxsize)
-    k_ny = np.pi / dk
-    kmax = kmax_frac * k_ny
-
-    k_s, pk_s, nm_s = measure_pk(
-        pos_s, boxsize, nmesh,
-        method='cic', deconvolve=True, interlace=True,
-        subtract_shot=False, kmin=None, kmax=kmax, dk_bin=None,
-    )
-
-    log.info('Measuring P(k) from monofonIC IC...')
-    k_m, pk_m, nm_m = measure_pk(
-        pos_m, boxsize, nmesh,
-        method='cic', deconvolve=True, interlace=True,
-        subtract_shot=False, kmin=None, kmax=kmax, dk_bin=None,
-    )
-
-    # Verify k-binning is identical.
-    if not np.allclose(k_s, k_m):
-        raise RuntimeError('k-bin centres differ between the two P(k) measurements.')
-
-    pk_ratio = pk_s / pk_m
-    log.info(
-        'P(k) ratio: median = %.6f, min = %.6f, max = %.6f',
-        np.median(pk_ratio), np.min(pk_ratio), np.max(pk_ratio),
-    )
-
     # -- Histograms --
     log.info('Binning residual histograms (%d bins)...', nbins_hist)
 
@@ -374,8 +271,9 @@ def run_comparison(
     )
 
     # -- Displacement magnitude histograms for direct overlay --
-    mag_disp_s = np.linalg.norm(disp_s_kpc, axis=1)
-    mag_disp_m = np.linalg.norm(disp_m_kpc, axis=1)
+    # Magnitudes in kpc/h for better readability at high z.
+    mag_disp_s = np.linalg.norm(disp_s, axis=1) * 1e3
+    mag_disp_m = np.linalg.norm(disp_m, axis=1) * 1e3
     lo = min(mag_disp_s.min(), mag_disp_m.min())
     hi = max(mag_disp_s.max(), mag_disp_m.max())
     disp_edges = np.linspace(lo, hi if hi > lo else lo + 1, nbins_hist + 1)
@@ -399,15 +297,7 @@ def run_comparison(
     results['meta_method'] = np.array(method)
     results['meta_lpt_order'] = np.int64(lpt_order)
     results['meta_n_part'] = np.int64(n_part)
-    results['meta_k_ny'] = np.float64(k_ny)
     results['meta_kmax_frac'] = np.float64(kmax_frac)
-
-    # P(k)
-    results['pk_k'] = k_s
-    results['pk_stepsic'] = pk_s
-    results['pk_monofonic'] = pk_m
-    results['pk_ratio'] = pk_ratio
-    results['pk_nmodes'] = nm_s
 
     # Displacement residuals
     results['hist_disp_abs_centres'] = h_disp_abs_c
@@ -442,6 +332,47 @@ def run_comparison(
     results['hist_vel_mag_centres'] = vel_centres
     results['hist_vel_mag_stepsic'] = h_vel_s.astype(np.float64)
     results['hist_vel_mag_monofonic'] = h_vel_m.astype(np.float64)
+
+    # P(k) is measured last, when only the particle positions remain in memory.
+    del ids_s, ids_m, disp_s, disp_m, vel_s, vel_m
+    del mag_disp_s, mag_disp_m, mag_vel_s, mag_vel_m
+    del abs_res_disp, abs_res_disp_kpc, rel_res_disp, abs_res_vel, rel_res_vel
+
+    # -- P(k) --
+    log.info('Measuring P(k) from stepsic IC...')
+    nvox, dk = cubic_voxels(nmesh, boxsize)
+    k_ny = np.pi / dk
+    kmax = kmax_frac * k_ny
+
+    k_s, pk_s, nm_s = measure_pk(
+        pos_s, boxsize, nmesh,
+        method='cic', deconvolve=True, interlace=True,
+        subtract_shot=False, kmin=None, kmax=kmax, dk_bin=None,
+    )
+
+    log.info('Measuring P(k) from monofonIC IC...')
+    k_m, pk_m, nm_m = measure_pk(
+        pos_m, boxsize, nmesh,
+        method='cic', deconvolve=True, interlace=True,
+        subtract_shot=False, kmin=None, kmax=kmax, dk_bin=None,
+    )
+
+    # Verify k-binning is identical.
+    if not np.allclose(k_s, k_m):
+        raise RuntimeError('k-bin centres differ between the two P(k) measurements.')
+
+    pk_ratio = pk_s / pk_m
+    log.info(
+        'P(k) ratio: median = %.6f, min = %.6f, max = %.6f',
+        np.median(pk_ratio), np.min(pk_ratio), np.max(pk_ratio),
+    )
+
+    results['meta_k_ny'] = np.float64(k_ny)
+    results['pk_k'] = k_s
+    results['pk_stepsic'] = pk_s
+    results['pk_monofonic'] = pk_m
+    results['pk_ratio'] = pk_ratio
+    results['pk_nmodes'] = nm_s
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     atomic_savez(output, **results)

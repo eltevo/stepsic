@@ -110,11 +110,11 @@ def plot_comparison(
     data: dict,
     output: str | None = None,
     *,
-    ylim_pk: tuple[float, float] = (0.98, 1.02),
-    ylim_disp: tuple[float, float] = (0.9, 1.1),
-    ylim_vel: tuple[float, float] = (0.9, 1.1),
-    percent_band_pk: float = 0.01,
-    percent_band_field: float = 0.01,
+    ylim_pk: tuple[float, float] = (0.997, 1.003),
+    ylim_disp: tuple[float, float] = (0.997, 1.003),
+    ylim_vel: tuple[float, float] = (0.997, 1.003),
+    percent_band_pk: float = 0.001,
+    percent_band_field: float = 0.001,
 ) -> None:
     '''
     Produce the three-panel comparison figure.
@@ -244,11 +244,11 @@ def parse_args() -> argparse.Namespace:
                    help='Input .npz archive from compare-monofonic-run.py.')
     p.add_argument('-o', '--output', type=str, default=None,
                    help='Output figure path (e.g. validation-monofonic.pdf).')
-    p.add_argument('--ylim-pk', type=float, nargs=2, default=[0.98, 1.02],
+    p.add_argument('--ylim-pk', type=float, nargs=2, default=[0.997, 1.003],
                    help='Y-axis limits for P(k) panel.')
-    p.add_argument('--ylim-disp', type=float, nargs=2, default=[0.98, 1.02],
+    p.add_argument('--ylim-disp', type=float, nargs=2, default=[0.997, 1.003],
                    help='Y-axis limits for displacement panel.')
-    p.add_argument('--ylim-vel', type=float, nargs=2, default=[0.98, 1.02],
+    p.add_argument('--ylim-vel', type=float, nargs=2, default=[0.997, 1.003],
                    help='Y-axis limits for velocity panel.')
     return p.parse_args()
 
