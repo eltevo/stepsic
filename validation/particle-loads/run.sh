@@ -111,208 +111,49 @@ mkdir -p "${TOML_DIR}" \
 
 LBOX_SQ="$((LBOX * 2))"  # 2*R_3D for non-periodic geometries
 
-# Write TOML configs (inline because LBOX/PERIODIC are arrays here)
-_write_toml_cubic_random() {
-    vlib::atomic_text "${TOML_DIR}/cubic_random.toml" <<EOF
-GEOMETRY = "cubical"
-LBOX = [${LBOX}, ${LBOX}, ${LBOX}]
-PERIODIC = [1, 1, 1]
-R_3D = ${R_3D}
-D_4D = ${D_4D}
-BIN_MODE = "omega"
-NRBINS = ${NRBINS}
-COI = [0, 0, 0]
-TYPE = "random"
-NGRID = ${NGRID}
-NPART = ${NPART}
-NSHELL = ${NSHELL}
-INPUT_GLASS = "none"
-IC_DIR = "${IC_CUBIC_RANDOM}"
-IC_PREFIX = "stepsic"
-COSMOLOGY = "${COSMOLOGY_NAME}"
-SPECTRUM = "camb"
-NONLINEAR = false
-HALOFIT = "mead2020"
-SEED = 42
-COMOVING = true
-HINDEPENDENT = true
-LPTORDER = 0
-NMESH = 32
-REDSHIFT = 0
-INTERPOLATION = "cic"
-COMPENSATE = false
-SPHEREMODE = false
-PAIRED = false
-NMESHSAMPLES = 1
-ROTATE = 0.0
-IC_FORMAT = "hdf5"
-USE_DOUBLE = false
-SAVE_WHITE_NOISE = false
-UNIT_L_IN_CM = 3.085678e24
-UNIT_M_IN_G = 1.989e44
-UNIT_V_IN_KMPS = 20.738652969844207
-INPUT_SPECTRUM = "none"
-INPUT_SPECTRUM_UNIT_L_IN_CM = 3.085678e24
-EOF
-}
-
-_write_toml_cubic_grid() {
-    vlib::atomic_text "${TOML_DIR}/cubic_grid.toml" <<EOF
-GEOMETRY = "cubical"
-LBOX = [${LBOX}, ${LBOX}, ${LBOX}]
-PERIODIC = [1, 1, 1]
-R_3D = ${R_3D}
-D_4D = ${D_4D}
-BIN_MODE = "omega"
-NRBINS = ${NRBINS}
-COI = [0, 0, 0]
-TYPE = "grid"
-NGRID = ${NGRID}
-NPART = ${NPART}
-NSHELL = ${NSHELL}
-INPUT_GLASS = "none"
-IC_DIR = "${IC_CUBIC_GRID}"
-IC_PREFIX = "stepsic"
-COSMOLOGY = "${COSMOLOGY_NAME}"
-SPECTRUM = "camb"
-NONLINEAR = false
-HALOFIT = "mead2020"
-SEED = 42
-COMOVING = true
-HINDEPENDENT = true
-LPTORDER = 0
-NMESH = 32
-REDSHIFT = 0
-INTERPOLATION = "cic"
-COMPENSATE = false
-SPHEREMODE = false
-PAIRED = false
-NMESHSAMPLES = 1
-ROTATE = 0.0
-IC_FORMAT = "hdf5"
-USE_DOUBLE = false
-SAVE_WHITE_NOISE = false
-UNIT_L_IN_CM = 3.085678e24
-UNIT_M_IN_G = 1.989e44
-UNIT_V_IN_KMPS = 20.738652969844207
-INPUT_SPECTRUM = "none"
-INPUT_SPECTRUM_UNIT_L_IN_CM = 3.085678e24
-EOF
-}
-
-_write_toml_spherical() {
-    vlib::atomic_text "${TOML_DIR}/spherical.toml" <<EOF
-GEOMETRY = "spherical"
-LBOX = [${LBOX_SQ}, ${LBOX_SQ}, ${LBOX_SQ}]
-PERIODIC = [0, 0, 0]
-R_3D = ${R_3D}
-D_4D = ${D_4D}
-BIN_MODE = "omega"
-NRBINS = ${NRBINS}
-RCRIT = ${RCRIT}
-COI = [0, 0, 0]
-TYPE = "shell"
-NGRID = ${NGRID}
-NPART = ${NPART}
-NSHELL = ${NSHELL}
-INPUT_GLASS = "none"
-IC_DIR = "${IC_SPHERICAL}"
-IC_PREFIX = "stepsic"
-COSMOLOGY = "${COSMOLOGY_NAME}"
-SPECTRUM = "camb"
-NONLINEAR = false
-HALOFIT = "mead2020"
-SEED = 42
-COMOVING = true
-HINDEPENDENT = true
-LPTORDER = 0
-NMESH = 32
-REDSHIFT = 0
-INTERPOLATION = "cic"
-COMPENSATE = false
-SPHEREMODE = false
-PAIRED = false
-NMESHSAMPLES = 1
-ROTATE = 0.0
-IC_FORMAT = "hdf5"
-USE_DOUBLE = false
-SAVE_WHITE_NOISE = false
-UNIT_L_IN_CM = 3.085678e24
-UNIT_M_IN_G = 1.989e44
-UNIT_V_IN_KMPS = 20.738652969844207
-INPUT_SPECTRUM = "none"
-INPUT_SPECTRUM_UNIT_L_IN_CM = 3.085678e24
-EOF
-}
-
-_write_toml_cylindrical() {
-    vlib::atomic_text "${TOML_DIR}/cylindrical.toml" <<EOF
-GEOMETRY = "cylindrical"
-LBOX = [${LBOX_SQ}, ${LBOX_SQ}, ${LZ}]
-PERIODIC = [0, 0, 1]
-R_3D = ${R_3D}
-D_4D = ${D_4D}
-BIN_MODE = "omega"
-NRBINS = ${NRBINS}
-RCRIT = ${RCRIT}
-COI = [0, 0, 0]
-TYPE = "shell"
-NGRID = ${NGRID}
-NPART = ${NPART}
-NSHELL = ${NSHELL}
-INPUT_GLASS = "none"
-IC_DIR = "${IC_CYLINDRICAL}"
-IC_PREFIX = "stepsic"
-COSMOLOGY = "${COSMOLOGY_NAME}"
-SPECTRUM = "camb"
-NONLINEAR = false
-HALOFIT = "mead2020"
-SEED = 42
-COMOVING = true
-HINDEPENDENT = true
-LPTORDER = 0
-NMESH = 32
-REDSHIFT = 0
-INTERPOLATION = "cic"
-COMPENSATE = false
-SPHEREMODE = false
-PAIRED = false
-NMESHSAMPLES = 1
-ROTATE = 0.0
-IC_FORMAT = "hdf5"
-USE_DOUBLE = false
-SAVE_WHITE_NOISE = false
-UNIT_L_IN_CM = 3.085678e24
-UNIT_M_IN_G = 1.989e44
-UNIT_V_IN_KMPS = 20.738652969844207
-INPUT_SPECTRUM = "none"
-INPUT_SPECTRUM_UNIT_L_IN_CM = 3.085678e24
-EOF
-}
-
 if vlib::step_check "cubic_random" "${IC_CUBIC_RANDOM}"; then
-    _write_toml_cubic_random
+    vlib::stepsic::write_toml "${TOML_DIR}/cubic_random.toml" \
+        "GEOMETRY=cubical" \
+        "LBOX=[${LBOX}, ${LBOX}, ${LBOX}]" \
+        "PERIODIC=[1, 1, 1]" \
+        "TYPE=random" \
+        "IC_DIR=${IC_CUBIC_RANDOM}"
     vlib::run_in_env "${STEPSIC_ENV}" python "${STEPSIC_PY}" \
         "${TOML_DIR}/cubic_random.toml"
     vlib::step_done "cubic_random"
 fi
 
 if vlib::step_check "cubic_grid" "${IC_CUBIC_GRID}"; then
-    _write_toml_cubic_grid
+    vlib::stepsic::write_toml "${TOML_DIR}/cubic_grid.toml" \
+        "GEOMETRY=cubical" \
+        "LBOX=[${LBOX}, ${LBOX}, ${LBOX}]" \
+        "PERIODIC=[1, 1, 1]" \
+        "TYPE=grid" \
+        "IC_DIR=${IC_CUBIC_GRID}"
     vlib::run_in_env "${STEPSIC_ENV}" python "${STEPSIC_PY}" \
         "${TOML_DIR}/cubic_grid.toml"
     vlib::step_done "cubic_grid"
 fi
 
 if vlib::step_check "spherical" "${IC_SPHERICAL}"; then
-    _write_toml_spherical
+    vlib::stepsic::write_toml "${TOML_DIR}/spherical.toml" \
+        "GEOMETRY=spherical" \
+        "LBOX=[${LBOX_SQ}, ${LBOX_SQ}, ${LBOX_SQ}]" \
+        "PERIODIC=[0, 0, 0]" \
+        "TYPE=shell" \
+        "IC_DIR=${IC_SPHERICAL}"
     vlib::run_in_env "${STEPSIC_ENV}" python "${STEPSIC_PY}" \
         "${TOML_DIR}/spherical.toml"
     vlib::step_done "spherical"
 fi
 
 if vlib::step_check "cylindrical" "${IC_CYLINDRICAL}"; then
-    _write_toml_cylindrical
+    vlib::stepsic::write_toml "${TOML_DIR}/cylindrical.toml" \
+        "GEOMETRY=cylindrical" \
+        "LBOX=[${LBOX_SQ}, ${LBOX_SQ}, ${LZ}]" \
+        "PERIODIC=[0, 0, 1]" \
+        "TYPE=shell" \
+        "IC_DIR=${IC_CYLINDRICAL}"
     vlib::run_in_env "${STEPSIC_ENV}" python "${STEPSIC_PY}" \
         "${TOML_DIR}/cylindrical.toml"
     vlib::step_done "cylindrical"

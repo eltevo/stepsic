@@ -36,10 +36,16 @@ from typing import TypeAlias
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (side-effect import)
 from numpy.typing import NDArray
 
-from validation._common.plotting import atomic_savefig, setup_matplotlib
+from validation._common.plotting import (
+    atomic_savefig,
+    draw_panel_3d,
+    set_cylinder_aspect,
+    set_equal_aspect_3d,
+    setup_matplotlib,
+    subsample,
+)
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -73,42 +79,6 @@ def load_particles(
     log.info('Loaded %d particles from %s', pos.shape[0], path)
     masses_f = masses.astype(np.float64) if masses is not None else None
     return pos.astype(np.float64), masses_f
-
-
-def subsample(
-    pos: ArrayF,
-    fraction: float,
-    *,
-    seed: int = 42,
-    masses: ArrayF | None = None,
-) -> tuple[ArrayF, ArrayF | None]:
-    '''Return a random subsample of particle positions (and masses).
-
-    Parameters
-    ----------
-    pos : ndarray, shape (N, 3)
-        Full particle array.
-    fraction : float
-        Fraction of particles to keep, in (0, 1].
-    seed : int
-        RNG seed for reproducibility.
-    masses : ndarray or None
-        Optional per-particle masses, subsampled with the same indices.
-
-    Returns
-    -------
-    pos_sub : ndarray, shape (M, 3)
-        Subsampled positions.
-    masses_sub : ndarray or None
-        Subsampled masses, or ``None`` if ``masses`` is ``None``.
-    '''
-    n_total = pos.shape[0]
-    n_keep = max(1, int(n_total * fraction))
-    if n_keep >= n_total:
-        return pos, masses
-    rng = np.random.default_rng(seed)
-    idx = rng.choice(n_total, size=n_keep, replace=False)
-    return pos[idx], (masses[idx] if masses is not None else None)
 
 
 def _mass_sizes(
@@ -307,152 +277,6 @@ def _draw_panel_2d(
     return n_plot
 
 
-def _draw_panel_3d(
-    ax: Axes3D,
-    pos: ArrayF,
-    title: str,
-    *,
-    fraction: float = 0.08,
-    point_size: float = 1.5,
-    point_color: str = 'k',
-    point_alpha: float = 0.25,
-    elev: float = 22.0,
-    azim: float = -42.0,
-    geometry: str | None = None,
-    masses: ArrayF | None = None,
-) -> int:
-    '''Draw a 3D scatter of a subsampled particle distribution.
-
-    Parameters
-    ----------
-    geometry : str or None
-        If ``'spherical'`` or ``'cylindrical'``, marker sizes scale
-        with per-particle ``log10(mass)`` (bigger dots for heavier
-        outer-shell particles, uniform inside the RCRIT zone).
-        If ``None`` (cubical panels), a uniform ``point_size`` is used.
-    masses : ndarray or None
-        Per-particle masses; required when ``geometry`` enables
-        mass-based sizing.
-
-    Returns the number of particles plotted.
-    '''
-    sub, sub_masses = subsample(pos, fraction, masses=masses)
-    n_plot = sub.shape[0]
-
-    if geometry in ('spherical', 'cylindrical'):
-        if sub_masses is None:
-            raise ValueError(
-                f'Mass-based sizing requested for {geometry!r} panel '
-                'but the snapshot has no Masses dataset.'
-            )
-        sizes = _mass_sizes(sub_masses)
-    else:
-        sizes = point_size
-
-    ax.scatter(
-        sub[:, 0], sub[:, 1], sub[:, 2],
-        s=sizes,
-        c=point_color,
-        alpha=point_alpha,
-        edgecolors='none',
-        rasterized=True,
-        depthshade=True,
-    )
-
-    ax.view_init(elev=elev, azim=azim)
-
-    # Clean up axes - for this figure, the *shape* is the message.
-    ax.set_xticklabels([])
-    ax.set_yticklabels([])
-    ax.set_zticklabels([])
-    ax.tick_params(
-        axis='both', which='both',
-        length=0, pad=0,
-    )
-
-    # Subtle pane styling
-    for pane in (ax.xaxis.pane, ax.yaxis.pane, ax.zaxis.pane):
-        pane.fill = False
-        pane.set_edgecolor('0.80')
-
-    for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
-        axis._axinfo['grid']['color'] = (0.85, 0.85, 0.85, 0.5)
-        axis._axinfo['grid']['linewidth'] = 0.4
-
-    # Panel title
-    ax.text2D(
-        0.03, 0.96, title,
-        transform=ax.transAxes, fontsize=7,
-        va='top', ha='left',
-        bbox=dict(
-            facecolor='white', edgecolor='none', alpha=0.80, pad=1.5,
-        ),
-    )
-
-    return n_plot
-
-
-def _set_equal_aspect_3d(ax: Axes3D, pos: ArrayF, pad: float = 0.05) -> None:
-    '''Force equal aspect ratio on a 3D axes by setting matching limits.
-
-    Parameters
-    ----------
-    ax : Axes3D
-        The 3D axes to adjust.
-    pos : ndarray, shape (N, 3)
-        Particle positions for extent computation.
-    pad : float
-        Fractional padding around the data extent.
-    '''
-    mins = pos.min(axis=0)
-    maxs = pos.max(axis=0)
-    centres = 0.5 * (mins + maxs)
-    half_range = 0.5 * (1.0 + pad) * (maxs - mins).max()
-
-    ax.set_box_aspect((1, 1, 1))
-    ax.set_xlim(centres[0] - half_range, centres[0] + half_range)
-    ax.set_ylim(centres[1] - half_range, centres[1] + half_range)
-    ax.set_zlim(centres[2] - half_range, centres[2] + half_range)
-
-
-def _set_cylinder_aspect(
-    ax: Axes3D,
-    pos: ArrayF,
-    r_max: float,
-    z_min: float,
-    z_max: float,
-    xy_centre: ArrayF,
-    pad: float = 0.05,
-) -> None:
-    '''Set shape-faithful 3D limits for a cylindrical geometry.
-
-    Parameters
-    ----------
-    ax : Axes3D
-        The 3D axes.
-    pos : ndarray, shape (N, 3)
-        Particle positions (used for fallback only).
-    r_max : float
-        Maximum cylindrical radius.
-    z_min, z_max : float
-        Axial extent of the cylinder.
-    xy_centre : ndarray, shape (2,)
-        Centre of the particle distribution in the x-y plane.
-    pad : float
-        Fractional padding.
-    '''
-    r_padded = r_max * (1.0 + pad)
-    z_centre = 0.5 * (z_min + z_max)
-    z_half = 0.5 * (z_max - z_min) * (1.0 + pad)
-
-    half_range = max(r_padded, z_half)
-
-    ax.set_box_aspect((1, 1, 1))
-    ax.set_xlim(xy_centre[0] - half_range, xy_centre[0] + half_range)
-    ax.set_ylim(xy_centre[1] - half_range, xy_centre[1] + half_range)
-    ax.set_zlim(z_centre - half_range, z_centre + half_range)
-
-
 def plot_particle_loads(
     paths: dict[str, str | None],
     output: str | None = None,
@@ -543,30 +367,20 @@ def plot_particle_loads(
         else:
             ax = fig.add_subplot(1, n_panels, i + 1, projection='3d')
 
-            if key in ('cubic_random', 'cubic_grid', 'spherical'):
-                _set_equal_aspect_3d(ax, pos)
-            elif key == 'cylindrical':
-                centre = pos.mean(axis=0)
-                dx = pos[:, 0] - centre[0]
-                dy = pos[:, 1] - centre[1]
-                r_max = float(np.max(np.sqrt(dx**2 + dy**2)))
-                _set_cylinder_aspect(
-                    ax, pos, r_max,
-                    z_min=float(np.min(pos[:, 2])),
-                    z_max=float(np.max(pos[:, 2])),
-                    xy_centre=centre[:2],
-                )
+            if key == 'cylindrical':
+                set_cylinder_aspect(ax, pos)
             else:
-                raise ValueError(f'Unknown panel key: {key}')
+                set_equal_aspect_3d(ax, pos)
 
-            n_plotted = _draw_panel_3d(
-                ax, pos, title,
-                fraction=fraction,
+            sub, sub_masses = subsample(pos, fraction, masses=masses)
+            draw_panel_3d(
+                ax, sub, title,
+                sizes=_mass_sizes(sub_masses) if key in _geom_map else 1.5,
+                colors='k',
                 elev=elev,
                 azim=azim,
-                geometry=_geom_map.get(key),
-                masses=masses,
             )
+            n_plotted = sub.shape[0]
 
         log.info(
             '%s: N_total = %d, N_shown = %d (%.1f%%)',
