@@ -16,6 +16,9 @@ ArrayF = NDArray[np.float64]
 _GEOMETRY_RTOL = 1.0e-12
 _GEOMETRY_ATOL_MPC_H = 1.0e-9
 
+# Logarithmic k bins per decade for averaging the native bins.
+LOG_BINS_PER_DECADE = 8
+
 
 @dataclass(frozen=True)
 class AspectTransferCurve:
@@ -40,10 +43,13 @@ class _RawCurve:
 
 def cubic_normalized_transfer_curves(
     data: Mapping[str, np.ndarray],
+    bins_per_decade: int | None = None,
 ) -> list[AspectTransferCurve]:
     """Return validated transfer curves relative to the cubic geometry.
 
     Cubic transfer and mode counts are interpolated at slab bin centres only where the cubic curve covers the same k values.
+    With ``bins_per_decade``, every geometry's measured and reference powers
+    are first averaged over logarithmic bins with edges at ``10**(i / bins_per_decade)``, weighted by mode count.
     """
     l_cube_mpc_h = _scalar_float(data["meta_l_cube"], "meta_l_cube")
     lz_values_mpc_h = np.asarray(
@@ -79,7 +85,7 @@ def cubic_normalized_transfer_curves(
         raise ValueError("the slab comparison requires exactly one cubic box")
 
     raw_curves = [
-        _load_raw_curve(data, float(lz_mpc_h), bool(is_cubic))
+        _load_raw_curve(data, float(lz_mpc_h), bool(is_cubic), bins_per_decade)
         for lz_mpc_h, is_cubic in zip(lz_values_mpc_h, cubic_mask, strict=True)
     ]
     raw_curves.sort(key=lambda curve: -curve.lz_mpc_h)
@@ -135,6 +141,7 @@ def _load_raw_curve(
     data: Mapping[str, np.ndarray],
     lz_mpc_h: float,
     is_cubic: bool,
+    bins_per_decade: int | None,
 ) -> _RawCurve:
     tag = f"lz{lz_mpc_h:g}"
     k_h_mpc = np.asarray(data[f"lpt_{tag}_k"], dtype=np.float64)
@@ -157,6 +164,18 @@ def _load_raw_curve(
         raise ValueError("mode counts must be finite and positive")
     if np.any(np.diff(k_h_mpc) <= 0.0):
         raise ValueError("k values must be strictly increasing")
+    if bins_per_decade is not None:
+        if bins_per_decade < 1:
+            raise ValueError("bins_per_decade must be a positive integer")
+        if np.any(k_h_mpc <= 0.0):
+            raise ValueError("k values must be positive for logarithmic bins")
+        log_bin = np.floor(np.log10(k_h_mpc) * bins_per_decade).astype(np.int64)
+        _, bin_index = np.unique(log_bin, return_inverse=True)
+        mode_sums = np.bincount(bin_index, weights=mode_counts)
+        k_h_mpc = np.bincount(bin_index, weights=mode_counts * k_h_mpc) / mode_sums
+        measured = np.bincount(bin_index, weights=mode_counts * measured) / mode_sums
+        reference = np.bincount(bin_index, weights=mode_counts * reference) / mode_sums
+        mode_counts = mode_sums
     with np.errstate(over="ignore", invalid="ignore"):
         transfer = measured / reference
     if not np.all(np.isfinite(transfer)):

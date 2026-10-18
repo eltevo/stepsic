@@ -17,7 +17,7 @@ from validation._common.evaluation import (
     write_result,
 )
 from validation._common.result import Check, Metric, ValidationResult
-from common import cubic_normalized_transfer_curves
+from common import LOG_BINS_PER_DECADE, cubic_normalized_transfer_curves
 
 
 _MAX_TRANSFER_DEVIATION = np.float64(0.01)
@@ -27,16 +27,16 @@ _FLOAT64_BOUNDARY_TOLERANCE = 8.0 * np.finfo(np.float64).eps
 def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
     try:
         data = load_npz(archive)
-        sample_count_value = np.asarray(data["meta_n_total"])
+        sample_count_value = np.asarray(data["meta_nreal"])
         if sample_count_value.size != 1:
-            raise ValueError("meta_n_total must be a positive integer")
+            raise ValueError("meta_nreal must be a positive integer")
         sample_count_float = float(sample_count_value.reshape(-1)[0])
         if (
             not np.isfinite(sample_count_float)
             or sample_count_float < 1.0
             or not sample_count_float.is_integer()
         ):
-            raise ValueError("meta_n_total must be a positive integer")
+            raise ValueError("meta_nreal must be a positive integer")
         sample_count = int(sample_count_float)
 
         curves = cubic_normalized_transfer_curves(data)
@@ -68,6 +68,15 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
             np.max(np.abs(np.concatenate(ratios) - 1.0))
         )
         deviation_metric = Metric(max_deviation, "fraction")
+        binned_ratios = [
+            curve.transfer
+            for curve in cubic_normalized_transfer_curves(data, LOG_BINS_PER_DECADE)
+            if not curve.is_cubic
+        ]
+        binned_deviation_metric = Metric(
+            float(np.max(np.abs(np.concatenate(binned_ratios) - 1.0))),
+            "fraction",
+        )
         deviation_check = Check(
             name="largest power-transfer difference from the cubic box",
             observed=max_deviation,
@@ -91,6 +100,7 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
             metrics={
                 "aspect_invariance_chi_square": chi_square_metric,
                 "max_aspect_transfer_deviation": deviation_metric,
+                "max_log_binned_aspect_transfer_deviation": binned_deviation_metric,
             },
             checks=[chi_square_check, deviation_check],
             numerical_archive=archive,

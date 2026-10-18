@@ -28,18 +28,15 @@ import time
 import numpy as np
 
 from validation._common.evaluation import atomic_savez
-from scipy.interpolate import CubicSpline
 
-from stepsic.field import create_grid, fourier_kmod, wrap
-from stepsic.pk import _bin_isotropic_modes, measure_pk
+from stepsic.particles import create_grid
 
-from validation._common.cosmology_fields import (
+from validation._common.fields import (
     ArrayF,
     ArrayI,
-    GrowthData,
-    generate_field,
+    band_average_reference_pk,
     init_cosmology,
-    run_lpt,
+    measure_lpt_power,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -112,71 +109,6 @@ def _fixed_dk_mesh(
     nvox = nvox_raw + nvox_raw % 2  # round up to even
     mesh_boxsize = nvox.astype(np.float64) * dk
     return nvox, mesh_boxsize
-
-
-def _band_average_reference_pk(
-    kh_input: ArrayF,
-    pk_input: ArrayF,
-    nvox: ArrayI,
-    dk: float,
-    mesh_boxsize: ArrayF,
-    *,
-    kmin: float | None,
-    kmax: float | None,
-    dk_bin: float | None,
-) -> tuple[ArrayF, ArrayF, ArrayI]:
-    '''Band-average the input theory P(k) over the exact discrete
-    Fourier modes for a given box geometry.
-    '''
-    kmod = fourier_kmod(nvox, dk, hermitian=True)
-    pk_spline = CubicSpline(
-        np.log(kh_input), np.log(pk_input), extrapolate=False,
-    )
-    pk_grid = np.zeros_like(kmod)
-    mask = kmod > 0.0
-    pk_grid[mask] = np.exp(pk_spline(np.log(kmod[mask])))
-    return _bin_isotropic_modes(
-        pk_grid, kmod, nvox, mesh_boxsize, dk,
-        kmin=kmin, kmax=kmax, dk_bin=dk_bin,
-    )
-
-
-def _run_single_lpt(
-    seed_i: int,
-    lpt_order: int,
-    growth: GrowthData,
-    nvox: ArrayI,
-    dk: float,
-    mesh_boxsize: ArrayF,
-    pos_grid: ArrayF,
-    method: str,
-    *,
-    kmax: float,
-    paired: bool,
-    counter_phase: bool,
-) -> tuple[ArrayF, ArrayF, ArrayI]:
-    r'''Generate one LPT realisation and measure its particle P(k).
-
-    Passes the pre-computed ``nvox`` to :func:`stepsic.pk.measure_pk` to
-    guarantee bin-edge consistency with the band-averaged reference in
-    non-cubic boxes.
-    '''
-    delta_k = generate_field(
-        nvox, dk, growth, seed_i, paired=paired, counter_phase=counter_phase,
-    )
-
-    compensate = method != 'cic'
-    xpert, _ = run_lpt(
-        pos_grid, delta_k, nvox, dk, growth,
-        lpt_order, method, compensate=compensate,
-    )
-    pos_wrapped = wrap(xpert, mesh_boxsize)
-
-    return measure_pk(
-        pos_wrapped, mesh_boxsize, nvox=nvox,
-        method='cic', deconvolve=True, interlace=True, subtract_shot=False,
-        kmin=None, kmax=kmax, dk_bin=None,
-    )
 
 
 def run_squish_validation(
@@ -258,7 +190,8 @@ def run_squish_validation(
     seeds = [seed + i for i in range(nreal)]
 
     k_ny = np.pi / dk
-    kmax_camb = 1.05 * kmax_fraction_nyquist * k_ny
+    # The field takes P(k) at every mesh mode, out to the corner at sqrt(3) k_Ny.
+    kmax_camb = 1.05 * np.sqrt(3.0) * k_ny
 
     growth_table = init_cosmology([redshift], l_cube, kmax=kmax_camb)
     growth = growth_table[redshift]
@@ -304,7 +237,7 @@ def run_squish_validation(
 
         pos_grid, _ = create_grid(nvox, dk)
 
-        k_ref, pk_ref, nmodes_ref = _band_average_reference_pk(
+        k_ref, pk_ref, nmodes_ref = band_average_reference_pk(
             growth.kh_camb, growth.pk_input, nvox, dk, mesh_boxsize,
             kmin=None, kmax=kmax, dk_bin=None,
         )
@@ -323,10 +256,10 @@ def run_squish_validation(
                     lpt_order, method.upper(), lz,
                     seed_i, member_tag, i_real, nreal,
                 )
-                k_p, pk_p, _ = _run_single_lpt(
+                k_p, pk_p, _ = measure_lpt_power(
                     seed_i, lpt_order, growth,
                     nvox, dk, mesh_boxsize, pos_grid,
-                    method,
+                    method, method != 'cic',
                     kmax=kmax, paired=paired,
                     counter_phase=counter_phase,
                 )

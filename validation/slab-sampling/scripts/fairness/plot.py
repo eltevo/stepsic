@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-'''
-Plot a native slab beside an equally sized region cut from a cube.
-
-The panels compare isotropic power, transverse and line-of-sight power, and displacement variance. Shaded bands show variation between random fields.
-
-Usage
------
-::
-
-    python plot.py -i slab_data.npz -o slab.pdf
-'''
+'''Plot slab/cut component-variance ratios across independent seeds.'''
 
 from __future__ import annotations
 
@@ -23,29 +13,48 @@ import numpy as np
 
 from validation._common.plotting import atomic_savefig, setup_matplotlib
 from validation._common.artifacts import load_archive
+from validation._common.evaluation import average_realization_members
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 
-def _ratio(num: np.ndarray, den: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    with np.errstate(invalid='ignore', divide='ignore'):
-        ratio = num / den
-    finite = np.isfinite(ratio)
-    count = np.sum(finite, axis=0)
-    total = np.sum(np.where(finite, ratio, 0.0), axis=0)
-    mean = np.divide(
-        total, count, out=np.full_like(total, np.nan), where=count > 0
+def _variance_ratio_samples(
+    slab_members: np.ndarray,
+    cut_members: np.ndarray,
+    *,
+    nreal: int,
+    paired: bool,
+) -> np.ndarray:
+    slab_realizations = average_realization_members(
+        slab_members, nreal=nreal, paired=paired,
     )
-    squared = np.sum(
-        np.where(finite, (ratio - mean) ** 2, 0.0), axis=0
+    cut_realizations = average_realization_members(
+        cut_members, nreal=nreal, paired=paired,
     )
-    standard_deviation = np.sqrt(
-        np.divide(
-            squared, count, out=np.full_like(total, np.nan), where=count > 0
+    return slab_realizations / cut_realizations
+
+
+def _draw_ratio_distributions(
+    ax: plt.Axes,
+    ratio_samples: np.ndarray,
+    *,
+    title: str,
+    xlabel: str,
+) -> None:
+    labels = (r'$x$', r'$y$', r'$z$')
+    for axis, label in enumerate(labels):
+        values = np.sort(ratio_samples[:, axis])
+        cumulative_probability = np.arange(1, values.size + 1) / values.size
+        ax.step(
+            np.concatenate(([values[0]], values)),
+            np.concatenate(([0.0], cumulative_probability)),
+            where='post', lw=1.3, label=label,
         )
-    )
-    return mean, standard_deviation
+    ax.axvline(1.0, color='k', lw=1, ls=':', zorder=1)
+    ax.set_ylim(0.0, 1.02)
+    ax.set_xlabel(xlabel)
+    ax.set_title(title, loc='left', fontsize=8)
 
 
 def main() -> None:
@@ -58,48 +67,33 @@ def main() -> None:
     args = p.parse_args()
 
     d = load_archive(args.input)
-    k = d['pk_k']
-    aspect = int(d['meta_aspect'])
-    mu_split = float(d['meta_mu_split'])
+    nreal = int(d['meta_nreal'])
+    paired = bool(d['meta_paired'])
 
     setup_matplotlib()
-    fig, (ax_a, ax_b, ax_c) = plt.subplots(1, 3, figsize=(7.1, 2.3))
-
-    # -- (a) isotropic ratio -------------------------------------------------
-    m, s = _ratio(d['pk_slab'], d['pk_cut'])
-    ax_a.axhline(1.0, color='k', lw=1, ls=':', zorder=1)
-    ax_a.semilogx(k, m, '-', lw=1.4, zorder=3)
-    ax_a.fill_between(k, m - s, m + s, alpha=0.15, lw=0, zorder=2)
-    ax_a.set_xlabel(r'$k$ [$h\,\mathrm{Mpc}^{-1}$]')
-    ax_a.set_title(
-        rf'$P_{{\rm slab}}(k)/P_{{\rm cut}}(k)$ ({aspect}:1, isotropic)',
-        loc='left', fontsize=8,
+    fig, (ax_a, ax_b) = plt.subplots(
+        1, 2, figsize=(7.1, 2.3), sharey=True,
     )
-
-    # -- (b) direction-resolved ratios ---------------------------------------
-    ax_b.axhline(1.0, color='k', lw=1, ls=':', zorder=1)
-    for num, den, ls, lbl in (
-        (d['pk_slab_t'], d['pk_cut_t'], '-',
-         rf'$\mu < {mu_split:g}$ (transverse)'),
-        (d['pk_slab_l'], d['pk_cut_l'], '--',
-         rf'$\mu \geq {mu_split:g}$ (line of sight)'),
-    ):
-        m, s = _ratio(num, den)
-        ax_b.semilogx(k, m, ls, lw=1.4, zorder=3, label=lbl)
-        ax_b.fill_between(k, m - s, m + s, alpha=0.15, lw=0, zorder=2)
-    ax_b.set_xlabel(r'$k$ [$h\,\mathrm{Mpc}^{-1}$]')
-    ax_b.set_title('direction-resolved ratio', loc='left', fontsize=8)
-    ax_b.legend(fontsize=6, loc='best', frameon=False)
-
-    # -- (c) displacement variance ratio -------------------------------------
-    r = d['var_slab'] / d['var_cut']
-    x = np.arange(3)
-    ax_c.axhline(1.0, color='k', lw=1, ls=':', zorder=1)
-    ax_c.errorbar(x, r.mean(axis=0), yerr=r.std(axis=0),
-                  fmt='o', ms=5, capsize=3, zorder=3)
-    ax_c.set_xticks(x, [r'$\Psi_x$', r'$\Psi_y$', r'$\Psi_z$'])
-    ax_c.set_title(r'$\mathrm{var}(\Psi_i)$: slab / cut',
-                   loc='left', fontsize=8)
+    displacement_ratios = _variance_ratio_samples(
+        d['var_disp_slab'], d['var_disp_cut'],
+        nreal=nreal, paired=paired,
+    )
+    velocity_ratios = _variance_ratio_samples(
+        d['var_vel_slab'], d['var_vel_cut'],
+        nreal=nreal, paired=paired,
+    )
+    _draw_ratio_distributions(
+        ax_a, displacement_ratios,
+        title='(a) Displacement variance',
+        xlabel=r'$\mathrm{var}(\Psi_i)_{\rm slab}/\mathrm{var}(\Psi_i)_{\rm cut}$',
+    )
+    _draw_ratio_distributions(
+        ax_b, velocity_ratios,
+        title='(b) Velocity variance',
+        xlabel=r'$\mathrm{var}(v_i)_{\rm slab}/\mathrm{var}(v_i)_{\rm cut}$',
+    )
+    ax_a.set_ylabel('Empirical cumulative probability')
+    ax_b.legend(fontsize=7, loc='lower right', frameon=False)
 
     fig.tight_layout()
     if args.output:

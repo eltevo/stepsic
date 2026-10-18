@@ -3,8 +3,22 @@
 # Compare slab anisotropy, power transfer, and a matching cut from a cube.
 #
 # Usage: bash run.sh [--size=small|medium|large] [standard campaign options]
-# Primary figures: output/slab-transfer.pdf and output/slab-fairness.pdf
+# Primary figures: output/slab-transfer.pdf, output/slab-fairness.pdf and
+#                  output/slab-covariance.pdf
 # Supplementary figure: output/supplementary/slab-anisotropy.pdf
+#
+# Steps (in order):
+#    1. field_histogram   - displacement and velocity histograms in the slab
+#    2. transfer          - particle P(k) as the box is shortened along z
+#    3. fairness          - component variances of a slab and a cut from a cube
+#    4. covariance        - filtered displacement variances against the mode sum
+#    5. plot_field        - slab displacement anisotropy
+#    6. plot_transfer     - power transfer relative to the cube
+#    7. plot_fairness     - slab / cut variance ratios across seeds
+#    8. plot_covariance   - measured and predicted variances
+#    9. evaluate_transfer - power transfer within 1% of the cube
+#   10. evaluate_fairness - short-axis variance below the cube cut
+#   11. evaluate          - combined result with the covariance intervals
 # ==========================================================================
 set -euo pipefail
 
@@ -14,9 +28,14 @@ source "${BASEDIR}/../_common/lib.sh"
 vlib::parse_args "$@"
 vlib::prepare_campaign slab-sampling "${BASEDIR}" "${BASEDIR}/config.env"
 vlib::declare_steps \
-    field_histogram transfer fairness plot_field plot_transfer plot_fairness \
+    field_histogram transfer fairness covariance \
+    plot_field plot_transfer plot_fairness plot_covariance \
     evaluate_transfer evaluate_fairness evaluate
-vlib::manifest_implementation field_histogram "${BASEDIR}/scripts/field/run.py"
+vlib::manifest_implementation field_histogram \
+    "${BASEDIR}/../field-statistics/scripts/run.py"
+vlib::manifest_implementation covariance \
+    "${BASEDIR}/scripts/covariance.py" "${BASEDIR}/../_common/precision.py"
+vlib::manifest_implementation plot_covariance "${BASEDIR}/scripts/covariance.py"
 vlib::manifest_implementation transfer "${BASEDIR}/scripts/transfer/run.py"
 vlib::manifest_implementation fairness "${BASEDIR}/scripts/fairness/run.py"
 vlib::manifest_implementation plot_field "${BASEDIR}/scripts/field/plot.py"
@@ -53,7 +72,7 @@ FAIR_PAIRED_FLAG=()
 
 # shellcheck disable=SC2086
 if vlib::step_check field_histogram "${VLIB_CACHE_DIR}/field.npz"; then
-    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/field/run.py" \
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/../field-statistics/scripts/run.py" \
         --Lbox ${LBOX_SLAB} --nmesh "${FIELD_NMESH}" --lpt 2 --z "${Z}" \
         --method "${METHOD}" --seed "${SEED}" --nreal "${FIELD_NREAL}" \
         --nbins "${FIELD_NBINS}" -o "${VLIB_CACHE_DIR}/field.npz"
@@ -75,9 +94,17 @@ if vlib::step_check fairness "${VLIB_CACHE_DIR}/fairness.npz"; then
         --Lcube "${LCUBE}" --aspect "${FAIR_ASPECT}" --nmesh "${FAIR_NMESH}" \
         --lpt "${LPT}" --z "${Z}" --seed "${SEED}" --nreal "${FAIR_NREAL}" \
         "${FAIR_PAIRED_FLAG[@]+"${FAIR_PAIRED_FLAG[@]}"}" \
-        --taper-frac "${TAPER_FRAC}" --mu-split "${MU_SPLIT}" \
-        --kmax-frac-ny "${KMAX_FRAC_NY}" -o "${VLIB_CACHE_DIR}/fairness.npz"
+        -o "${VLIB_CACHE_DIR}/fairness.npz"
     vlib::step_done fairness
+fi
+
+# shellcheck disable=SC2086
+if vlib::step_check covariance "${VLIB_CACHE_DIR}/covariance.npz"; then
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/covariance.py" run \
+        --Lcube "${LCUBE}" --aspects ${COV_ASPECTS} --nmesh ${COV_NMESH} \
+        --nreal "${COV_NREAL}" --filter-scale "${COV_FILTER_SCALE}" \
+        --z "${Z}" --seed "${SEED}" --output "${VLIB_CACHE_DIR}/covariance.npz"
+    vlib::step_done covariance
 fi
 
 if vlib::step_check plot_field "${SUPPLEMENTARY}/slab-anisotropy.pdf"; then
@@ -100,6 +127,12 @@ if vlib::step_check plot_fairness "${OUTPUT}/slab-fairness.pdf"; then
     vlib::step_done plot_fairness
 fi
 
+if vlib::step_check plot_covariance "${OUTPUT}/slab-covariance.pdf"; then
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/covariance.py" plot \
+        --input "${VLIB_CACHE_DIR}/covariance.npz" --figure "${OUTPUT}/slab-covariance.pdf"
+    vlib::step_done plot_covariance
+fi
+
 if vlib::step_check evaluate_transfer "${SUPPLEMENTARY}/transfer-result.json"; then
     VALIDATION_EVALUATION=report vlib::run_python "${STEPSIC_ENV}" \
         "${BASEDIR}/scripts/transfer/evaluate.py" --archive "${VLIB_CACHE_DIR}/transfer.npz" \
@@ -118,8 +151,11 @@ if vlib::step_check evaluate "${OUTPUT}/result.json"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/evaluate.py" \
         --result "${SUPPLEMENTARY}/transfer-result.json" \
         --result "${SUPPLEMENTARY}/fairness-result.json" \
+        --covariance "${VLIB_CACHE_DIR}/covariance.npz" \
         --data "${VLIB_CACHE_DIR}/transfer.npz" --data "${VLIB_CACHE_DIR}/fairness.npz" \
+        --data "${VLIB_CACHE_DIR}/covariance.npz" \
         --figure "${OUTPUT}/slab-transfer.pdf" --figure "${OUTPUT}/slab-fairness.pdf" \
+        --figure "${OUTPUT}/slab-covariance.pdf" \
         --figure "${SUPPLEMENTARY}/slab-anisotropy.pdf" --output "${OUTPUT}/result.json"
     vlib::step_done evaluate
 fi
