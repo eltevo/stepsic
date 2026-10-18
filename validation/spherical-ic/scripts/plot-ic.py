@@ -49,28 +49,35 @@ def main() -> None:
 
     r_mid = 0.5 * (d['prof_edges'][:-1] + d['prof_edges'][1:]) / rcore
     ax_a.semilogy(r_mid, d['prof_rel'], 'o-', lw=1.2, ms=3)
-    ax_a.set_xlabel(r'$r / r_{\mathrm{core}}$')
-    ax_a.set_title(
-        r'RMS $|\mathbf{v}_{\rm geom} - \mathbf{v}_{\rm ref}|\,/\,'
-        r'\mathrm{RMS}\,|\mathbf{v}_{\rm ref}|$',
-        loc='left', fontsize=8,
+    ax_a.axhline(
+        rel, color='0.35', ls='--', lw=0.8,
+        label=rf'core RMS $={rel:.3f}$',
     )
+    ax_a.set_xlabel(r'$r / r_{\mathrm{core}}$')
+    ax_a.set_ylabel(
+        r'RMS $|\mathbf{v}_{\rm geom} - \mathbf{v}_{\rm ref}|\,/\,'
+        r'\mathrm{RMS}\,|\mathbf{v}_{\rm ref}|$'
+    )
+    ax_a.set_title('(a) Velocity residual', loc='left', fontsize=8)
+    ax_a.legend(fontsize=6, loc='best', frameon=False)
 
     ratio = d['pk_geom'] / d['pk_ref']
     ax_b.axhline(1.0, color='k', lw=1, ls=':', zorder=1)
     ax_b.semilogx(d['pk_k'], ratio, '-', lw=1.4, zorder=3)
+    ax_b.set_yscale('log')
     ax_b.set_xlabel(r'$k$ [$h\,\mathrm{Mpc}^{-1}$]')
-    ax_b.set_title(r'$P_{\rm geom}(k) / P_{\rm ref}(k)$ (core window)',
-                   loc='left', fontsize=8)
+    ax_b.set_ylabel(r'$P_{\rm geom}(k) / P_{\rm ref}(k)$')
+    ax_b.set_title('(b) Core power spectrum', loc='left', fontsize=8)
 
     x = np.arange(3)
-    w = 0.35
-    ax_c.bar(x - w / 2, d['var_geom'], w, label='geometry IC')
-    ax_c.bar(x + w / 2, d['var_ref'], w, label='reference cube')
+    variance_ratio = d['var_geom'] / d['var_ref']
+    ax_c.axhline(1.0, color='k', lw=1, ls=':', zorder=1)
+    ax_c.plot(x, variance_ratio, 'o-', lw=1.2, ms=4, zorder=3)
     ax_c.set_xticks(x, [r'$v_x$', r'$v_y$', r'$v_z$'])
-    ax_c.set_title(r'core $\mathrm{var}(v_i)$ [$\mathrm{km^2\,s^{-2}}$]',
-                   loc='left', fontsize=8)
-    ax_c.legend(fontsize=6, loc='lower right', frameon=False)
+    ax_c.set_ylabel(
+        r'$\mathrm{var}(v_i)_{\rm geom} / \mathrm{var}(v_i)_{\rm ref}$'
+    )
+    ax_c.set_title('(c) Core velocity variance', loc='left', fontsize=8)
 
     fig.tight_layout()
     if args.output:

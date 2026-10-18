@@ -18,16 +18,22 @@ from validation._common.evaluation import (
 from validation._common.result import Metric, ValidationResult, upper_bound_check
 
 
-# The small smoke profile has intentionally sparse cells and reaches a 31%
+# The small profile has intentionally sparse cells and reaches a 31%
 # residual. Requiring less than one third keeps that executable floor while
 # limiting residual velocity power to 1/9 of the reference; the medium
 # publication profile is expected to be substantially better.
 MAX_RELATIVE_VELOCITY_RMS = 1.0 / 3.0
 
 
-def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
+def evaluate(
+    archive: str | Path,
+    multiresolution: str | Path,
+    *,
+    figures: list[str | Path],
+) -> ValidationResult:
     try:
         data = load_npz(archive)
+        mixing = load_npz(multiresolution)
         geometry = np.asarray(data["var_geom"], dtype=np.float64)
         reference = np.asarray(data["var_ref"], dtype=np.float64)
         if geometry.shape != (3,) or reference.shape != (3,):
@@ -65,6 +71,10 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
                 "velocity_rms_relative_residual": Metric(
                     relative_residual, "dimensionless"
                 ),
+                # Rows follow the mass-sample counts, columns the radial bins.
+                "multiresolution_displacement_relative_residual": Metric(
+                    mixing["displacement_relative_residual"], "dimensionless"
+                ),
             },
             checks=[
                 upper_bound_check(
@@ -80,8 +90,8 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
                     source="matched common-grid velocity-field residual",
                 )
             ],
-            numerical_archive=archive,
-            figures=[figure],
+            numerical_archive=[archive, multiresolution],
+            figures=figures,
         )
     except (
         KeyError,
@@ -93,7 +103,7 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
         return malformed_result(
             campaign="spherical-ic",
             archive=archive,
-            figures=[figure],
+            figures=figures,
             error=error,
         )
 
@@ -101,11 +111,12 @@ def evaluate(archive: str | Path, *, figure: str | Path) -> ValidationResult:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--archive", required=True)
-    parser.add_argument("--figure", required=True)
+    parser.add_argument("--multiresolution", required=True)
+    parser.add_argument("--figure", action="append", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     return write_result(
-        evaluate(args.archive, figure=args.figure),
+        evaluate(args.archive, args.multiresolution, figures=args.figure),
         args.output,
     )
 
