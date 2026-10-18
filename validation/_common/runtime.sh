@@ -63,7 +63,8 @@ vlib::ensure_env() {
 vlib::run_in_env() {
     local env_name="${1}"
     shift
-    conda run --no-capture-output -n "${env_name}" "$@"
+    python3 "$(dirname "${BASH_SOURCE[0]}")/resources.py" \
+        conda run --no-capture-output -n "${env_name}" "$@"
 }
 
 # Run a Python script inside a conda environment.
@@ -77,7 +78,8 @@ vlib::run_python() {
     if [[ -n "${PYTHONPATH:-}" ]]; then
         python_path+="${python_path:+:}${PYTHONPATH}"
     fi
-    conda run --no-capture-output -n "${env_name}" \
+    python3 "$(dirname "${BASH_SOURCE[0]}")/resources.py" \
+        conda run --no-capture-output -n "${env_name}" \
         env "PYTHONPATH=${python_path}" python "${script}" "$@"
 }
 
@@ -85,7 +87,8 @@ vlib::run_python() {
 vlib::run_shell_in_env() {
     local env_name="${1}"
     local fragment="${2}"
-    conda run --no-capture-output -n "${env_name}" bash -lc "${fragment}"
+    python3 "$(dirname "${BASH_SOURCE[0]}")/resources.py" \
+        conda run --no-capture-output -n "${env_name}" bash -lc "${fragment}"
 }
 
 # Read an environment variable from inside a conda environment.

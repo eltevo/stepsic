@@ -51,6 +51,7 @@ vlib::stepsic::write_toml() {
     local IC_PFX;   IC_PFX="$(_tv IC_PREFIX stepsic)"
     local INPUT_GLASS_V; INPUT_GLASS_V="$(_tv INPUT_GLASS none)"
     local SPECTRUM; SPECTRUM="$(_tv SPECTRUM camb)"
+    local RESCALE_SIGMA8; RESCALE_SIGMA8="$(_tv RESCALE_SIGMA8 true)"
     local NONLINEAR;NONLINEAR="$(_tv NONLINEAR false)"
     local HALOFIT;  HALOFIT="$(_tv HALOFIT mead2020)"
     local SEED_V;   SEED_V="$(_tv SEED 42)"
@@ -66,6 +67,7 @@ vlib::stepsic::write_toml() {
     local ROTATE_V; ROTATE_V="$(_tv ROTATE 0.0)"
     local USE_DOUBLE_V; USE_DOUBLE_V="$(_tv USE_DOUBLE false)"
     local SAVE_WHITE_NOISE_V; SAVE_WHITE_NOISE_V="$(_tv SAVE_WHITE_NOISE false)"
+    local INPUT_SPECTRUM_V; INPUT_SPECTRUM_V="$(_tv INPUT_SPECTRUM none)"
     # Optional cosmological overrides (empty = use cosmology.toml defaults).
     # Set OMEGA_M=1.0 and OMEGA_L=0.0 for EdS pre-glass ICs so that particle
     # masses satisfy StePS's h-independent mass-consistency check (rho_part /
@@ -100,6 +102,7 @@ ${OMEGA_L_V:+OMEGA_L = ${OMEGA_L_V}}
 ${OMEGA_B_V:+OMEGA_B = ${OMEGA_B_V}}
 ${H0_V:+H0 = ${H0_V}}
 SPECTRUM = "${SPECTRUM}"
+RESCALE_SIGMA8 = ${RESCALE_SIGMA8}
 NONLINEAR = ${NONLINEAR}
 HALOFIT = "${HALOFIT}"
 SEED = ${SEED_V}
@@ -121,7 +124,7 @@ SAVE_WHITE_NOISE = ${SAVE_WHITE_NOISE_V}
 UNIT_L_IN_CM = 3.085678e24
 UNIT_M_IN_G = 1.989e44
 UNIT_V_IN_KMPS = 20.738652969844207
-INPUT_SPECTRUM = "none"
+INPUT_SPECTRUM = "${INPUT_SPECTRUM_V}"
 INPUT_SPECTRUM_UNIT_L_IN_CM = 3.085678e24
 EOF2
 

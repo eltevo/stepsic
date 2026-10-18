@@ -1,0 +1,4 @@
+[field-statistics]
+NMESH_3D = 64
+NREAL = 200
+NBINS = 120

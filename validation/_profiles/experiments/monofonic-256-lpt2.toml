@@ -1,0 +1,5 @@
+# L=1000 Mpc/h, z=31.
+[monofonic-agreement]
+LBOX = 1000
+NMESH = 256
+LPT_ORDER = 2

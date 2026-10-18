@@ -1,0 +1,9 @@
+# Initial-epoch comparison fixture; use --prepare-only.
+[spherical-evolution]
+PAIR_NGRID = 64
+SIM_NMESH = 64
+CL_NSIDE = 32
+CL_LMAX = 95
+PK_NMESH = 64
+PK_RANDOM_FACTOR = 10
+PK_NFKP_RADIAL_BINS = 32

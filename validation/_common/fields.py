@@ -8,10 +8,13 @@ import argparse
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence, TypeAlias, Union
+from typing import Iterator, Sequence, TypeAlias, Union
 
+import h5py
 import numpy as np
 from numpy.typing import NDArray
+import scipy.fft
+from scipy.interpolate import CubicSpline
 import toml
 
 from stepsic.cosmology import (
@@ -19,13 +22,19 @@ from stepsic.cosmology import (
     ColossusCosmology,
     F2_omega,
     F_omega,
+    G2_omega,
     hubble_a,
 )
 from stepsic.field import (
+    fourier_kmod,
+    fourier_vectors,
     generate_delta_k,
     white_noise,
 )
+from stepsic.interpolation import KERNELS, GridGeometry, compensation_factors
 from stepsic.lpt import lpt1, lpt2
+from stepsic.parameters import compute_derived_cosmo
+from stepsic.pk import _bin_isotropic_modes, measure_pk_from_delta_k
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +70,7 @@ class GrowthData:
         First-order Lagrangian growth coefficient (:math:`\equiv 1`).
     g2 : float
         Second-order Lagrangian growth coefficient,
-        :math:`-(3/7)\,\Omega_m^{-1/143}`
+        :math:`-(3/7)\,\Omega_m(a)^{-1/143}`
         [CITE: Bouchet et al. 1995].
     aHf1 : float
         First-order velocity prefactor
@@ -120,8 +129,6 @@ def init_cosmology(
     if cosmo is None:
         cosmo = VALIDATION_COSMOLOGY
 
-    h = cosmo['H0'] / 100.0
-
     log.info('Initialising Colossus cosmology...')
     cosmo_colossus = ColossusCosmology(
         H0=cosmo['H0'],
@@ -137,12 +144,13 @@ def init_cosmology(
     )
 
     log.info('Computing CAMB z=0 power spectrum...')
-    ombh2 = cosmo['OMEGA_B'] * h**2
-    omch2 = (cosmo['OMEGA_M'] - cosmo['OMEGA_B']) * h**2
+    # stepsic derives the CDM density with the massive-neutrino density removed.
+    derived = dict(cosmo)
+    compute_derived_cosmo(derived)
     cosmo_camb = CAMBCosmology(
         H0=cosmo['H0'],
-        ombh2=ombh2,
-        omch2=omch2,
+        ombh2=derived['OMBH2'],
+        omch2=derived['OMCH2'],
         omk=0.0,
         mnu=cosmo['MNU'],
         nnu=cosmo['NNU'],
@@ -165,11 +173,11 @@ def init_cosmology(
     pk_z0 = pk_camb_z0[0]
 
     g1 = 1.0
-    g2 = -3.0 / 7.0 * cosmo['OMEGA_M'] ** (-1.0 / 143.0)
 
     growth_table: dict[float, GrowthData] = {}
     for z in sorted(set(redshifts)):
         scale = 1.0 / (z + 1.0)
+        g2 = G2_omega(scale, cosmo['OMEGA_M'], cosmo['OMEGA_L'])
         d1 = g1 * cosmo_colossus.Dzplus0(z)
         hz = hubble_a(scale, cosmo['H0'], cosmo['OMEGA_M'], cosmo['OMEGA_L'])
         aHf1 = scale * hz * F_omega(scale, cosmo['OMEGA_M'], cosmo['OMEGA_L'])
@@ -305,6 +313,141 @@ def generate_field(
         growth.kh_camb, growth.pk_input, nvox, dk,
         field=field, fixed=paired, paired=counter_phase,
     )
+
+
+def band_average_reference_pk(
+    kh_input: ArrayF,
+    pk_input: ArrayF,
+    nvox: ArrayI,
+    dk: float,
+    boxsize: ArrayF,
+    *,
+    kmin: float | None,
+    kmax: float | None,
+    dk_bin: float | None,
+) -> tuple[ArrayF, ArrayF, ArrayI]:
+    '''Band-average the input theory P(k) over the exact discrete Fourier modes of a box.'''
+    kmod = fourier_kmod(nvox, dk, hermitian=True)
+    pk_spline = CubicSpline(
+        np.log(kh_input), np.log(pk_input), extrapolate=False,
+    )
+    pk_grid = np.zeros_like(kmod)
+    mask = kmod > 0.0
+    pk_grid[mask] = np.exp(pk_spline(np.log(kmod[mask])))
+    return _bin_isotropic_modes(
+        pk_grid, kmod, nvox, boxsize, dk,
+        kmin=kmin, kmax=kmax, dk_bin=dk_bin,
+    )
+
+
+def load_glass_tile(path: str | Path, tile_side: float) -> ArrayF:
+    '''Read a periodic cubic glass and rescale it to a cube of side ``tile_side``.'''
+    with h5py.File(path, 'r') as handle:
+        positions = handle['PartType1/Coordinates'][:].astype(np.float64)
+        glass_side = float(np.atleast_1d(handle['Header'].attrs['BoxSize'])[0])
+    return np.mod(positions, glass_side) * (tile_side / glass_side)
+
+
+def iter_tiled_load(
+    tile: ArrayF,
+    tile_side: float,
+    tiles: int,
+    tiles_per_chunk: int,
+) -> Iterator[ArrayF]:
+    r'''Yield a load of ``tiles``\ :sup:`3` copies of ``tile``, a few copies at a time.
+
+    The copies fill a box of side ``tiles * tile_side``, and the chunks together hold every particle of that load exactly once.
+    '''
+    index = np.arange(tiles, dtype=np.float64)
+    shifts = tile_side * np.stack(
+        np.meshgrid(index, index, index, indexing='ij'), axis=-1,
+    ).reshape(-1, 3)
+    for start in range(0, len(shifts), tiles_per_chunk):
+        chunk = shifts[start:start + tiles_per_chunk]
+        yield (tile[None, :, :] + chunk[:, None, :]).reshape(-1, 3)
+
+
+class InterlacedPowerMeter:
+    r'''Deposit particles on a mesh in batches and measure their P(k).
+
+    The estimator is the one of :func:`stepsic.pk.measure_pk` with CIC assignment, deconvolution, interlacing and no shot-noise subtraction. Particles are added batch by batch, so the load never has to be in memory at once.
+    '''
+
+    _BATCH = 1 << 22
+
+    def __init__(self, nvox: ArrayI, boxsize: ArrayF) -> None:
+        self.nvox = np.asarray(nvox, dtype=np.int64)
+        self.boxsize = np.asarray(boxsize, dtype=np.float64)
+        self.dk = float(self.boxsize[0] / self.nvox[0])
+        self._kernel = KERNELS['cic']()
+        # The second mesh is shifted by half a cell along every axis.
+        self._geometries = [
+            GridGeometry(
+                nvox=tuple(int(n) for n in self.nvox), boxsize=self.boxsize,
+                vox_offset=0.5, origin=origin, periodic=True,
+            )
+            for origin in (0.0, -0.5 * self.dk)
+        ]
+        self._grids = [
+            np.zeros(tuple(self.nvox), dtype=np.float64) for _ in range(2)
+        ]
+
+    def add(self, x: ArrayF) -> None:
+        '''Deposit positions ``x`` (any real coordinates; the box is periodic).'''
+        nx, ny, nz = (int(n) for n in self.nvox)
+        offsets = range(self._kernel.support)
+        for start in range(0, len(x), self._BATCH):
+            batch = x[start:start + self._BATCH]
+            for grid, geometry in zip(self._grids, self._geometries):
+                g = geometry.pos_to_grid(batch)
+                cell = np.floor(g).astype(np.int64)
+                weights = [
+                    self._kernel.weights(g[:, axis] - cell[:, axis])
+                    for axis in range(3)
+                ]
+                cell += self._kernel.base_offset
+                flat = grid.reshape(-1)
+                for ox in offsets:
+                    ix = np.mod(cell[:, 0] + ox, nx) * (ny * nz)
+                    for oy in offsets:
+                        ixy = ix + np.mod(cell[:, 1] + oy, ny) * nz
+                        wxy = weights[0][ox] * weights[1][oy]
+                        for oz in offsets:
+                            np.add.at(
+                                flat, ixy + np.mod(cell[:, 2] + oz, nz),
+                                wxy * weights[2][oz],
+                            )
+
+    def _overdensity_k(self) -> ArrayC:
+        grid = self._grids.pop(0)
+        grid /= grid.mean()
+        grid -= 1.0
+        return scipy.fft.rfftn(grid, workers=-1, overwrite_x=True)
+
+    def power(self, *, kmax: float) -> tuple[ArrayF, ArrayF, ArrayI]:
+        '''Return ``(k, P, nmodes)`` of everything deposited; the meter is spent afterwards.'''
+        delta_k = self._overdensity_k()
+        shifted_k = self._overdensity_k()
+        # Undo the half-cell shift of the second mesh, then average the two.
+        wavevectors = fourier_vectors(self.nvox, self.dk, hermitian=True)
+        for axis, k_axis in enumerate(wavevectors):
+            shape = [1, 1, 1]
+            shape[axis] = -1
+            shifted_k *= np.exp(0.5j * self.dk * k_axis).reshape(shape)
+        delta_k += shifted_k
+        del shifted_k
+        delta_k *= 0.5
+        factors = compensation_factors(
+            self.nvox, self.dk, self.boxsize, method='cic',
+        )
+        for axis, factor in enumerate(factors):
+            shape = [1, 1, 1]
+            shape[axis] = -1
+            delta_k *= factor.reshape(shape)
+        return measure_pk_from_delta_k(
+            delta_k, self.boxsize, self.nvox,
+            kmin=None, kmax=kmax, dk_bin=None,
+        )
 
 
 def parse_boxsize(lbox_arg: list[float]) -> ArrayF:

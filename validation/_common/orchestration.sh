@@ -11,6 +11,7 @@ declare -ag _VLIB_GLOBAL_INPUTS=(
 declare -ag _VLIB_GLOBAL_IMPLEMENTATIONS=(
     "${_VLIB_COMMON_DIR}/lib.sh"
     "${_VLIB_COMMON_DIR}/runtime.sh"
+    "${_VLIB_COMMON_DIR}/resources.py"
     "${_VLIB_COMMON_DIR}/cosmology.sh"
     "${_VLIB_COMMON_DIR}/steps.sh"
     "${_VLIB_COMMON_DIR}/stepsic.sh"
@@ -18,7 +19,7 @@ declare -ag _VLIB_GLOBAL_IMPLEMENTATIONS=(
     "${_VLIB_COMMON_DIR}/manifest.py"
     "${_VLIB_COMMON_DIR}/profiles.py"
     "${_VLIB_COMMON_DIR}/artifacts.py"
-    "${_VLIB_COMMON_DIR}/cosmology_fields.py"
+    "${_VLIB_COMMON_DIR}/fields.py"
     "${_VLIB_COMMON_DIR}/evaluation.py"
     "${_VLIB_COMMON_DIR}/pairing.py"
     "${_VLIB_COMMON_DIR}/plotting.py"
@@ -189,6 +190,30 @@ vlib::_release_step_lock() {
     fi
 }
 
+# Advance to the next declared step; a run.sh that calls steps out of their
+# declared order is a programming error and stops the campaign.
+vlib::_next_step() {
+    local name="${1}"
+    (( _VLIB_CUR_STEP++ )) || true
+    local declared="${_VLIB_DECLARED_STEPS[_VLIB_CUR_STEP - 1]:-}"
+    if [[ "${declared}" != "${name}" ]]; then
+        echo "ERROR: step ${_VLIB_CUR_STEP} is '${name}', declared '${declared:-<none>}'." >&2
+        exit 2
+    fi
+}
+
+# Pass over a declared step without running it or recording a manifest.
+# Its outputs still count as inputs of the steps that follow.
+vlib::step_skip() {
+    local name="${1}" reason="${2}"
+    shift 2
+    vlib::_next_step "${name}"
+    _VLIB_PREVIOUS_OUTPUTS+=("$@")
+    if (( ! VLIB_LIST_STEPS )); then
+        echo "  [skip] step ${_VLIB_CUR_STEP}: ${name}  (${reason})"
+    fi
+}
+
 vlib::step_check() {
     local name="${1}"
     shift
@@ -198,13 +223,8 @@ vlib::step_check() {
         [[ -n "${output}" ]] && outputs+=("${output}")
     done
 
-    (( _VLIB_CUR_STEP++ )) || true
+    vlib::_next_step "${name}"
     local number="${_VLIB_CUR_STEP}"
-    local declared="${_VLIB_DECLARED_STEPS[number - 1]:-}"
-    if [[ -z "${declared}" || "${declared}" != "${name}" ]]; then
-        echo "ERROR: step ${number} is '${name}', declared '${declared:-<none>}'." >&2
-        return 2
-    fi
 
     local -a step_inputs=()
     local -a step_implementations=()

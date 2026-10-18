@@ -51,13 +51,14 @@ CAMPAIGNS: dict[str, Campaign] = {
             "FIELD_NMESH", "FIELD_NREAL", "FIELD_NBINS",
             "TRANSFER_NSTEPS", "TRANSFER_NMESH", "TRANSFER_NREAL",
             "TRANSFER_PAIRED", "FAIR_NMESH", "FAIR_ASPECT",
-            "FAIR_NREAL", "FAIR_PAIRED",
+            "FAIR_NREAL", "FAIR_PAIRED", "COV_NMESH", "COV_NREAL",
         ),
     ),
     "grid-power-recovery": Campaign(
-        "grid-power-recovery/run.sh", "paper", "stepsic environment",
+        "grid-power-recovery/run.sh", "paper",
+        "stepsic environment; periodic cubic GLASS_SNAP",
         (
-            "NREAL", "PAIRED",
+            "NREAL", "PAIRED", "GLASS_TILES",
             "PANEL_A_NMESH", "PANEL_A_LPT", "PANEL_A_Z", "PANEL_A_METHOD",
             "PANEL_B_NMESH", "PANEL_B_LPT", "PANEL_B_Z", "PANEL_B_METHOD",
             "PANEL_C_NMESH", "PANEL_C_LPT", "PANEL_C_Z", "PANEL_C_METHOD",
@@ -70,6 +71,7 @@ CAMPAIGNS: dict[str, Campaign] = {
         (
             "NGRID", "NPART", "NRBINS_STEPS", "NSHELL_STEPS",
             "NRBINS_CUBICAL", "NSHELL_CUBICAL", "GLASS_TIME_LIMIT_MIN",
+            "GLASS_ACC_PARAM",
             "GLASS_FIRST_T_OUT", "GLASS_H_OUT", "DIAG_NZONES",
             "DIAG_PK_NMESH", "DIAG_NPROF",
             "RESCALE_ASPECTS", "FORCE_TIME_LIMIT_MIN",
@@ -87,7 +89,7 @@ CAMPAIGNS: dict[str, Campaign] = {
     "monofonic-agreement": Campaign(
         "monofonic-agreement/run.sh", "paper",
         "stepsic and monofonic environments; network for first build",
-        ("LBOX", "NMESH"),
+        ("LBOX", "NMESH", "LPT_ORDER"),
     ),
     "periodic-embedding": Campaign(
         "periodic-embedding/run.sh", "supplementary", "stepsic environment",
@@ -103,12 +105,15 @@ CAMPAIGNS: dict[str, Campaign] = {
     "periodic-lpt": Campaign(
         "periodic-lpt/run.sh", "supplementary",
         "Gadget-4 source and build environment",
-        ("REF_NGRID", "REF_NMESH", "REF_PMGRID", "PK_NMESH"),
+        ("REF_NGRID", "REF_NMESH", "REF_PMGRID", "REF_Z_INIT", "PK_NMESH"),
     ),
     "spherical-evolution": Campaign(
         "spherical-evolution/run.sh", "extended",
         "REFERENCE_MANIFEST, spherical GLASS_SNAP, StePS source and environment",
-        ("PAIR_NGRID", "SIM_NMESH", "CL_NSIDE", "CL_LMAX", "PK_NMESH", "PK_RANDOM_FACTOR"),
+        (
+            "PAIR_NGRID", "SIM_NMESH", "CL_NSIDE", "CL_LMAX", "PK_NMESH",
+            "PK_RANDOM_FACTOR", "PK_NFKP_RADIAL_BINS",
+        ),
         False,
     ),
 }

@@ -1,0 +1,5 @@
+# L=1000 Mpc/h, z=31. Configuration of the article comparison figure.
+[monofonic-agreement]
+LBOX = 1000
+NMESH = 512
+LPT_ORDER = 2

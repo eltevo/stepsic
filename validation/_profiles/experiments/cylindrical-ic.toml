@@ -1,0 +1,10 @@
+# Run with GEOMETRY=cylindrical; fixed physical geometry.
+[spherical-ic]
+R_3D = 250
+RCRIT = 50
+NRBINS = 128
+NSHELL = 1024
+NMESH = 256
+NMESHSAMPLES = 2
+NCMP = 32
+PK_NMESH = 64

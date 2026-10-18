@@ -30,7 +30,7 @@ class Check:
     unit: str
     rationale: str
     source: str
-    passed: bool
+    passed: bool | None
 
 
 @dataclass
@@ -57,7 +57,7 @@ class ValidationResult:
             }
             for check in self.checks
         ]
-        failed = any(not check.passed for check in self.checks)
+        status = _check_status(checks)
         data_artifacts = (
             self.numerical_archive
             if isinstance(self.numerical_archive, list)
@@ -65,7 +65,7 @@ class ValidationResult:
         )
         return {
             "campaign": self.campaign,
-            "status": "fail" if failed else "pass",
+            "status": status,
             "profile": {
                 "size": os.environ.get("VALIDATION_PROFILE_SIZE", "unknown"),
                 "sha256": os.environ.get("VALIDATION_PROFILE_SHA256", "unknown"),
@@ -129,6 +129,8 @@ def upper_bound_check(
     source: str,
 ) -> Check:
     finite = math.isfinite(float(observed)) and math.isfinite(float(limit))
+    if not finite:
+        raise ValueError("check values and limits must be finite")
     return Check(
         name=name,
         observed=observed,
@@ -141,15 +143,29 @@ def upper_bound_check(
     )
 
 
+def _check_status(checks: list[dict]) -> str:
+    if any(not isinstance(check, dict) or 'passed' not in check or
+           (check['passed'] is not None and not isinstance(check['passed'], bool))
+           for check in checks):
+        raise ValueError('checks require boolean or null verdicts')
+    if any(check['passed'] is False for check in checks):
+        return 'fail'
+    if not checks or any(check['passed'] is None for check in checks):
+        return 'insufficient'
+    return 'pass'
+
+
 def _json_value(value: Any) -> Any:
-    """Return ``value`` in strict JSON form, mapping non-finite reals to null."""
+    """Return finite measurements in strict JSON form."""
     if value is None or isinstance(value, (str, bool)):
         return value
     if isinstance(value, Integral):
         return int(value)
     if isinstance(value, Real):
         number = float(value)
-        return number if math.isfinite(number) else None
+        if not math.isfinite(number):
+            raise ValueError('result measurements must be finite')
+        return number
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, Mapping):
@@ -190,12 +206,16 @@ def summarize_results(
             result_campaign = payload.get("campaign")
             if not isinstance(result_campaign, str) or not result_campaign:
                 raise ValueError("result campaign must be a non-empty string")
+            if result_campaign != campaign:
+                raise ValueError('result belongs to a different campaign')
             status = payload.get("status")
-            if status not in ("pass", "fail"):
-                raise ValueError("result status must be pass or fail")
+            if status not in ("pass", "fail", "insufficient"):
+                raise ValueError("invalid result status")
             checks = payload.get("checks")
             if not isinstance(checks, list):
                 raise ValueError("result checks must be an array")
+            if status != _check_status(checks):
+                raise ValueError('result status disagrees with its checks')
             failed_checks = []
             for check in checks:
                 if not isinstance(check, dict):
@@ -207,9 +227,9 @@ def summarize_results(
                     failed_checks.append(name)
             science_label = status.upper()
             failed_label = "; ".join(failed_checks) or "-"
-            science_failed = science_failed or status == "fail"
+            science_failed = science_failed or status != "pass"
             if run_status != 0 and not (
-                evaluation == "gate" and status == "fail"
+                evaluation == "gate" and status != "pass"
             ):
                 infrastructure_failed = True
         except (OSError, json.JSONDecodeError, ValueError) as error:
@@ -238,18 +258,19 @@ def gate_result(path: Path) -> int:
     try:
         with path.open(encoding="utf-8") as stream:
             payload = json.load(stream)
-        if not isinstance(payload, dict) or payload.get("status") not in ("pass", "fail"):
-            raise ValueError("result status must be pass or fail")
+        if not isinstance(payload, dict) or payload.get("status") not in ("pass", "fail", "insufficient"):
+            raise ValueError("invalid result status")
         checks = payload.get("checks")
         if not isinstance(checks, list) or any(
-            not isinstance(check, dict) or not isinstance(check.get("passed"), bool)
+            not isinstance(check, dict) or 'passed' not in check
+            or (check['passed'] is not None and not isinstance(check['passed'], bool))
             for check in checks
         ):
-            raise ValueError("result checks must contain boolean verdicts")
-        expected_status = "fail" if any(not check["passed"] for check in checks) else "pass"
+            raise ValueError("result checks must contain boolean or null verdicts")
+        expected_status = _check_status(checks)
         if payload["status"] != expected_status:
             raise ValueError("result status disagrees with its checks")
-        return int(payload["status"] == "fail")
+        return int(payload["status"] != "pass")
     except (OSError, json.JSONDecodeError, ValueError) as error:
         print(f"ERROR: malformed result {path}: {error}", file=sys.stderr)
         return 2

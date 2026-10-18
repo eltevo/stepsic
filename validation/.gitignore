@@ -10,4 +10,5 @@ monofonic-agreement/monofonic/
 
 !_profiles/
 !_profiles/*.toml
-!slab-sampling/scripts/field/cosmic-variance-slab-displacement.ipynb
+!_profiles/experiments/*.toml
+!slab-sampling/notebooks/cosmic-variance-slab-displacement.ipynb

@@ -184,9 +184,7 @@ EOF
 )"
     vlib::run_shell_in_env "${STEPS_ENV}" "${script}"
 }
-# Run StePS after removing its run-local Ewald table. Retry once only for the
-# known unchecked-stat false positive, where StePS tries to load that absent
-# table and HDF5 reports ENOENT.
+# Run StePS after removing its run-local Ewald table.
 # Usage: vlib::steps::run_binary_with_fresh_ewald \
 #   <binary> <param> <output_dir> <table_name>
 vlib::steps::run_binary_with_fresh_ewald() {
@@ -213,53 +211,8 @@ vlib::steps::run_binary_with_fresh_ewald() {
         return 2
     fi
 
-    local table="${output_dir%/}/${table_name}"
-    local attempt_log
-    attempt_log="$(mktemp)" || return
-
-    local remove_status=0
-    rm -f -- "${table}" || remove_status=$?
-    if (( remove_status != 0 )); then
-        rm -f -- "${attempt_log}"
-        return "${remove_status}"
-    fi
-    local run_status
-    local -a pipeline_status
-    if vlib::steps::run_binary "${binary}" "${param}" 2>&1 | tee "${attempt_log}"; then
-        pipeline_status=("${PIPESTATUS[@]}")
-    else
-        pipeline_status=("${PIPESTATUS[@]}")
-    fi
-    run_status="${pipeline_status[0]}"
-    if (( pipeline_status[1] != 0 )); then
-        rm -f -- "${attempt_log}"
-        echo "ERROR: Failed to capture StePS output while checking the Ewald failure." >&2
-        return "${pipeline_status[1]}"
-    fi
-    if (( run_status == 0 )); then
-        rm -f -- "${attempt_log}"
-        return 0
-    fi
-
-    local retry=0
-    if [[ ! -e "${table}" && ! -L "${table}" ]] \
-    && grep -Fq -- "Ewald lookup table file (${table}) found." "${attempt_log}" \
-    && grep -Fq -- "name = '${table}', errno = 2, error message = 'No such file or directory'" "${attempt_log}" \
-    && grep -Fq -- "HDF5: cannot open file ${table}" "${attempt_log}" \
-    && grep -Fq -- "Error: Failed to load the Ewald lookup table from file ${table}" "${attempt_log}" \
-    && grep -Fq -- "Aborting." "${attempt_log}"; then
-        retry=1
-    fi
-    rm -f -- "${attempt_log}"
-
-    if (( retry )); then
-        local retry_status=0
-        echo "  Retrying after StePS misreported the absent Ewald table as present."
-        rm -f -- "${table}" || return
-        vlib::steps::run_binary "${binary}" "${param}" || retry_status=$?
-        return "${retry_status}"
-    fi
-    return "${run_status}"
+    rm -f -- "${output_dir%/}/${table_name}" || return
+    vlib::steps::run_binary "${binary}" "${param}"
 }
 # Compute gravitational softening from a StePS snapshot via Python.
 # Usage: softening="$(vlib::steps::compute_softening <snapshot.hdf5>)"

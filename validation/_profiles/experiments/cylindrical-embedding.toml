@@ -1,0 +1,9 @@
+# Run with GEOMETRY=cylindrical; fixed physical geometry.
+[periodic-embedding]
+NGRID0 = 128
+ALPHAS = [1.0, 1.125, 1.25, 1.5, 2.0]
+NSEEDS = 3
+NRBINS = 64
+NSHELL = 1024
+PK_NMESH = 64
+NPROF = 25

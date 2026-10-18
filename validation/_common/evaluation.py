@@ -15,6 +15,70 @@ import numpy as np
 from .result import Check, Metric, ValidationResult, upper_bound_check
 
 
+def average_realization_members(
+    member_values: np.ndarray,
+    *,
+    nreal: int,
+    paired: bool,
+) -> np.ndarray:
+    """Average counter-phased members before treating seeds as samples."""
+    if isinstance(nreal, bool) or not isinstance(nreal, (int, np.integer)):
+        raise TypeError("nreal must be an integer")
+    if nreal < 1:
+        raise ValueError("nreal must be positive")
+    if not isinstance(paired, (bool, np.bool_)):
+        raise TypeError("paired must be boolean")
+
+    values = np.asarray(member_values, dtype=np.float64)
+    if values.ndim == 0 or values.size == 0 or not np.all(np.isfinite(values)):
+        raise ValueError("member values must have a non-empty finite sample axis")
+    members_per_realization = 2 if paired else 1
+    expected_count = nreal * members_per_realization
+    if values.shape[0] != expected_count:
+        raise ValueError(
+            f"expected {expected_count} member values for {nreal} "
+            f"realization(s), got {values.shape[0]}"
+        )
+    grouped_shape = (nreal, members_per_realization, *values.shape[1:])
+    return values.reshape(grouped_shape).mean(axis=1)
+
+
+def ratio_of_means(
+    numerator_samples: np.ndarray,
+    denominator_samples: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return a ratio of means and its paired delta-method standard error."""
+    numerator = np.asarray(numerator_samples, dtype=np.float64)
+    denominator = np.asarray(denominator_samples, dtype=np.float64)
+    if (
+        numerator.shape != denominator.shape
+        or numerator.ndim == 0
+        or numerator.size == 0
+    ):
+        raise ValueError(
+            "numerator and denominator must have the same non-empty shape"
+        )
+    if numerator.shape[0] < 2:
+        raise ValueError("at least two independent realizations are required")
+    if not np.all(np.isfinite(numerator)) or not np.all(
+        np.isfinite(denominator)
+    ):
+        raise ValueError("ratio samples must be finite")
+    if np.any(denominator <= 0.0):
+        raise ValueError("denominator samples must be positive")
+
+    numerator_mean = np.mean(numerator, axis=0, dtype=np.float64)
+    denominator_mean = np.mean(denominator, axis=0, dtype=np.float64)
+    ratio = numerator_mean / denominator_mean
+    linearized_samples = (
+        numerator - ratio * denominator
+    ) / denominator_mean
+    standard_error = np.std(
+        linearized_samples, axis=0, ddof=1, dtype=np.float64
+    ) / np.sqrt(numerator.shape[0])
+    return ratio, standard_error
+
+
 def load_npz(path: str | Path) -> dict[str, np.ndarray]:
     """Load a typed NumPy archive without permitting pickle payloads."""
     with np.load(path, allow_pickle=False) as archive:
@@ -113,12 +177,10 @@ def gaussian_power_check(
     if sample_count <= 0 or np.any(modes <= 0):
         raise ValueError("sample and Fourier-mode counts must be positive")
     if not np.all(np.isfinite(ratio)):
-        statistic = math.nan
-        dof = int(ratio.size)
-    else:
-        variance = 4.0 / (modes * sample_count)
-        statistic = float(np.sum((ratio - 1.0) ** 2 / variance))
-        dof = int(ratio.size)
+        raise ValueError("power ratios must be finite")
+    variance = 4.0 / (modes * sample_count)
+    statistic = float(np.sum((ratio - 1.0) ** 2 / variance))
+    dof = int(ratio.size)
     log_inverse_tail = math.log(1.0e6)
     limit = (
         dof
