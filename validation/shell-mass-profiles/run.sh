@@ -99,12 +99,6 @@ fi
 if vlib::step_check "plot" "${OUTPUT}/shell-mass-profiles.pdf"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot.py" \
         --archive "${VLIB_CACHE_DIR}/shell-mass.npz" \
-        --D4D "${D4D}" \
-        --R3D "${R3D}" \
-        --nrbins "${NRBINS}" \
-        --nshell "${NSHELL}" \
-        --Lz "${LZ}" \
-        "${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"}" \
         -o "${OUTPUT}/shell-mass-profiles.pdf"
     vlib::step_done "plot"
 fi
