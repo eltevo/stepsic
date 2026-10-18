@@ -10,6 +10,7 @@ import numpy as np
 from scipy.stats import f as f_distribution
 
 from validation._common.evaluation import (
+    average_realization_members,
     archive_provenance,
     load_npz,
     malformed_result,
@@ -42,15 +43,22 @@ def evaluate(
             count = float(np.sum(counts))
             conservation_errors.append(abs(count - n_part))
         nreal = int(data["meta_nreal"])
-        n_total = int(data["meta_n_total"])
-        if nreal < 4 or n_total % nreal != 0:
+        if nreal < 4:
             raise ValueError("isotropy evaluation requires at least four realizations")
         moments = np.asarray(
             data["stat_disp_component_second_moments"], dtype=np.float64,
         )
-        if moments.shape != (n_total, 3) or not np.all(np.isfinite(moments)):
+        if (
+            moments.ndim != 2
+            or moments.shape[1] != 3
+            or not np.all(np.isfinite(moments))
+        ):
             raise ValueError("component second moments have the wrong shape or values")
-        moments = moments.reshape(nreal, n_total // nreal, 3).mean(axis=1)
+        moments = average_realization_members(
+            moments,
+            nreal=nreal,
+            paired=bool(np.asarray(data["meta_paired"]).item()),
+        )
         contrasts = np.column_stack(
             (moments[:, 0] - moments[:, 2], moments[:, 1] - moments[:, 2])
         )
@@ -90,7 +98,7 @@ def evaluate(
                     limit=isotropy_limit,
                     unit="F statistic",
                     rationale=(
-                        "A Hotelling test compares two independent component-variance differences across random fields. The limit is the 1e-6 upper tail of its F distribution."
+                        "A Hotelling test compares two independent component-variance differences across random fields. The diagnostic uses the 1e-6 F tail under a normal-seed-contrast approximation; this is not an equivalence bound."
                     ),
                     source="rotational symmetry of homogeneous Gaussian fields",
                 ),

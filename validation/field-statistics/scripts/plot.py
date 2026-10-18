@@ -12,6 +12,7 @@ from typing import Sequence, TypeAlias
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.lines import Line2D
 from numpy.typing import NDArray
 
 from validation._common.plotting import atomic_savefig, setup_matplotlib
@@ -113,20 +114,36 @@ def _draw_panel_components(
 
     ax.set_yscale('log')
     if show_ylabel and ylabel is not None:
-        ax.set_title(ylabel, loc='left', fontsize=9)
+        ax.set_ylabel(ylabel, fontsize=8)
     if show_xlabel and xlabel is not None:
         ax.set_xlabel(xlabel, fontsize=9)
 
     if title:
-        ax.text(
-            0.03, 0.94, title,
-            transform=ax.transAxes, fontsize=9,
-            va='top', ha='left',
+        ax.set_title(title, loc='left', fontsize=9)
+    if multi:
+        dataset_handles = [
+            Line2D([0], [0], color=prop_cycle[i % len(prop_cycle)], lw=1.2,
+                   label=label)
+            for i, label in enumerate(labels)
+        ]
+        component_handles = [
+            Line2D([0], [0], color='0.25', ls=ls, lw=1.0, label=label)
+            for label, ls in zip(comp_labels, comp_linestyles)
+        ]
+        dataset_legend = ax.legend(
+            handles=dataset_handles, fontsize=6, loc='upper right',
+            frameon=False, handlelength=1.6,
         )
-    ax.legend(
-        fontsize=5, loc='upper right', frameon=False,
-        ncol=1, handlelength=1.5, columnspacing=0.8,
-    )
+        ax.add_artist(dataset_legend)
+        ax.legend(
+            handles=component_handles, fontsize=6, loc='center right',
+            frameon=False, handlelength=1.6,
+        )
+    else:
+        ax.legend(
+            fontsize=6, loc='upper right', frameon=False,
+            handlelength=1.6,
+        )
 
 
 def _draw_panel_total(
@@ -151,40 +168,41 @@ def _draw_panel_total(
     '''
     prop_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
+    linestyles = ['-', '--', '-.', ':']
     for i_ds, (data, ds_label) in enumerate(zip(datasets, labels)):
-        if not color:
-            color = prop_cycle[i_ds % len(prop_cycle)]
+        line_color = color or prop_cycle[i_ds % len(prop_cycle)]
+        linestyle = linestyles[i_ds % len(linestyles)]
         c = data[f'{hist_prefix}_centres']
         h = data[f'{hist_prefix}_counts']
         w = data[f'{hist_prefix}_widths']
         _step_style_histogram(
             ax, c, h, w,
-            color=color, ls='-', lw=1.2, label=ds_label,
+            color=line_color, ls=linestyle, lw=1.2, label=ds_label,
         )
 
         # Annotate summary statistics (median line)
         if annotate_stats and f'{stat_prefix}_median' in data:
             median_val = float(data[f'{stat_prefix}_median'])
             ax.axvline(
-                median_val, color='black', ls=':', lw=0.8, alpha=0.6,
+                median_val, color=line_color, ls=':', lw=0.8, alpha=0.7,
             )
 
     ax.set_yscale('log')
     if show_ylabel and ylabel is not None:
-        ax.set_title(ylabel, loc='left', fontsize=9)
+        ax.set_ylabel(ylabel, fontsize=8)
     if show_xlabel and xlabel is not None:
         ax.set_xlabel(xlabel, fontsize=9)
 
     if title:
-        ax.text(
-            0.03, 0.94, title, fontsize=9,
-            va='top', ha='left', transform=ax.transAxes,
-        )
-    if len(datasets) > 1:
-        ax.legend(
-            fontsize=5, loc='upper right', frameon=False,
-            ncol=1, handlelength=1.5, columnspacing=0.8,
-        )
+        ax.set_title(title, loc='left', fontsize=9)
+    handles, legend_labels = ax.get_legend_handles_labels()
+    if annotate_stats:
+        handles.append(Line2D([0], [0], color='0.25', ls=':', lw=0.8))
+        legend_labels.append('median')
+    ax.legend(
+        handles, legend_labels, fontsize=6, loc='upper right',
+        frameon=False, handlelength=1.6,
+    )
 
 
 def plot_fields(
@@ -217,15 +235,15 @@ def plot_fields(
     fig, axes = plt.subplots(
         n_panels, 1,
         figsize=(fig_width, fig_height),
-        gridspec_kw={'hspace': 0.65},
+        layout='constrained',
     )
 
     # Panel (a): per-component displacements
     _draw_panel_components(
         axes[0], datasets, labels,
-        # title=r'(a) Per-component displacement',
+        title=r'(a) Displacement components',
         xlabel=r'$|\mathbf{\Psi}_i|$ [$h^{-1}\,\mathrm{kpc}$]',
-        ylabel=r'Mean counts $\langle N \rangle$',
+        ylabel=r'$\langle N\rangle$ per bin',
         show_xlabel=True,
         show_ylabel=True,
     )
@@ -236,9 +254,9 @@ def plot_fields(
     _draw_panel_total(
         axes[1], datasets, labels,
         hist_prefix='hist_disp_tot',
-        # title=r'(b) Total displacement',
+        title=r'(b) Displacement magnitude',
         xlabel=r'$|\mathbf{\Psi}|$ [$h^{-1}\,\mathrm{kpc}$]',
-        ylabel=r'Mean counts $\langle N \rangle$',
+        ylabel=r'$\langle N\rangle$ per bin',
         color='tab:red',
         show_xlabel=True,
         show_ylabel=True,
@@ -252,9 +270,9 @@ def plot_fields(
     _draw_panel_total(
         axes[2], datasets, labels,
         hist_prefix='hist_vel_tot',
-        # title=r'(c) Total velocity',
+        title=r'(c) Velocity magnitude',
         xlabel=r'$|\mathbf{v}|$ [km\,s$^{-1}$]',
-        ylabel=r'Mean counts $\langle N \rangle$',
+        ylabel=r'$\langle N\rangle$ per bin',
         color='tab:green',
         show_xlabel=True,
         show_ylabel=True,
@@ -263,8 +281,6 @@ def plot_fields(
     )
 
     fig.align_ylabels(axes)
-    fig.tight_layout()
-    fig.subplots_adjust(hspace=0.15)
 
     if output:
         atomic_savefig(fig, output, bbox_inches='tight')

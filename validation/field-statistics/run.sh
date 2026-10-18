@@ -6,6 +6,7 @@
 #
 #    output/supplementary/field-statistics.pdf      2LPT field histograms
 #    output/supplementary/field-statistics-lpt.pdf  1LPT/2LPT comparison
+#    output/supplementary/growth.pdf                growth-fit error
 #
 #  Usage:
 #    bash run.sh [OPTIONS]
@@ -26,7 +27,8 @@
 #    2. run_1lpt         - 1LPT histograms for comparison
 #    3. plot_fields      - displacement/velocity distributions
 #    4. plot_comparison  - 1LPT vs 2LPT overlay
-#    5. evaluate         - isotropy and histogram integrity
+#    5. growth           - error of the growth fits against integrated growth equations
+#    6. evaluate         - isotropy and histogram integrity
 #
 #  Configuration (edit config.env or export before running):
 #    LBOX_3D           3D box [Lx Ly Lz] in Mpc/h    (default: 1000 1000 1000)
@@ -46,7 +48,8 @@ source "${BASEDIR}/../_common/lib.sh"
 vlib::parse_args "$@"
 vlib::prepare_campaign field-statistics "${BASEDIR}" "${BASEDIR}/config.env"
 
-vlib::declare_steps run_2lpt run_1lpt plot_fields plot_comparison evaluate
+vlib::declare_steps run_2lpt run_1lpt plot_fields plot_comparison growth evaluate
+vlib::manifest_implementation growth "${BASEDIR}/scripts/growth.py"
 for _step in run_2lpt run_1lpt; do
     vlib::manifest_implementation "${_step}" "${BASEDIR}/scripts/run.py"
 done
@@ -132,11 +135,18 @@ if vlib::step_check "plot_comparison" "${FIGURES}/field-statistics-lpt.pdf"; the
     vlib::step_done "plot_comparison"
 fi
 
+if vlib::step_check growth "${FIGURES}/growth.pdf"; then
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/growth.py" \
+        --figure "${FIGURES}/growth.pdf"
+    vlib::step_done growth
+fi
+
 if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/evaluate.py" \
         --archive "${VLIB_CACHE_DIR}/2lpt.npz" \
         --figure "${FIGURES}/field-statistics.pdf" \
         --figure "${FIGURES}/field-statistics-lpt.pdf" \
+        --figure "${FIGURES}/growth.pdf" \
         --output "${OUTPUT}/result.json"
     vlib::step_done "evaluate"
 fi

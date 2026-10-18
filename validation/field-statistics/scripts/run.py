@@ -19,9 +19,10 @@ import numpy as np
 
 from validation._common.evaluation import atomic_savez
 
-from stepsic.field import create_grid, cubic_voxels
+from stepsic.field import cubic_voxels
+from stepsic.particles import create_grid
 
-from validation._common.cosmology_fields import (
+from validation._common.fields import (
     ArrayF,
     GrowthData,
     generate_field,
