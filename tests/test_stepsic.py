@@ -87,13 +87,15 @@ def _grid(power_law, **overrides) -> dict:
     return config
 
 
-def _write_spherical_glass(path: Path, pos: np.ndarray, mass: np.ndarray, radius: float) -> None:
-    """Write a centred spherical glass with the header StePS gives it."""
+def _write_glass(
+    path: Path, pos: np.ndarray, mass: np.ndarray, radius: float, box_size: float = 50.0
+) -> None:
+    """Write a glass with the radius and box size StePS puts in its header."""
     with h5py.File(path, "w") as f:
         header = f.create_group("Header")
         header.attrs["NumPart_ThisFile"] = np.array([0, len(pos), 0, 0, 0, 0], dtype=np.uint32)
         header.attrs["MassTable"] = np.zeros(6)
-        header.attrs["BoxSize"] = 50.0
+        header.attrs["BoxSize"] = box_size
         header.attrs["SimulationRadius"] = radius
         particles = f.create_group("PartType1")
         particles["ParticleIDs"] = np.arange(len(pos), dtype=np.uint64)
@@ -256,7 +258,7 @@ def test_spherical_glass_ic__keeps_the_load_and_returns_input_units(
     r = np.linalg.norm(glass, axis=1)
     masses = np.select([r < 8.0, r < 14.0], [1.0, 8.0], 27.0)
     path = tmp_path / "glass.hdf5"
-    _write_spherical_glass(path, glass, masses, radius)
+    _write_glass(path, glass, masses, radius)
 
     ic = stepsic_run(
         GEOMETRY="spherical", TYPE="glass", INPUT_GLASS=str(path), NMESH=0, NMESHSAMPLES=3,
@@ -290,11 +292,42 @@ def test_spherical_glass_ic__is_stretched_to_r3d(stepsic_run, tmp_path) -> None:
     grid = np.stack(np.meshgrid(axis, axis, axis, indexing="ij"), axis=-1).reshape(-1, 3)
     glass = grid[np.linalg.norm(grid, axis=1) < radius / 2]
     path = tmp_path / "glass.hdf5"
-    _write_spherical_glass(path, glass, np.ones(len(glass)), radius / 2)
+    _write_glass(path, glass, np.ones(len(glass)), radius / 2)
 
     ic = stepsic_run(
         GEOMETRY="spherical", TYPE="glass", INPUT_GLASS=str(path), NMESH=0, NMESHSAMPLES=3,
         R_3D=radius, D_4D=40.0, LBOX=[50.0, 50.0, 50.0], PERIODIC=False, LPTORDER=0,
     )
     np.testing.assert_array_equal(ic["pos"], 2.0 * glass)
+
+
+def test_cylindrical_glass_ic__is_stretched_to_r3d(stepsic_run, tmp_path) -> None:
+    """A cylindrical glass is stretched uniformly to the radius R_3D.
+
+    R_3D is the radius of the compactified plane and LBOX[2] the period
+    along the axis (Template-config.toml). A glass relaxed at radius 5 with
+    period 15, run at R_3D = 10 and LBOX[2] = 30, must come out of the
+    unperturbed mode with every position doubled. Its masses must add up to
+    Omega_m rho_crit pi R_3D^2 LBOX[2]; the cylinder is longer than the
+    transverse box sides, so the shortest side is not its height.
+    """
+    radius, period = 10.0, 30.0
+    axis = np.arange(-4.5, 5.0, 1.0)
+    grid = np.stack(
+        np.meshgrid(axis, axis, np.arange(0.5, period / 2, 1.0), indexing="ij"), axis=-1
+    ).reshape(-1, 3)
+    glass = grid[np.linalg.norm(grid[:, :2], axis=1) < radius / 2]
+    path = tmp_path / "glass.hdf5"
+    _write_glass(path, glass, np.ones(len(glass)), radius / 2, box_size=period / 2)
+
+    ic = stepsic_run(
+        GEOMETRY="cylindrical", TYPE="glass", INPUT_GLASS=str(path), NMESH=0, NMESHSAMPLES=3,
+        R_3D=radius, D_4D=40.0, LBOX=[2 * radius, 2 * radius, period],
+        PERIODIC=[False, False, True], LPTORDER=0,
+    )
+    np.testing.assert_array_equal(ic["pos"], 2.0 * glass)
+    rho_crit = FlatLambdaCDM(H0=100.0, Om0=OMEGA_M).critical_density0.to_value(u.Msun / u.Mpc**3)
+    np.testing.assert_allclose(
+        ic["mass"].sum(), OMEGA_M * rho_crit * np.pi * radius**2 * period / 1e11, rtol=1e-10
+    )
 

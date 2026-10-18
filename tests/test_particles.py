@@ -24,18 +24,19 @@ def test_shell_loads__fill_shells_at_mean_density(geometry, bin_mode, rcrit) -> 
 
     The mass whose radius falls in [r_i, r_i+1) is rho_mean times the shell
     volume, so the load fills the sphere (4/3 pi R^3) or cylinder
-    (pi R^2 L_z) of radius R_3D with uniform mean density. With RCRIT the
-    interior up to the last shell edge inside RCRIT is one pool of equal
-    masses. The Omega_m normalisation of CosmoData must agree with the load
-    and leave its masses unchanged.
+    (pi R^2 L_z) of radius R_3D with uniform mean density. The cylinder is
+    longer than the transverse box sides, so its height is LBOX[2], not the
+    shortest side. With RCRIT the interior up to the last shell edge inside
+    RCRIT is one pool of equal masses. The Omega_m normalisation of CosmoData
+    must agree with the load and leave its masses unchanged.
     """
     params = {
         "GEOMETRY": geometry, "BIN_MODE": bin_mode, "D_4D": 20.0, "NRBINS": 8,
         "R_3D": 30.0, "RHO_MEAN": 2.0, "NSHELL": 16, "SEED": 42,
-        "LBOX": np.array([60.0, 60.0, 20.0]), "RCRIT": rcrit,
+        "LBOX": np.array([60.0, 60.0, 80.0]), "RCRIT": rcrit,
     }
     pos, mass = create_shell_particles(params)
-    height = 20.0
+    height = 80.0
     if geometry == "spherical":
         radius = np.linalg.norm(pos, axis=1)
         volume = lambda r: 4.0 / 3.0 * np.pi * r**3

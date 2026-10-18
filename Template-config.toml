@@ -96,10 +96,12 @@ NSHELL = 12288         # Particles per radial shell.
 #  If TYPE = "glass", the initial particle distribution will be loaded
 #  from a pre-built glass file. This file should contain the particle
 #  positions in the same geometry as defined by the `GEOMETRY` parameter.
-#  The glass is stretched uniformly to the configured size: cylindrical
-#  and cubical glasses from the header BoxSize to LBOX[2], spherical
-#  glasses from the header SimulationRadius to R_3D. Spherical glasses
-#  are centred on the origin, as StePS writes them.
+#  The glass is stretched uniformly to the configured size: spherical and
+#  cylindrical glasses from the header SimulationRadius to R_3D, cubical
+#  glasses from the header BoxSize to LBOX[2]. The stretch keeps the ratio
+#  of a cylindrical glass's period to its radius, so LBOX[2] must equal
+#  BoxSize * R_3D / SimulationRadius. Spherical glasses are centred on the
+#  origin, as StePS writes them. TODO: Make this more convenient to use.
 INPUT_GLASS = "./examples/input_glass.hdf5"   # Path to the input glass file.
 
 # ** General options ***************************************************

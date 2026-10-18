@@ -641,7 +641,7 @@ def create_shell_particles(params: dict) -> tuple[NDArray, NDArray]:
             seed=seed, r_crit=r_crit,
         )
     elif geometry == 'cylindrical':
-        Lz = np.min(params['LBOX'])
+        Lz = params['LBOX'][2]
         pos, mass = create_cylindrical_shells(
             binner, n_bins, n_per_shell, Lz, rho_mean,
             seed=seed, r_crit=r_crit,

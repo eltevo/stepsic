@@ -119,7 +119,7 @@ For a production StePS run, the usual path is:
 
 1. Generate an unperturbed pre-glass with `GEOMETRY = "spherical"` or `"cylindrical"`, `TYPE = "shell"`, and `LPTORDER = 0`.
 2. Relax that load into a glass with StePS.
-3. Run `stepsic` again with `TYPE = "glass"` and `INPUT_GLASS` pointing to the relaxed glass. The glass is stretched to `R_3D` (spherical) or `LBOX[2]` (cylindrical), so one glass serves any size.
+3. Run `stepsic` again with `TYPE = "glass"` and `INPUT_GLASS` pointing to the relaxed glass. The glass is stretched uniformly to `R_3D`, so one glass serves any size; a cylindrical glass keeps its period-to-radius ratio, and `LBOX[2]` must match the stretched period.
 4. Use `NMESH = 0` for adaptive multiscale displacements, or a positive `NMESH` for a single FFT mesh.
 5. Run the StePS simulation with the generated initial conditions.
 

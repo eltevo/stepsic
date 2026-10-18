@@ -149,10 +149,11 @@ class CosmoData:
         """
         Rescale the particle positions to fit the input box size.
 
-        Cylindrical and cubical loads are stretched until ``Lbox`` equals
-        ``LBOX[2]``, spherical loads until ``R_sim`` equals ``R_3D``. The
+        Cubical loads are stretched until ``Lbox`` equals ``LBOX[2]``,
+        spherical and cylindrical loads until ``R_sim`` equals ``R_3D``. The
+        stretched period of a cylindrical load must equal ``LBOX[2]``. The
         stretch is uniform about the origin, where a spherical load is
-        centred.
+        centred and through which a cylindrical load's axis runs.
 
         Parameters
         ----------
@@ -164,21 +165,34 @@ class CosmoData:
                 f'Cannot rescale snapshot: invalid Lbox={self.Lbox}. '
                 f'Check the input snapshot header.'
             )
-        if params['GEOMETRY'] == 'cylindrical' or params['GEOMETRY'] == 'cubical':
+        if params['GEOMETRY'] == 'cubical':
             log.info('Rescaling the snapshot size to fit the desired box size...')
             log.info(f'Target box size (along the z axis): {params["LBOX"][2]} (internal units), loaded box size: {self.Lbox} (internal units).')
             self.pos *= params['LBOX'][2] / self.Lbox
             self.Lbox = params['LBOX'][2]
             return
-        elif params['GEOMETRY'] == 'spherical':
+        elif params['GEOMETRY'] == 'cylindrical' or params['GEOMETRY'] == 'spherical':
             if self.R_sim is None:
                 raise ValueError(
                     'Cannot rescale snapshot: the input glass header has no '
                     'SimulationRadius to stretch to R_3D from.'
                 )
+            scale = params['R_3D'] / self.R_sim
+            if params['GEOMETRY'] == 'cylindrical':
+                # The stretched period must close the periodic box; the
+                # tolerance admits decimal rounding of LBOX[2] in the config.
+                Lz = self.Lbox * scale
+                if not np.isclose(Lz, params['LBOX'][2], rtol=1e-6, atol=0.0):
+                    to_config = 1.0 if params['HINDEPENDENT'] else params['H']
+                    raise ValueError(
+                        f'LBOX[2] = {params["LBOX"][2] / to_config:.10g} does not fit the '
+                        f'input glass: stretched to R_3D, its period is '
+                        f'{Lz / to_config:.10g}. Set LBOX[2] to that value.'
+                    )
             log.info('Rescaling the snapshot size to fit the desired simulation radius...')
             log.info(f'Target radius: {params["R_3D"]} (internal units), loaded radius: {self.R_sim} (internal units).')
-            self.pos *= params['R_3D'] / self.R_sim
+            self.pos *= scale
+            self.Lbox *= scale
             self.R_sim = params['R_3D']
             return
         else:
@@ -198,7 +212,7 @@ class CosmoData:
         if params['GEOMETRY'] == 'spherical':
             V_sim = 4/3 * params['R_3D']**3 * np.pi
         elif params['GEOMETRY'] == 'cylindrical':
-            V_sim = params['R_3D']**2 * np.min(params['LBOX']) * np.pi
+            V_sim = params['R_3D']**2 * params['LBOX'][2] * np.pi
         elif params['GEOMETRY'] == 'cubical':
             V_sim = np.prod(params['LBOX'])
         omega_m_box = (M_tot / V_sim) / params['RHO_CRIT']
