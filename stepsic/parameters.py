@@ -450,7 +450,7 @@ def _validate_group(params: Sequence[Param], P: dict) -> None:
         _validate_and_cast(p, P)
 
 
-def _compute_derived_cosmo(P: dict) -> None:
+def compute_derived_cosmo(P: dict) -> None:
     """Compute derived cosmological quantities from base parameters."""
     h = P['H0'] / 100.0
     P["H"] = h
@@ -635,7 +635,7 @@ class CosmoParameters:
         """
         # cosmo parameters
         _validate_group(COSMO_PARAMS, self.P)
-        _compute_derived_cosmo(self.P)
+        compute_derived_cosmo(self.P)
         _display_params('Cosmological Parameters', _COSMO_DISPLAY, self.P)
 
         # stepsic parameters
