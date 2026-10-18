@@ -90,13 +90,17 @@ NSHELL = 12288         # Particles per radial shell.
 #  If TYPE = "glass", the initial particle distribution will be loaded
 #  from a pre-built glass file. This file should contain the particle
 #  positions in the same geometry as defined by the `GEOMETRY` parameter.
+#  The glass is stretched uniformly to the configured size: cylindrical
+#  and cubical glasses from the header BoxSize to LBOX[2], spherical
+#  glasses from the header SimulationRadius to R_3D. Spherical glasses
+#  are centred on the origin, as StePS writes them.
 INPUT_GLASS = "./examples/input_glass.hdf5"   # Path to the input glass file.
 
 # ** General options ***************************************************
 USE_DOUBLE = true      # If `true`, the code will use double precision, and the output files will be saved in double precision. Otherwise, the code will run with 32bit floating point accuracy, and the output files will be saved in single precision.
 SEED = 137             # Random seed to initialize the Numpy RNG with. This will be used in particle generation and in the sampling of Gaussian displacements.
 COMOVING = true        # If `true`, the IC will be generated in comoving coordinates, otherwise in physical coordinates. This is useful for cosmological simulations where the expansion of the universe is taken into account.
-HINDEPENDENT = true    # If `true`, the IC will be generated in units of [U/h] instead of [U]. By default, the code calculates everything in [U/h] units. If set to `false`, then the code also expects the input glass to be in units of [U] instead of [U/h].
+HINDEPENDENT = true    # If `true`, the IC will be generated in units of [U/h] instead of [U]. By default, the code calculates everything in [U/h] units.
 
 # ** Rotating IC (experimental) ****************************************
 ROTATE = 0.0           # Add an angular velocity to the IC in rad / Gyr.

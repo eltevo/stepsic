@@ -87,6 +87,21 @@ def _grid(power_law, **overrides) -> dict:
     return config
 
 
+def _write_spherical_glass(path: Path, pos: np.ndarray, mass: np.ndarray, radius: float) -> None:
+    """Write a centred spherical glass with the header StePS gives it."""
+    with h5py.File(path, "w") as f:
+        header = f.create_group("Header")
+        header.attrs["NumPart_ThisFile"] = np.array([0, len(pos), 0, 0, 0, 0], dtype=np.uint32)
+        header.attrs["MassTable"] = np.zeros(6)
+        header.attrs["BoxSize"] = 50.0
+        header.attrs["SimulationRadius"] = radius
+        particles = f.create_group("PartType1")
+        particles["ParticleIDs"] = np.arange(len(pos), dtype=np.uint64)
+        particles["Coordinates"] = pos
+        particles["Velocities"] = np.zeros_like(pos)
+        particles["Masses"] = mass
+
+
 @pytest.mark.parametrize("hindependent", [True, False])
 def test_grid_ic__particles_carry_the_input_spectrum(stepsic_run, power_law, hindependent) -> None:
     """A lattice IC carries the input P(k) with consistent units and velocities.
@@ -241,16 +256,7 @@ def test_spherical_glass_ic__keeps_the_load_and_returns_input_units(
     r = np.linalg.norm(glass, axis=1)
     masses = np.select([r < 8.0, r < 14.0], [1.0, 8.0], 27.0)
     path = tmp_path / "glass.hdf5"
-    with h5py.File(path, "w") as f:
-        header = f.create_group("Header")
-        header.attrs["NumPart_ThisFile"] = np.array([0, len(glass), 0, 0, 0, 0], dtype=np.uint32)
-        header.attrs["MassTable"] = np.zeros(6)
-        header.attrs["BoxSize"] = 50.0
-        particles = f.create_group("PartType1")
-        particles["ParticleIDs"] = np.arange(len(glass), dtype=np.uint64)
-        particles["Coordinates"] = glass
-        particles["Velocities"] = np.zeros_like(glass)
-        particles["Masses"] = masses
+    _write_spherical_glass(path, glass, masses, radius)
 
     ic = stepsic_run(
         GEOMETRY="spherical", TYPE="glass", INPUT_GLASS=str(path), NMESH=0, NMESHSAMPLES=3,
@@ -267,3 +273,28 @@ def test_spherical_glass_ic__keeps_the_load_and_returns_input_units(
     np.testing.assert_allclose(ic["header"]["SimulationRadius"], radius, rtol=1e-12)
     expected = psi * _velocity_per_mpc(A, growth_rate(A, OMEGA_M))
     np.testing.assert_allclose(ic["vel"], expected, rtol=0.0, atol=1e-4 * np.abs(expected).max())
+
+
+def test_spherical_glass_ic__is_stretched_to_r3d(stepsic_run, tmp_path) -> None:
+    """A spherical glass is stretched uniformly to the sphere of radius R_3D.
+
+    R_3D is the radius of the simulated sphere (Template-config.toml), and a
+    StePS glass records the radius it was relaxed at as SimulationRadius. A
+    glass relaxed at radius 10 and run at R_3D = 20 must come out of the
+    unperturbed mode with every position doubled about the sphere centre.
+    Left at its own size, it would fill an eighth of the volume its masses
+    are normalised to.
+    """
+    radius = 20.0
+    axis = np.arange(-9.5, 10.0, 1.0)
+    grid = np.stack(np.meshgrid(axis, axis, axis, indexing="ij"), axis=-1).reshape(-1, 3)
+    glass = grid[np.linalg.norm(grid, axis=1) < radius / 2]
+    path = tmp_path / "glass.hdf5"
+    _write_spherical_glass(path, glass, np.ones(len(glass)), radius / 2)
+
+    ic = stepsic_run(
+        GEOMETRY="spherical", TYPE="glass", INPUT_GLASS=str(path), NMESH=0, NMESHSAMPLES=3,
+        R_3D=radius, D_4D=40.0, LBOX=[50.0, 50.0, 50.0], PERIODIC=False, LPTORDER=0,
+    )
+    np.testing.assert_array_equal(ic["pos"], 2.0 * glass)
+

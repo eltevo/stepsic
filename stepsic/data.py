@@ -43,12 +43,14 @@ class CosmoData:
         Particle masses. Defaults to float32 ones.
     Lbox : float, optional
         Box length along the z axis, in the same units as ``pos``.
+    R_sim : float, optional
+        Radius of the simulation volume, in the same units as ``pos``.
 
     Notes
     -----
     Arrays are stored by reference. Unit conversions modify them in place.
     """
-    def __init__(self, id=None, pos=None, vel=None, mass=None, Lbox=None):
+    def __init__(self, id=None, pos=None, vel=None, mass=None, Lbox=None, R_sim=None):
         if pos is None:
             raise ValueError('Particle positions must be provided!')
         if id is None:
@@ -62,6 +64,7 @@ class CosmoData:
         self.vel = vel    # Particle velocities
         self.mass = mass  # Particle masses
         self.Lbox = Lbox  # Linear size of the simulation volume (in z direction)
+        self.R_sim = R_sim  # Radius of the simulation volume
 
         # Calculated values
         self.N_part = self.id.size  # Number of particles
@@ -89,9 +92,15 @@ class CosmoData:
         ----------
         params : dict
             Unit scales ``UNIT_L_IN_CM``, ``UNIT_V_IN_KMPS``, and ``UNIT_M_IN_G``.
-            The particle arrays are scaled in place; box metadata is unchanged.
+            The particle arrays are scaled in place; ``Lbox`` and ``R_sim``
+            follow the positions.
         """
-        self.pos *= params['UNIT_L_IN_CM'] / UNIT_L
+        length = params['UNIT_L_IN_CM'] / UNIT_L
+        self.pos *= length
+        if self.Lbox is not None:
+            self.Lbox *= length
+        if self.R_sim is not None:
+            self.R_sim *= length
         self.vel *= params['UNIT_V_IN_KMPS'] / UNIT_V
         self.mass *= params['UNIT_M_IN_G'] / UNIT_M
 
@@ -102,9 +111,15 @@ class CosmoData:
         ----------
         params : dict
             Unit scales ``UNIT_L_IN_CM``, ``UNIT_V_IN_KMPS``, and ``UNIT_M_IN_G``.
-            The particle arrays are scaled in place; box metadata is unchanged.
+            The particle arrays are scaled in place; ``Lbox`` and ``R_sim``
+            follow the positions.
         """
-        self.pos /= params['UNIT_L_IN_CM'] / UNIT_L
+        length = params['UNIT_L_IN_CM'] / UNIT_L
+        self.pos /= length
+        if self.Lbox is not None:
+            self.Lbox /= length
+        if self.R_sim is not None:
+            self.R_sim /= length
         self.vel /= params['UNIT_V_IN_KMPS'] / UNIT_V
         self.mass /= params['UNIT_M_IN_G'] / UNIT_M
 
@@ -122,7 +137,8 @@ class CosmoData:
                 f'Inferred Lbox={Lbox:.6f} from particle positions.'
             )
         log.info(f'Loaded snapshot from {path} with box size {Lbox} (internal units).')
-        instance = cls(id=ids, pos=pos, vel=vel, mass=mass, Lbox=Lbox)
+        R_sim = CosmoIO.get_simulation_radius(path)
+        instance = cls(id=ids, pos=pos, vel=vel, mass=mass, Lbox=Lbox, R_sim=R_sim)
         return instance
     def save_snapshot(self, path: Path, **io_kwargs):
         """Save the snapshot data to a file."""
@@ -132,7 +148,12 @@ class CosmoData:
     def rescale_snapshot_size(self, params):
         """
         Rescale the particle positions to fit the input box size.
-        
+
+        Cylindrical and cubical loads are stretched until ``Lbox`` equals
+        ``LBOX[2]``, spherical loads until ``R_sim`` equals ``R_3D``. The
+        stretch is uniform about the origin, where a spherical load is
+        centred.
+
         Parameters
         ----------
         params : dict
@@ -150,11 +171,15 @@ class CosmoData:
             self.Lbox = params['LBOX'][2]
             return
         elif params['GEOMETRY'] == 'spherical':
-            # in spherical (R^3) geometry, we only need to rescale the
-            # the glass to h-independent units, if the input snapshot
-            # is in h-dependent units.
-            if not params['HINDEPENDENT']:
-                self.pos *= params['H']
+            if self.R_sim is None:
+                raise ValueError(
+                    'Cannot rescale snapshot: the input glass header has no '
+                    'SimulationRadius to stretch to R_3D from.'
+                )
+            log.info('Rescaling the snapshot size to fit the desired simulation radius...')
+            log.info(f'Target radius: {params["R_3D"]} (internal units), loaded radius: {self.R_sim} (internal units).')
+            self.pos *= params['R_3D'] / self.R_sim
+            self.R_sim = params['R_3D']
             return
         else:
             # this should never happen 

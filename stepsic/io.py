@@ -265,7 +265,34 @@ class CosmoIO:
             )
             boxsize = None
         return boxsize
-    
+
+    @staticmethod
+    def get_simulation_radius(path: Path):
+        """
+        Retrieves the simulation radius from an HDF5 snapshot header.
+
+        StePS and stepsic store the radius of spherical and cylindrical
+        volumes as ``SimulationRadius``. Other formats carry no radius.
+
+        Parameters
+        ----------
+        path : pathlib.Path
+            Path to the snapshot file.
+
+        Returns
+        -------
+        radius : float or None
+            The radius in the length unit of the file, or ``None`` if the
+            header has no positive, finite ``SimulationRadius``.
+        """
+        path = path.expanduser().resolve()
+        if CosmoIO._get_extension(path) not in ['hdf5', 'h5']:
+            return None
+        with h5py.File(path, 'r') as hdf:
+            header = hdf['/Header'].attrs if '/Header' in hdf else {}
+            radius = float(header.get('SimulationRadius', 0.0))
+        return radius if np.isfinite(radius) and radius > 0.0 else None
+
 
     @staticmethod
     def _match_extension(path: Path):
