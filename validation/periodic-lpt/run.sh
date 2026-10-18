@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  Evolve matched periodic 1LPT and 2LPT initial conditions with Gadget-4.
+#  Evolve a periodic 2LPT reference, with an optional matched 1LPT control.
 #
 #  Usage:
 #    bash run.sh [OPTIONS]
@@ -8,6 +8,7 @@
 #  Standard options:
 #    --size=SIZE / --step=N / --plot-only / --force / --force-step=A,B / --clean
 #    --config=PATH / --list-steps / -h / --help
+#    --restart   resume the first pending Gadget run from its restart files
 #
 #  Steps:
 #    1. ic_load   - unperturbed grid paired to the cosmological ICs
@@ -19,6 +20,7 @@
 #    7. publish   - record the periodic run for the spherical comparison
 #    8. compare   - common periodic estimator for 1LPT and 2LPT
 #    9. plot      - control-ratio figure
+#   10. evaluate  - checks written to result.json
 #
 #  The z=0 2LPT snapshot and unperturbed load are consumed by
 #  validation/spherical-evolution/run.sh. Units are Mpc/h, 1e11 Msun/h, km/s.
@@ -29,16 +31,42 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
+
+GADGET_RESTART_PENDING=0
+for _arg in "${VLIB_EXTRA_ARGS[@]+"${VLIB_EXTRA_ARGS[@]}"}"; do
+    case "${_arg}" in
+        --restart) GADGET_RESTART_PENDING=1 ;;
+        *)
+            echo "ERROR: Unknown argument '${_arg}'." >&2
+            echo "Usage: $0 [--restart] [standard options...]" >&2
+            exit 2
+            ;;
+    esac
+done
+VLIB_EXTRA_ARGS=()
+if (( GADGET_RESTART_PENDING && VLIB_CLEAN )); then
+    echo "ERROR: --restart and --clean cannot be used together." >&2
+    exit 2
+fi
+
 vlib::prepare_campaign periodic-lpt "${BASEDIR}" "${BASEDIR}/config.env"
 
-vlib::declare_steps \
-    ic_load ic_2lpt ic_1lpt build run_2lpt run_1lpt publish compare plot evaluate
+PERIODIC_STEPS=(ic_load ic_2lpt build run_2lpt publish)
+if [[ "${REF_RUN_1LPT}" == "true" ]]; then
+    PERIODIC_STEPS=(
+        ic_load ic_2lpt ic_1lpt build run_2lpt run_1lpt
+        publish compare plot evaluate
+    )
+fi
+vlib::declare_steps "${PERIODIC_STEPS[@]}"
 vlib::manifest_implementation publish \
     "${BASEDIR}/scripts/write-pair-manifest.py"
-vlib::manifest_implementation compare \
-    "${BASEDIR}/scripts/measure-control.py"
-vlib::manifest_implementation plot "${BASEDIR}/scripts/plot-control.py"
-vlib::manifest_evaluator evaluate "${BASEDIR}/scripts/evaluate.py"
+if [[ "${REF_RUN_1LPT}" == "true" ]]; then
+    vlib::manifest_implementation compare \
+        "${BASEDIR}/scripts/measure-control.py"
+    vlib::manifest_implementation plot "${BASEDIR}/scripts/plot-control.py"
+    vlib::manifest_evaluator evaluate "${BASEDIR}/scripts/evaluate.py"
+fi
 if (( VLIB_LIST_STEPS )); then
     vlib::profile_summary
     vlib::list_steps
@@ -211,6 +239,42 @@ InitGasTemp                     0
 EOF
 }
 
+_require_gadget_restart_files() {
+    local restart_dir="${1}/restartfiles" task
+    for (( task=0; task<N_MPI; task++ )); do
+        if [[ ! -s "${restart_dir}/restart.${task}" ]]; then
+            echo "ERROR: --restart needs one restart file per MPI task;" \
+                "${restart_dir}/restart.${task} is missing or empty." >&2
+            return 1
+        fi
+    done
+}
+
+_run_gadget() {
+    local output_dir="${1}" parameter_file="${2}"
+    local -a restart_argument=()
+    if (( GADGET_RESTART_PENDING )); then
+        _require_gadget_restart_files "${output_dir}"
+        restart_argument=(1)
+    else
+        vlib::clear_dir "${output_dir}"
+    fi
+
+    vlib::run_in_env "${GADGET4_ENV}" bash -c '
+        runtime_dir="$1"
+        threads="$2"
+        tasks="$3"
+        binary="$4"
+        parameter_file="$5"
+        shift 5
+        cd "${runtime_dir}"
+        OMP_NUM_THREADS="${threads}" exec mpirun -np "${tasks}" \
+            "${binary}" "${parameter_file}" "$@"
+    ' _ "${GADGET_RUNTIME_DIR}" "${OMP_NUM_THREADS}" "${N_MPI}" \
+        "${GADGET_BINARY}" "${parameter_file}" "${restart_argument[@]}"
+    GADGET_RESTART_PENDING=0
+}
+
 _write_stepsic_ic() {
     local output_dir="${1}" lpt_order="${2}" config_name="${3}"
     vlib::clear_dir "${output_dir}"
@@ -288,18 +352,15 @@ if vlib::step_check "ic_2lpt" "$(vlib::breadcrumb_get REF_IC_2LPT)"; then
 fi
 REF_IC_2LPT="${REF_IC_2LPT:-$(vlib::breadcrumb_get REF_IC_2LPT)}"
 
-if vlib::step_check "ic_1lpt" "$(vlib::breadcrumb_get REF_IC_1LPT)"; then
-    if [[ "${REF_RUN_1LPT}" == "true" ]]; then
+if [[ "${REF_RUN_1LPT}" == "true" ]]; then
+    if vlib::step_check "ic_1lpt" "$(vlib::breadcrumb_get REF_IC_1LPT)"; then
         _write_stepsic_ic "${IC_1LPT_DIR}" 1 "ic-1lpt"
         REF_IC_1LPT="$(vlib::find_ic "${IC_1LPT_DIR}")"
         vlib::breadcrumb_set "REF_IC_1LPT" "${REF_IC_1LPT}"
-    else
-        REF_IC_1LPT=""
-        vlib::breadcrumb_set "REF_IC_1LPT" ""
+        vlib::step_done "ic_1lpt"
     fi
-    vlib::step_done "ic_1lpt"
+    REF_IC_1LPT="${REF_IC_1LPT:-$(vlib::breadcrumb_get REF_IC_1LPT)}"
 fi
-REF_IC_1LPT="${REF_IC_1LPT:-$(vlib::breadcrumb_get REF_IC_1LPT)}"
 
 if vlib::step_check "build" "${GADGET_BINARY}"; then
     mkdir -p "${GADGET_BUILD_STAGE}"
@@ -326,12 +387,7 @@ if vlib::step_check "run_2lpt" "$(vlib::breadcrumb_get REF_SNAP_2LPT)"; then
     _write_output_list
     _write_gadget_param "${GADGET_PARAM_2LPT}" \
         "${REF_IC_2LPT}" "${RUN_2LPT_DIR}"
-    vlib::clear_dir "${RUN_2LPT_DIR}"
-    vlib::run_in_env "${GADGET4_ENV}" bash -c '
-        cd "$1"
-        OMP_NUM_THREADS="$2" exec mpirun -np "$3" "$4" "$5"
-    ' _ "${GADGET_RUNTIME_DIR}" "${OMP_NUM_THREADS}" "${N_MPI}" \
-        "${GADGET_BINARY}" "${GADGET_PARAM_2LPT}"
+    _run_gadget "${RUN_2LPT_DIR}" "${GADGET_PARAM_2LPT}"
     REF_SNAP_2LPT="$(vlib::find_last_snap "${RUN_2LPT_DIR}")"
     [[ -n "${REF_SNAP_2LPT}" ]] || {
         echo "ERROR: Gadget-4 2LPT run produced no snapshot." >&2
@@ -342,8 +398,8 @@ if vlib::step_check "run_2lpt" "$(vlib::breadcrumb_get REF_SNAP_2LPT)"; then
 fi
 REF_SNAP_2LPT="${REF_SNAP_2LPT:-$(vlib::breadcrumb_get REF_SNAP_2LPT)}"
 
-if vlib::step_check "run_1lpt" "$(vlib::breadcrumb_get REF_SNAP_1LPT)"; then
-    if [[ "${REF_RUN_1LPT}" == "true" ]]; then
+if [[ "${REF_RUN_1LPT}" == "true" ]]; then
+    if vlib::step_check "run_1lpt" "$(vlib::breadcrumb_get REF_SNAP_1LPT)"; then
         [[ -f "${REF_IC_1LPT}" ]] || {
             echo "ERROR: 1LPT reference IC is missing." >&2
             exit 1
@@ -351,22 +407,17 @@ if vlib::step_check "run_1lpt" "$(vlib::breadcrumb_get REF_SNAP_1LPT)"; then
         _write_output_list
         _write_gadget_param "${GADGET_PARAM_1LPT}" \
             "${REF_IC_1LPT}" "${RUN_1LPT_DIR}"
-        vlib::clear_dir "${RUN_1LPT_DIR}"
-        vlib::run_in_env "${GADGET4_ENV}" bash -c '
-            cd "$1"
-            OMP_NUM_THREADS="$2" exec mpirun -np "$3" "$4" "$5"
-        ' _ "${GADGET_RUNTIME_DIR}" "${OMP_NUM_THREADS}" "${N_MPI}" \
-            "${GADGET_BINARY}" "${GADGET_PARAM_1LPT}"
+        _run_gadget "${RUN_1LPT_DIR}" "${GADGET_PARAM_1LPT}"
         REF_SNAP_1LPT="$(vlib::find_last_snap "${RUN_1LPT_DIR}")"
         [[ -n "${REF_SNAP_1LPT}" ]] || {
             echo "ERROR: Gadget-4 1LPT run produced no snapshot." >&2
             exit 1
         }
         vlib::breadcrumb_set "REF_SNAP_1LPT" "${REF_SNAP_1LPT}"
+        vlib::step_done "run_1lpt"
     fi
-    vlib::step_done "run_1lpt"
+    REF_SNAP_1LPT="${REF_SNAP_1LPT:-$(vlib::breadcrumb_get REF_SNAP_1LPT)}"
 fi
-REF_SNAP_1LPT="${REF_SNAP_1LPT:-$(vlib::breadcrumb_get REF_SNAP_1LPT)}"
 
 if vlib::step_check "publish" "${PAIR_MANIFEST}"; then
     REF_FIELD_DIR="$(dirname "${REF_IC_2LPT}")"
@@ -405,35 +456,34 @@ if vlib::step_check "publish" "${PAIR_MANIFEST}"; then
     vlib::step_done "publish"
 fi
 
-if vlib::step_check "compare" "${CONTROL_DATA}"; then
-    if [[ "${REF_RUN_1LPT}" != "true" ]]; then
-        echo "ERROR: periodic control requires REF_RUN_1LPT=true." >&2
-        exit 1
+if [[ "${REF_RUN_1LPT}" == "true" ]]; then
+    if vlib::step_check "compare" "${CONTROL_DATA}"; then
+        vlib::run_python "${STEPSIC_ENV}" \
+            "${BASEDIR}/scripts/measure-control.py" \
+            --one-lpt "${REF_SNAP_1LPT}" \
+            --two-lpt "${REF_SNAP_2LPT}" \
+            --final-redshift "${REF_Z_FINAL}" \
+            --nmesh "${PK_NMESH}" \
+            --kmax-frac-ny "${PK_KMAX_FRAC_NY}" \
+            -o "${CONTROL_DATA}"
+        vlib::step_done "compare"
     fi
-    vlib::run_python "${STEPSIC_ENV}" \
-        "${BASEDIR}/scripts/measure-control.py" \
-        --one-lpt "${REF_SNAP_1LPT}" \
-        --two-lpt "${REF_SNAP_2LPT}" \
-        --nmesh "${PK_NMESH}" \
-        --kmax-frac-ny "${PK_KMAX_FRAC_NY}" \
-        -o "${CONTROL_DATA}"
-    vlib::step_done "compare"
-fi
 
-if vlib::step_check "plot" "${CONTROL_FIGURE}"; then
-    vlib::run_python "${STEPSIC_ENV}" \
-        "${BASEDIR}/scripts/plot-control.py" \
-        -i "${CONTROL_DATA}" -o "${CONTROL_FIGURE}"
-    vlib::step_done "plot"
-fi
+    if vlib::step_check "plot" "${CONTROL_FIGURE}"; then
+        vlib::run_python "${STEPSIC_ENV}" \
+            "${BASEDIR}/scripts/plot-control.py" \
+            -i "${CONTROL_DATA}" -o "${CONTROL_FIGURE}"
+        vlib::step_done "plot"
+    fi
 
-if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
-    vlib::run_python "${STEPSIC_ENV}" \
-        "${BASEDIR}/scripts/evaluate.py" \
-        --archive "${CONTROL_DATA}" \
-        --figure "${CONTROL_FIGURE}" \
-        --output "${OUTPUT}/result.json"
-    vlib::step_done "evaluate"
+    if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
+        vlib::run_python "${STEPSIC_ENV}" \
+            "${BASEDIR}/scripts/evaluate.py" \
+            --archive "${CONTROL_DATA}" \
+            --figure "${CONTROL_FIGURE}" \
+            --output "${OUTPUT}/result.json"
+        vlib::step_done "evaluate"
+    fi
 fi
 
 CURRENT_LINK_TEMP="${REFERENCE_CACHE_ROOT}/.current-${REFERENCE_RUN_KEY}-$$"

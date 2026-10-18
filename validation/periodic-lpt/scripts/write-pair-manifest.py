@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from stepsic.cosmology import G2_omega
+
 from validation._common.pairing import (
     FIELD_HASH_ALGORITHM,
     PAIR_KIND,
@@ -92,6 +94,7 @@ def main() -> None:
             "ngrid": args.ngrid,
             "lpt_order": args.lpt_order,
             "initial_redshift": args.initial_redshift,
+            "second_order_coefficient": float(G2_omega(1/(1+args.initial_redshift), args.omega_m, args.omega_lambda)),
             "spectrum": args.spectrum,
             "nonlinear": args.nonlinear == "true",
             "halofit": args.halofit,
