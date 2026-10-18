@@ -2,213 +2,52 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
 from pathlib import Path
-import tempfile
 from typing import Any, Mapping
 
-import h5py
 import numpy as np
 from numpy.typing import NDArray
 
-
-PAIR_KIND = "stepsic-periodic-matched-pair"
-FIELD_HASH_ALGORITHM = "sha256-canonical-hdf5-dataset"
-
-
-def atomic_write_json(path: str | Path, value: Mapping[str, Any]) -> None:
-    """Write JSON atomically in the destination directory."""
-    destination = Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{destination.name}.tmp-", dir=destination.parent,
-    )
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(value, stream, allow_nan=False, indent=2, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, destination)
-        directory_fd = os.open(destination.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
-
-
-def snapshot_diagnostics(path: str | Path) -> dict[str, Any]:
-    """Read epoch and numerical-resolution diagnostics from one snapshot."""
-    with h5py.File(path, "r") as handle:
-        header = handle["Header"].attrs
-        particles = handle["PartType1"]
-        particle_count = int(len(particles["Coordinates"]))
-        if "Masses" in particles:
-            masses = particles["Masses"][:].astype(np.float64)
-        else:
-            mass_table = np.asarray(header["MassTable"], dtype=np.float64)
-            masses = np.full(particle_count, mass_table[1], dtype=np.float64)
-        scale_factor = float(header.get("Time", np.nan))
-        if "Redshift" in header:
-            redshift = float(header["Redshift"])
-        elif np.isfinite(scale_factor) and scale_factor > 0.0:
-            redshift = 1.0 / scale_factor - 1.0
-        else:
-            redshift = np.nan
-    if (
-        particle_count == 0
-        or not np.isfinite(scale_factor)
-        or not np.isfinite(redshift)
-        or not np.all(np.isfinite(masses))
-        or np.any(masses <= 0.0)
-    ):
-        raise ValueError(f"{path} has an invalid epoch, particle count, or particle mass")
-    return {
-        "final_scale_factor": scale_factor,
-        "final_redshift": redshift,
-        "particle_count": particle_count,
-        "mass_min_1e11_msun_h": float(np.min(masses)),
-        "mass_median_1e11_msun_h": float(np.median(masses)),
-        "mass_max_1e11_msun_h": float(np.max(masses)),
-    }
-
-
-def canonical_dataset_sha256(
-    path: str | Path,
-    dataset_name: str,
-) -> str:
-    """Hash an HDF5 array independently of its file layout."""
-    with h5py.File(path, "r") as handle:
-        if dataset_name not in handle:
-            raise ValueError(f"{path} contains no {dataset_name!r} dataset")
-        values = np.asarray(handle[dataset_name][...])
-    if values.dtype.hasobject:
-        raise ValueError("object-valued HDF5 arrays cannot be hashed reproducibly")
-
-    canonical_dtype = values.dtype.newbyteorder("<")
-    canonical = np.ascontiguousarray(values.astype(canonical_dtype, copy=False))
-    digest = hashlib.sha256()
-    digest.update(FIELD_HASH_ALGORITHM.encode("ascii"))
-    digest.update(b"\0")
-    digest.update(canonical.dtype.str.encode("ascii"))
-    digest.update(b"\0")
-    digest.update(np.asarray(canonical.shape, dtype="<i8").tobytes())
-    digest.update(canonical.tobytes(order="C"))
-    return digest.hexdigest()
-
-
-def _mapping(value: object, name: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise ValueError(f"{name} must be a JSON object")
-    return value
-
-
-def _require_keys(
-    mapping: Mapping[str, Any],
-    keys: tuple[str, ...],
-    name: str,
-) -> None:
-    missing = [key for key in keys if key not in mapping]
-    if missing:
-        raise ValueError(f"{name} is missing {', '.join(missing)}")
+from validation._common.pairing import PAIR_KIND, canonical_dataset_sha256
 
 
 def validate_pair_configuration(
     manifest: Mapping[str, Any],
     expected: Mapping[str, Any],
-) -> Mapping[str, Any]:
+) -> None:
     """Validate the reference manifest against the spherical campaign."""
     if manifest.get("kind") != PAIR_KIND:
         raise ValueError(f"reference manifest kind must be {PAIR_KIND!r}")
 
-    paths = _mapping(manifest.get("paths"), "paths")
-    _require_keys(
-        paths, ("snapshot", "ic", "load", "white_noise", "delta_k"), "paths",
-    )
-    for key, value in paths.items():
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"paths.{key} must be a non-empty path")
-
-    extent = _mapping(manifest.get("extent"), "extent")
+    extent = manifest["extent"]
     radius_mpc_h = float(expected["radius_mpc_h"])
     expected_box_size_mpc_h = 2.0 * radius_mpc_h
-    if extent.get("box_size_mpc_h") != expected_box_size_mpc_h:
+    if extent["box_size_mpc_h"] != expected_box_size_mpc_h:
         raise ValueError(
             "periodic box size must equal the StePS diameter "
             f"(2 * R_3D = {expected_box_size_mpc_h} Mpc/h)"
         )
-    expected_periodic_origin = [radius_mpc_h] * 3
-    if extent.get("origin_mpc_h") != expected_periodic_origin:
+    if extent["origin_mpc_h"] != [radius_mpc_h] * 3:
         raise ValueError(
             "periodic origin must be the box centre corresponding to the "
             "StePS origin"
         )
-    if expected.get("origin_mpc_h") != [0.0, 0.0, 0.0]:
-        raise ValueError("StePS origin must be [0, 0, 0]")
 
     for section_name in ("cosmology", "initial_conditions"):
-        actual_section = _mapping(manifest.get(section_name), section_name)
-        expected_section = _mapping(expected.get(section_name), section_name)
-        for key, expected_value in expected_section.items():
-            if key not in actual_section:
-                raise ValueError(f"{section_name}.{key} is missing")
-            if actual_section[key] != expected_value:
+        actual_section = manifest[section_name]
+        for key, expected_value in expected[section_name].items():
+            if actual_section.get(key) != expected_value:
                 raise ValueError(
                     f"{section_name}.{key} mismatch: "
-                    f"{actual_section[key]!r} != {expected_value!r}"
+                    f"{actual_section.get(key)!r} != {expected_value!r}"
                 )
 
-    fields = _mapping(manifest.get("fields"), "fields")
-    _require_keys(
-        fields,
-        ("hash_algorithm", "ic_white_noise", "ic_delta_k"),
-        "fields",
-    )
-    if fields["hash_algorithm"] != FIELD_HASH_ALGORITHM:
-        raise ValueError(
-            f"fields.hash_algorithm must be {FIELD_HASH_ALGORITHM!r}"
-        )
-    for key in ("ic_white_noise", "ic_delta_k"):
-        value = fields[key]
-        if (
-            not isinstance(value, str)
-            or len(value) != 64
-            or any(character not in "0123456789abcdef" for character in value)
-        ):
-            raise ValueError(f"fields.{key} must be a lowercase SHA-256 digest")
-
-    evolution = _mapping(manifest.get("evolution"), "evolution")
-    _require_keys(
-        evolution,
-        (
-            "final_scale_factor",
-            "final_redshift",
-            "particle_count",
-            "particle_mass_1e11_msun_h",
-            "softening_mpc_h",
-            "pm_grid",
-            "requested_final_redshift",
-        ),
-        "evolution",
-    )
-    if (
-        "final_redshift" in expected
-        and evolution["requested_final_redshift"] != expected["final_redshift"]
-    ):
+    requested_final_redshift = manifest["evolution"]["requested_final_redshift"]
+    if requested_final_redshift != expected["final_redshift"]:
         raise ValueError(
             "evolution.requested_final_redshift mismatch: "
-            f"{evolution['requested_final_redshift']!r} != "
-            f"{expected['final_redshift']!r}"
+            f"{requested_final_redshift!r} != {expected['final_redshift']!r}"
         )
-    revisions = _mapping(manifest.get("revisions"), "revisions")
-    _require_keys(revisions, ("stepsic", "simulation_code"), "revisions")
-    return manifest
 
 
 def verify_field_hashes(
@@ -219,7 +58,7 @@ def verify_field_hashes(
     delta_k_dataset: str,
 ) -> dict[str, str]:
     """Require exact field-content agreement with the periodic reference."""
-    fields = _mapping(manifest.get("fields"), "fields")
+    fields = manifest["fields"]
     actual = {
         "ic_white_noise": canonical_dataset_sha256(
             white_noise_path, white_noise_dataset,
@@ -227,9 +66,9 @@ def verify_field_hashes(
         "ic_delta_k": canonical_dataset_sha256(delta_k_path, delta_k_dataset),
     }
     for key, digest in actual.items():
-        if fields.get(key) != digest:
+        if fields[key] != digest:
             raise ValueError(
-                f"{key} hash mismatch: {digest} != {fields.get(key)!r}"
+                f"{key} hash mismatch: {digest} != {fields[key]!r}"
             )
     return actual
 

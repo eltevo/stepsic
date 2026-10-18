@@ -11,6 +11,7 @@ import tempfile
 import h5py
 import numpy as np
 
+from validation._common.snapshots import load_snapshot
 from evolved import generate_full_selection_randoms
 
 
@@ -21,12 +22,9 @@ def main() -> None:
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
-    with h5py.File(args.glass, "r") as handle:
-        coordinates = handle["PartType1/Coordinates"][:].astype(np.float64)
-        masses = handle["PartType1/Masses"][:].astype(np.float64)
-        header = dict(handle["Header"].attrs)
+    glass = load_snapshot(args.glass)
     random_coordinates, random_masses = generate_full_selection_randoms(
-        coordinates, masses, factor=args.factor, seed=args.seed,
+        glass.coordinates, glass.masses, factor=args.factor, seed=args.seed,
     )
 
     output = Path(args.output)
@@ -39,7 +37,7 @@ def main() -> None:
     try:
         with h5py.File(temporary, "w") as handle:
             header_group = handle.create_group("Header")
-            for name, value in header.items():
+            for name, value in glass.header.items():
                 if name in ("NumPart_ThisFile", "NumPart_Total"):
                     counts = np.zeros(6, dtype=np.uint32)
                     counts[1] = len(random_masses)

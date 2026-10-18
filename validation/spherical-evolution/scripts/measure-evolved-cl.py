@@ -7,27 +7,15 @@ import argparse
 import json
 from pathlib import Path
 
-import h5py
 import numpy as np
 
 from validation._common.evaluation import atomic_savez
+from validation._common.snapshots import load_snapshot
 from evolved import (
     measure_angular_spectra,
     minimum_image_displacements,
     parse_shells,
 )
-
-
-def _particles(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
-    with h5py.File(path, "r") as handle:
-        group = handle["PartType1"]
-        coordinates = group["Coordinates"][:].astype(np.float64)
-        if "Masses" in group:
-            masses = group["Masses"][:].astype(np.float64)
-        else:
-            mass = float(handle["Header"].attrs["MassTable"][1])
-            masses = np.full(len(coordinates), mass, dtype=np.float64)
-    return coordinates, masses
 
 
 def main() -> None:
@@ -47,7 +35,6 @@ def main() -> None:
     if not contract.get("field_hashes_match"):
         raise ValueError("the two initial density fields do not have matching hashes")
     reference = contract["paths"]["reference"]
-    periodic_snapshot = reference["snapshot"]
     box_size_mpc_h = 2.0 * args.radius_mpc_h
     periodic_origin_mpc_h = np.asarray(
         contract["paths"]["periodic_origin_mpc_h"], dtype=np.float64,
@@ -57,24 +44,24 @@ def main() -> None:
         radius_mpc_h=args.radius_mpc_h,
         rcrit_mpc_h=args.rcrit_mpc_h,
     )
-    steps_coordinates, steps_masses = _particles(args.steps_snapshot)
-    periodic_coordinates, periodic_masses = _particles(periodic_snapshot)
+    steps_snapshot = load_snapshot(args.steps_snapshot)
+    periodic_snapshot = load_snapshot(reference["snapshot"])
     steps = measure_angular_spectra(
-        steps_coordinates,
-        steps_masses,
+        steps_snapshot.coordinates,
+        steps_snapshot.masses,
         shells,
         nside=args.nside,
         lmax=args.lmax,
         omega_m=contract["configuration"]["cosmology"]["omega_m"],
     )
     periodic_displacements = minimum_image_displacements(
-        periodic_coordinates,
+        periodic_snapshot.coordinates,
         origin_mpc_h=periodic_origin_mpc_h,
         box_size_mpc_h=box_size_mpc_h,
     )
     periodic = measure_angular_spectra(
         periodic_displacements,
-        periodic_masses,
+        periodic_snapshot.masses,
         shells,
         nside=args.nside,
         lmax=args.lmax,

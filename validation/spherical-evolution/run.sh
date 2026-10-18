@@ -7,7 +7,7 @@
 #
 # Standard options:
 #   --size=SIZE / --step=N / --plot-only / --force / --force-step=A,B / --clean
-#   --config=PATH / --list-steps / -h / --help
+#   --config=PATH / --list-steps / --prepare-only / -h / --help
 #
 # Required inputs:
 #   REFERENCE_MANIFEST  periodic run description from validation/periodic-lpt/run.sh
@@ -25,17 +25,21 @@
 #   runs/<profile>/output/supplementary/spherical-evolution-pk.pdf
 #
 # Steps:
-#   1. geom_ic      make a spherical 2LPT IC and confirm that its field matches
+#   1. geom_ic      spherical 2LPT IC on the glass, with its white noise saved
 #   2. build        spherical StePS simulation binary
 #   3. evolve       evolve the full StePS system to the requested epoch
-#   4. contract     confirm that final epochs and resolutions match
+#   4. contract     record both final snapshots' epochs and resolutions
 #   5. cl           measure HEALPix spectra in matching radial shells
 #   6. pk_randoms   make random positions with the glass's radial distribution
-#   7. pk_steps     measure the full StePS snapshot with StePS_Pk.py
+#   7. pk_steps     measure the full StePS snapshot with the FKP estimator
+#                   of StePS_Pk.py
 #   8. pk_periodic  measure the complete periodic cube with an FFT
 #   9. compare      compare both spectra with CAMB/Halofit on shared k values
-#  10. plot_cl      evolved-cl.pdf
-#  11. plot_pk      evolved-pk.pdf
+#  10. plot_cl      spherical-evolution-cl.pdf
+#  11. plot_pk      spherical-evolution-pk.pdf
+#
+# The reference configuration is checked before step 1 and the field hashes
+# after it. --prepare-only stops there, before compilation and evolution.
 # ==========================================================================
 set -euo pipefail
 
@@ -45,6 +49,13 @@ source "${BASEDIR}/../_common/lib.sh"
 
 vlib::parse_args "$@"
 vlib::prepare_campaign spherical-evolution "${BASEDIR}" "${BASEDIR}/config.env"
+PREPARE_ONLY=0
+for argument in "${VLIB_EXTRA_ARGS[@]+"${VLIB_EXTRA_ARGS[@]}"}"; do
+    case "${argument}" in
+        --prepare-only) PREPARE_ONLY=1 ;;
+        *) echo "ERROR: unknown spherical comparison option: ${argument}" >&2; exit 2 ;;
+    esac
+done
 vlib::declare_steps \
     geom_ic build evolve contract cl pk_randoms pk_steps pk_periodic \
     compare plot_cl plot_pk
@@ -88,6 +99,7 @@ case "${GLASS_INPUT_MODE}" in
         fi
         GENERATED_GLASS_ROOT="${VLIB_RUN_ROOT}/cache/generated-glass"
         GLASS_INPUT_MODE=generate GLASS_PHASE=generation-only \
+            R_3D="${R_3D}" D_4D="${D_4D}" RCRIT="${RCRIT}" \
             VLIB_RUN_ROOT_OVERRIDE="${GENERATED_GLASS_ROOT}" \
             VLIB_RUN_ROOT_PARENT="${VLIB_RUN_ROOT}" \
             bash "${BASEDIR}/../glass-quality/run.sh" --size="${VLIB_SIZE}" \
@@ -247,6 +259,11 @@ vlib::run_python "${STEPSIC_ENV}" \
     "${CONTRACT_ARGS[@]}" \
     --steps-white-noise "${GEOM_WHITE_NOISE}" \
     --steps-delta-k "${GEOM_DELTA_K}"
+
+if (( PREPARE_ONLY )); then
+    echo "Matched spherical IC and field contract prepared: ${PAIR_CONTRACT}"
+    exit 0
+fi
 
 if [[ -z "${GEOM_SOFTENING}" ]]; then
     GEOM_SOFTENING="$(

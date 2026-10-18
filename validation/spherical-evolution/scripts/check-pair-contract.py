@@ -8,12 +8,10 @@ import hashlib
 import json
 from pathlib import Path
 
-from evolved import (
-    atomic_write_json,
-    snapshot_diagnostics,
-    validate_pair_configuration,
-    verify_field_hashes,
-)
+from stepsic.cosmology import G2_omega
+
+from validation._common.pairing import atomic_write_json, snapshot_diagnostics
+from evolved import validate_pair_configuration, verify_field_hashes
 
 
 def _bool(value: str) -> bool:
@@ -75,6 +73,7 @@ def main() -> None:
             "ngrid": args.ngrid,
             "lpt_order": args.lpt_order,
             "initial_redshift": args.initial_redshift,
+            "second_order_coefficient": float(G2_omega(1/(1+args.initial_redshift), args.omega_m, args.omega_lambda)),
             "spectrum": args.spectrum,
             "nonlinear": args.nonlinear,
             "halofit": args.halofit,
