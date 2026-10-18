@@ -30,11 +30,12 @@ from stepsic.field import (
     fourier_vectors,
     generate_delta_k,
     white_noise,
+    wrap,
 )
 from stepsic.interpolation import KERNELS, GridGeometry, compensation_factors
 from stepsic.lpt import lpt1, lpt2
 from stepsic.parameters import compute_derived_cosmo
-from stepsic.pk import _bin_isotropic_modes, measure_pk_from_delta_k
+from stepsic.pk import _bin_isotropic_modes, measure_pk, measure_pk_from_delta_k
 
 log = logging.getLogger(__name__)
 
@@ -312,6 +313,41 @@ def generate_field(
     return generate_delta_k(
         growth.kh_camb, growth.pk_input, nvox, dk,
         field=field, fixed=paired, paired=counter_phase,
+    )
+
+
+def measure_lpt_power(
+    seed: int,
+    lpt_order: int,
+    growth: GrowthData,
+    nvox: ArrayI,
+    dk: float,
+    mesh_boxsize: ArrayF,
+    pos_grid: ArrayF,
+    method: str,
+    compensate: bool,
+    *,
+    kmax: float,
+    paired: bool,
+    counter_phase: bool,
+) -> tuple[ArrayF, ArrayF, ArrayI]:
+    r'''Generate one LPT realisation and measure its particle P(k).
+
+    Passes the pre-computed ``nvox`` to :func:`stepsic.pk.measure_pk` to
+    guarantee bin-edge consistency with the band-averaged reference in
+    non-cubic boxes.
+    '''
+    delta_k = generate_field(
+        nvox, dk, growth, seed, paired=paired, counter_phase=counter_phase,
+    )
+    xpert, _ = run_lpt(
+        pos_grid, delta_k, nvox, dk, growth,
+        lpt_order, method, compensate=compensate,
+    )
+    return measure_pk(
+        wrap(xpert, mesh_boxsize), mesh_boxsize, nvox=nvox,
+        method='cic', deconvolve=True, interlace=True, subtract_shot=False,
+        kmin=None, kmax=kmax, dk_bin=None,
     )
 
 
