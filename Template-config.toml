@@ -46,12 +46,18 @@ PERIODIC = [ 1, 1, 1 ]
 #  Cylindrical (S^1 x R^2):
 #    - R_3D sets the radius of the compactified R^2 plane
 #    - LBOX[2] (Lz) sets the periodic non-compact dimension
+#    - LBOX[0], LBOX[1] are the transverse sides of the periodic box in
+#      which the fields are computed (default: Lx=Ly = 2*R_3D)
 #    - PERIODIC should be [0, 0, 1] (enforced in stepsic)
 #
 #  Spherical (R^3):
 #    - R_3D sets the radius of the full simulation sphere
-#    - LBOX is the bounding box (should box the sphere: Lx=Ly=Lz = 2*R_3D)
+#    - LBOX is the periodic box in which the fields are computed
+#      (default: Lx=Ly=Lz = 2*R_3D)
 #    - PERIODIC should be [0, 0, 0] (enforced in stepsic)
+#
+#  A box wider than 2*R_3D holds longer waves and separates the domain from
+#  its periodic images; every mesh grows with it.
 R_3D = 500             # RADIUS of the simulated volume in Mpc in the Euclidean space.
 D_4D = 75              # DIAMETER of the compactified hypersphere in [Mpc].
 BIN_MODE = "omega"     # Binning mode of the multi-resolution stereographic projection in the radial direction, options: "omega", "volume".
