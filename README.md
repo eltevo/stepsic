@@ -76,7 +76,7 @@ In `my-ic.toml`, set at least the following values. The comments show the same
 contract that the code enforces at startup:
 
 ```toml
-# Use the ordinary periodic-box path for a first smoke test.
+# Use the ordinary periodic-box path for a first run.
 GEOMETRY = "cubical"
 TYPE = "grid"
 

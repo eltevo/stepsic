@@ -2,11 +2,11 @@
 
 This workflow times the unmodified STEPSIC command line, `python stepsic.py config.toml`, from process launch through the written HDF5 snapshot. The publication workload is fixed in `benchmark.py`: periodic grid particles in a 1000 Mpc/h box at redshift 31, Planck2018EE+BAO, seed 42, single precision, CIC interpolation without compensation, and equal particle and Fourier grids.
 
-Run the 64³ 2LPT smoke test before starting the matrix:
+Run the preliminary 64³ 2LPT case before starting the matrix:
 
 ```bash
 conda run --no-capture-output -n stepsic \
-    python -m performance.benchmark --smoke-only
+    python -m performance.benchmark --preliminary-only
 ```
 
 The full command resumes the same artifact and runs 1LPT and 2LPT at 64³, 128³, 256³, and 512³. Each trial starts a fresh process once the host is idle, and each workload gets three trials in a deterministic shuffled order. A workload whose wall-time range exceeds 5% of its median receives up to two more trials. Snapshots, configs, and logs go to unique directories under `/tmp/stepsic-performance` and are removed after each trial.

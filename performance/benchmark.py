@@ -312,7 +312,7 @@ def _new_artifact(provenance: dict[str, Any]) -> dict[str, Any]:
                 'fresh process from launch through the written HDF5 snapshot'
             ),
         },
-        'smoke_tests': [],
+        'preliminary_runs': [],
         'runs': [],
     }
 
@@ -386,7 +386,7 @@ def _run_once(
         after_swap_in, after_swap_out = _vmstat_swap_pages()
         metrics = parse_time_report(time_path.read_text(encoding='utf-8'))
         run: dict[str, Any] = {
-            'sequence': len(artifact['runs']) + len(artifact['smoke_tests']) + 1,
+            'sequence': len(artifact['runs']) + len(artifact['preliminary_runs']) + 1,
             'phase': phase,
             'started_at_utc': started_at,
             'lpt_order': lpt_order,
@@ -430,8 +430,8 @@ def _already_valid(
     )
 
 
-def run_benchmark(results_path: Path, work_root: Path, *, smoke_only: bool) -> None:
-    """Run or resume the smoke test and publication measurement matrix."""
+def run_benchmark(results_path: Path, work_root: Path, *, preliminary_only: bool) -> None:
+    """Run or resume the preliminary case and publication measurement matrix."""
     results_path = results_path.resolve()
     results_path.parent.mkdir(parents=True, exist_ok=True)
     work_root = work_root.resolve()
@@ -453,9 +453,9 @@ def run_benchmark(results_path: Path, work_root: Path, *, smoke_only: bool) -> N
             if not is_valid_run(run):
                 raise RuntimeError(run['validation_error'])
 
-        measure('smoke_tests', 'smoke', 2, 64, 1)
-        if smoke_only:
-            print(f'Smoke test passed; metrics: {results_path}', flush=True)
+        measure('preliminary_runs', 'preliminary', 2, 64, 1)
+        if preliminary_only:
+            print(f'Preliminary case passed; metrics: {results_path}', flush=True)
             return
         for lpt_order, nmesh, repeat in scheduled_runs():
             measure('runs', 'matrix', lpt_order, nmesh, repeat)
@@ -486,8 +486,8 @@ def _parser() -> argparse.ArgumentParser:
         help='directory for temporary snapshots, configs, and logs',
     )
     parser.add_argument(
-        '--smoke-only', action='store_true',
-        help='verify one complete 64^3 2LPT HDF5 run, then stop',
+        '--preliminary-only', action='store_true',
+        help='verify one complete 64^3 2LPT HDF5 preliminary case, then stop',
     )
     return parser
 
@@ -495,7 +495,7 @@ def _parser() -> argparse.ArgumentParser:
 def main() -> None:
     arguments = _parser().parse_args()
     run_benchmark(
-        arguments.results, arguments.work_root, smoke_only=arguments.smoke_only,
+        arguments.results, arguments.work_root, preliminary_only=arguments.preliminary_only,
     )
 
 
