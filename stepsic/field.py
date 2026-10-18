@@ -81,7 +81,10 @@ def cubic_voxels(nmesh: int, boxsize: FloatVec3) -> tuple[IntVec3, float]:
         Physical cell spacing in the same length unit as the box.
     """
     nmesh = nmesh + nmesh % 2
-    nvox = np.ceil(boxsize / (np.min(boxsize) / nmesh)).astype(int)
+    # The tolerance keeps a whole number of cells, such as 1500/200 * 12 = 90,
+    # from rounding up when the division leaves 90.000...01.
+    cells = np.asarray(boxsize, dtype=np.float64) / np.min(boxsize) * nmesh
+    nvox = np.ceil(cells * (1 - 1e-9)).astype(int)
     nvox = (nvox + nvox % 2).astype(int)  # Ensure even number of voxels
     dk = np.min(boxsize) / np.min(nvox)
     return nvox, dk

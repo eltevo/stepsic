@@ -63,6 +63,44 @@ def _mass_interp_weights(
     return nsamp - 1 - lo, nsamp - 1 - hi, w_hi
 
 
+def _common_cell_count(boxsize: FloatVec3, limit: float) -> int:
+    """
+    Smallest even cell count of the shortest side that fits every side.
+
+    With this many cubic cells along the shortest side, every side of the
+    box holds an even whole number of cells, and so does every mesh whose
+    count is a multiple of it.
+
+    Parameters
+    ----------
+    boxsize : ndarray
+        Box lengths ``(Lx, Ly, Lz)``.
+    limit : float
+        Largest count to accept.
+
+    Returns
+    -------
+    int
+        The cell count.
+
+    Raises
+    ------
+    ValueError
+        If no count up to ``limit`` fits every side.
+    """
+    ratio = np.asarray(boxsize, dtype=np.float64) / np.min(boxsize)
+    for count in range(2, int(limit) + 1, 2):
+        cells = ratio * count
+        whole = np.rint(cells)
+        if np.all(np.abs(cells - whole) <= 1e-9 * cells) and np.all(whole % 2 == 0):
+            return count
+    raise ValueError(
+        f'The box {np.asarray(boxsize).tolist()} has no mesh of cubic cells that spans it '
+        f'with at most {int(limit)} cells along its shortest side, the count of the '
+        f'coarsest level. Choose sides with a simple ratio, e.g. a cylinder diameter '
+        f'that is a multiple of half the period.')
+
+
 def create_nres_mass_map(
         n_grid_samples: int,
         mass_list: RealField,
@@ -86,12 +124,20 @@ def create_nres_mass_map(
     Returns
     -------
     nres_tab : ndarray of shape (n_grid_samples,)
-        Shortest-axis resolution requests, stored as floating-point values.
+        Shortest-axis cell counts, stored as floating-point values. Each
+        request is rounded up to a multiple of the count returned by
+        :func:`_common_cell_count`, so that every level spans the same box.
         Pass each to :func:`~stepsic.field.cubic_voxels` to obtain three
         even mesh dimensions and the physical cell spacing.
     mass_tab : ndarray of shape (n_grid_samples,)
         Corresponding sample masses in descending order. The coarsest
         mesh represents the largest mass.
+
+    Raises
+    ------
+    ValueError
+        If the box sides admit no common count up to that of the coarsest
+        level.
     """
     nres_list = np.min(boxsize) // np.cbrt(np.prod(boxsize) * mass_list / M_box)
     idx = np.linspace(
@@ -100,6 +146,12 @@ def create_nres_mass_map(
     # Populate lookup table by starting with the outermost mass bin
     nres_tab = nres_list[idx[::-1]]
     mass_tab = mass_list[idx[::-1]]
+
+    # White-noise modes are shared between levels by integer index, which is
+    # the same physical wave on every level only if every mesh spans the box.
+    coarsest = nres_tab.min() + nres_tab.min() % 2
+    multiple = _common_cell_count(boxsize, coarsest)
+    nres_tab = multiple * np.ceil(nres_tab / multiple)
 
     log.info('The generated resolution-mass map:')
     nvox = np.zeros((n_grid_samples, 3), dtype=int)
