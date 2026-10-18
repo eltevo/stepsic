@@ -111,7 +111,8 @@ vlib::manifest_implementation measure \
     "${BASEDIR}/scripts/generate-randoms.py"
 vlib::manifest_implementation plot \
     "${BASEDIR}/scripts/plot-pk-ratio.py" \
-    "${BASEDIR}/scripts/plot-lpt-ratio.py"
+    "${BASEDIR}/scripts/plot-lpt-ratio.py" \
+    "${BASEDIR}/scripts/spectrum.py"
 vlib::manifest_evaluator evaluate "${BASEDIR}/scripts/evaluate.py"
 if (( VLIB_LIST_STEPS )); then
     vlib::profile_summary
@@ -204,54 +205,9 @@ if [[ -n "${GLASS_SNAP}" ]]; then
     echo "  PARTICLE_RADII: ${PARTICLE_RADII}"
 fi
 
-# -- Helpers -----------------------------------------------------------------
+LBOX_TOML="[$((R_3D * 2)), $((R_3D * 2)), ${LZ}]"
 
-# Write a cosmological IC TOML for cylindrical geometry (glass input).
-_write_cosmo_toml() {
-    local path="${1}" ic_dir="${2}" glass_snap="${3}" lptorder="${4}"
-    local local_diam=$(( R_3D * 2 ))
-    vlib::atomic_text "${path}" <<EOF
-GEOMETRY = "cylindrical"
-LBOX = [${local_diam}, ${local_diam}, ${LZ}]
-PERIODIC = [0, 0, 1]
-R_3D = ${R_3D}
-D_4D = ${D_4D}
-RCRIT = ${RCRIT}
-BIN_MODE = "${BIN_MODE}"
-NRBINS = ${NRBINS}
-COI = [0, 0, 0]
-TYPE = "glass"
-NSHELL = ${NSHELL}
-INPUT_GLASS = "${glass_snap}"
-IC_DIR = "${ic_dir}"
-IC_PREFIX = "stepsic"
-COSMOLOGY = "${COSMOLOGY_NAME}"
-SPECTRUM = "camb"
-NONLINEAR = false
-HALOFIT = "mead2020"
-SEED = 42
-COMOVING = true
-HINDEPENDENT = true
-LPTORDER = ${lptorder}
-NMESH = ${SIM_NMESH}
-REDSHIFT = ${SIM_Z_INIT}
-INTERPOLATION = "cic"
-COMPENSATE = false
-SPHEREMODE = false
-PAIRED = false
-FIXED = false
-NMESHSAMPLES = 1
-ROTATE = 0.0
-IC_FORMAT = "hdf5"
-USE_DOUBLE = false
-SAVE_WHITE_NOISE = false
-UNIT_L_IN_CM = 3.085678e24
-UNIT_M_IN_G = 1.989e44
-UNIT_V_IN_KMPS = 20.738652969844207
-INPUT_SPECTRUM = "none"
-INPUT_SPECTRUM_UNIT_L_IN_CM = 3.085678e24
-EOF
-}
+# -- Helpers -----------------------------------------------------------------
 
 # Shuffle IC particle order for MPI load balance; prints the final IC path.
 _shuffle_ic() {
@@ -343,10 +299,9 @@ if [[ -z "${GLASS_SNAP}" ]]; then
 # -- Step 1: preglass --------------------------------------------------------
 if vlib::step_check "preglass" "${PREGLASS_DIR}"; then
     vlib::clear_dir "${PREGLASS_DIR}"
-    local_diam=$(( R_3D * 2 ))
     vlib::stepsic::write_toml "${PARAM_DIR}/preglass.toml" \
         "GEOMETRY=cylindrical" \
-        "LBOX=[${local_diam}, ${local_diam}, ${LZ}]" \
+        "LBOX=${LBOX_TOML}" \
         "PERIODIC=[0, 0, 1]" \
         "R_3D=${R_3D}" \
         "D_4D=${D_4D}" \
@@ -427,8 +382,16 @@ if vlib::step_check "ic_2lpt" "${IC_2LPT_DIR}"; then
         echo "ERROR: No glass snapshot found; run from step 4 or earlier." >&2; exit 1
     fi
     vlib::clear_dir "${IC_2LPT_DIR}"
-    _write_cosmo_toml "${PARAM_DIR}/cosmo_2lpt.toml" \
-        "${IC_2LPT_DIR}" "${GLASS_SNAP}" "${SIM_LPTORDER}"
+    vlib::stepsic::write_toml "${PARAM_DIR}/cosmo_2lpt.toml" \
+        "GEOMETRY=cylindrical" \
+        "LBOX=${LBOX_TOML}" \
+        "PERIODIC=[0, 0, 1]" \
+        "TYPE=glass" \
+        "INPUT_GLASS=${GLASS_SNAP}" \
+        "IC_DIR=${IC_2LPT_DIR}" \
+        "LPTORDER=${SIM_LPTORDER}" \
+        "NMESH=${SIM_NMESH}" \
+        "REDSHIFT=${SIM_Z_INIT}"
     vlib::run_in_env "${STEPSIC_ENV}" python "${STEPSIC_PY}" "${PARAM_DIR}/cosmo_2lpt.toml"
     IC_2LPT="$(_shuffle_ic "${IC_2LPT_DIR}")"
     vlib::breadcrumb_set "IC_2LPT" "${IC_2LPT}"
@@ -443,8 +406,16 @@ if vlib::step_check "ic_1lpt" "${IC_1LPT_DIR}"; then
         echo "ERROR: No glass snapshot found; run from step 4 or earlier." >&2; exit 1
     fi
     vlib::clear_dir "${IC_1LPT_DIR}"
-    _write_cosmo_toml "${PARAM_DIR}/cosmo_1lpt.toml" \
-        "${IC_1LPT_DIR}" "${GLASS_SNAP}" 1
+    vlib::stepsic::write_toml "${PARAM_DIR}/cosmo_1lpt.toml" \
+        "GEOMETRY=cylindrical" \
+        "LBOX=${LBOX_TOML}" \
+        "PERIODIC=[0, 0, 1]" \
+        "TYPE=glass" \
+        "INPUT_GLASS=${GLASS_SNAP}" \
+        "IC_DIR=${IC_1LPT_DIR}" \
+        "LPTORDER=1" \
+        "NMESH=${SIM_NMESH}" \
+        "REDSHIFT=${SIM_Z_INIT}"
     vlib::run_in_env "${STEPSIC_ENV}" python "${STEPSIC_PY}" "${PARAM_DIR}/cosmo_1lpt.toml"
     IC_1LPT="$(_shuffle_ic "${IC_1LPT_DIR}")"
     vlib::breadcrumb_set "IC_1LPT" "${IC_1LPT}"
@@ -559,7 +530,8 @@ if vlib::step_check "measure" "${PK_DIR}/pk_1lpt.txt" "${PK_DIR}/pk_2lpt.txt"; t
 fi
 
 # -- Step 11: plot ----------------------------------------------------------
-if vlib::step_check "plot" "${OUTPUT}/cylindrical-power.pdf" "${OUTPUT}/cylindrical-lpt-ratio.pdf"; then
+if vlib::step_check "plot" "${OUTPUT}/cylindrical-power.pdf" \
+        "${OUTPUT}/cylindrical-power-measured.pdf" "${OUTPUT}/cylindrical-lpt-ratio.pdf"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot-pk-ratio.py" \
         --pk "${PK_DIR}/pk_2lpt.txt" \
         --snapshot "${SNAP_2LPT}" \

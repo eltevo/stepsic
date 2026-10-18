@@ -13,34 +13,15 @@ import numpy as np
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
+from spectrum import load_pk_measured
 from validation._common.plotting import atomic_savefig, setup_matplotlib
 
 
 # A&A single-column width [inches]
 AA_COL_WIDTH = 3.5
 
-
-def load_pk_measured(path: str) -> tuple[np.ndarray, np.ndarray]:
-    '''Load the k, P(k) columns from a StePS_Pk ASCII output file.
-
-    Parameters
-    ----------
-    path : str
-        Path to the whitespace-delimited ASCII file with columns
-        k [1/Mpc] and P(k) [Mpc^3].
-
-    Returns
-    -------
-    k : ndarray
-        Wavenumber array (positive, finite entries only).
-    pk : ndarray
-        Power spectrum values (positive, finite entries only).
-    '''
-    data = np.atleast_2d(np.loadtxt(path, comments="#"))
-    k = data[:, 0]
-    pk = data[:, 1]
-    mask = np.isfinite(k) & np.isfinite(pk) & (k > 0) & (pk > 0)
-    return k[mask], pk[mask]
+# Largest plotted wavenumber [1/Mpc]
+K_MAX_INV_MPC = 1.0
 
 
 def plot_pk_ratio(
@@ -48,7 +29,6 @@ def plot_pk_ratio(
     pk_2lpt_file: str,
     output: str,
     h: float = 0.6774,
-    k_max_invMpc: float = 1.0,
 ) -> None:
     r'''
     Plot P_1LPT(k) / P_2LPT(k).
@@ -69,8 +49,6 @@ def plot_pk_ratio(
         Output figure path (e.g. ``validation_pk_ratio.pdf``).
     h : float
         Dimensionless Hubble parameter for unit conversion.
-    k_max_invMpc : float
-        Maximum wavenumber to plot, in [1/Mpc] (before conversion).
     '''
     import matplotlib.pyplot as plt
 
@@ -85,7 +63,7 @@ def plot_pk_ratio(
     # Therefore:         k [h/Mpc] = k [1/Mpc] / h
     k_1 = k_1 / h
     k_2 = k_2 / h
-    k_max = k_max_invMpc / h
+    k_max = K_MAX_INV_MPC / h
 
     # Cut to k < k_max before interpolation
     cut_1 = k_1 < k_max
@@ -123,8 +101,8 @@ def plot_pk_ratio(
 
     ax.set_xscale("log")
     ax.set_xlim(k_1[valid].min(), k_max)
-    ax.set_ylim(0.988, 1.042)
-    ax.yaxis.set_major_locator(MultipleLocator(0.01))
+    ax.set_ylim(0.94, 1.02)
+    ax.yaxis.set_major_locator(MultipleLocator(0.02))
     ax.yaxis.set_major_formatter(FormatStrFormatter("%.2f"))
     ax.set_xlabel(r"$k\;[h\,\mathrm{Mpc}^{-1}]$", fontsize=9)
     ax.set_title(
