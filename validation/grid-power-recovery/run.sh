@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  Measure P(k) recovery on cubic grids.
+#  Measure P(k) recovery in a periodic box.
 #
+#  Every panel displaces the same particle load, a periodic glass tiled
+#  GLASS_TILES times per side, with the interpolation window compensated.
 #  Each panel isolates one parameter dimension while holding the others
 #  fixed. All panels use Angulo & Pontzen (2016) paired-fixed averaging.
 #
-#    Panel A: resolution dependence   (multiple nmesh, fixed z/LPT/MAS)
+#    Panel A: Fourier mesh dependence (multiple nmesh, fixed z/LPT/MAS)
 #    Panel B: redshift dependence     (multiple z,     fixed nmesh/LPT/MAS)
 #    Panel C: LPT order comparison    (1LPT vs 2LPT,   fixed nmesh/z/MAS)
 #    Panel D: MAS scheme comparison   (NGP/CIC/TSC,    fixed nmesh/z/LPT)
@@ -25,13 +27,17 @@
 #    -h, --help        Print this help text and exit
 #
 #  Steps (in order):
-#    1. panel_a  - resolution dependence
+#    1. panel_a  - Fourier mesh dependence
 #    2. panel_b  - redshift dependence
 #    3. panel_c  - LPT order comparison
 #    4. panel_d  - MAS scheme comparison
 #    5. plot     - four-panel P(k) ratio figure
+#    6. evaluate - low-k power recovery against Gaussian mode-count variance
 #
 #  Configuration (edit config.env or export before running):
+#    GLASS_SNAP        Periodic cubic glass snapshot, Gadget HDF5 (required)
+#    GLASS_TILES       Glass copies per box side  (profile)
+#    TILES_PER_CHUNK   Glass copies in memory at once (default: 4)
 #    LBOX              Box side [Mpc/h]         (default: 1000)
 #    SEED              RNG seed                 (default: 137)
 #    PAIRED            Paired-fixed averaging   (default: true)
@@ -65,6 +71,14 @@ if (( VLIB_LIST_STEPS )); then
 fi
 vlib::manifest_init "${BASEDIR}" "${CONFIG_FILE}"
 
+if [[ -z "${GLASS_SNAP}" || ! -f "${GLASS_SNAP}" ]]; then
+    echo "ERROR: GLASS_SNAP must name an existing periodic glass snapshot." >&2
+    exit 2
+fi
+for _step in panel_a panel_b panel_c panel_d; do
+    vlib::manifest_input "${_step}" "${GLASS_SNAP}"
+done
+
 VLIB_CACHE_DIR="${VLIB_RUN_ROOT}/cache"
 OUTPUT="${VLIB_RUN_ROOT}/output"
 
@@ -86,10 +100,11 @@ fi
 
 echo ""
 echo "========================================================================"
-echo "  Grid P(k) recovery"
+echo "  Periodic P(k) recovery"
 echo "========================================================================"
 echo ""
 echo "  Lbox: ${LBOX} Mpc/h   seed: ${SEED}   paired: ${PAIRED}"
+echo "  glass:  ${GLASS_SNAP} (${GLASS_TILES} per side)"
 echo "  cache:  ${VLIB_CACHE_DIR}"
 echo "  output: ${OUTPUT}/grid.pdf"
 echo ""
@@ -97,6 +112,9 @@ echo ""
 # shellcheck disable=SC2086
 if vlib::step_check "panel_a" "${VLIB_CACHE_DIR}/panel_a.npz"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/run.py" \
+        --glass "${GLASS_SNAP}" \
+        --tiles "${GLASS_TILES}" \
+        --tiles-per-chunk "${TILES_PER_CHUNK}" \
         --Lbox "${LBOX}" \
         --nmesh ${PANEL_A_NMESH} \
         --lpt ${PANEL_A_LPT} \
@@ -113,6 +131,9 @@ fi
 # shellcheck disable=SC2086
 if vlib::step_check "panel_b" "${VLIB_CACHE_DIR}/panel_b.npz"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/run.py" \
+        --glass "${GLASS_SNAP}" \
+        --tiles "${GLASS_TILES}" \
+        --tiles-per-chunk "${TILES_PER_CHUNK}" \
         --Lbox "${LBOX}" \
         --nmesh ${PANEL_B_NMESH} \
         --lpt ${PANEL_B_LPT} \
@@ -129,6 +150,9 @@ fi
 # shellcheck disable=SC2086
 if vlib::step_check "panel_c" "${VLIB_CACHE_DIR}/panel_c.npz"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/run.py" \
+        --glass "${GLASS_SNAP}" \
+        --tiles "${GLASS_TILES}" \
+        --tiles-per-chunk "${TILES_PER_CHUNK}" \
         --Lbox "${LBOX}" \
         --nmesh ${PANEL_C_NMESH} \
         --lpt ${PANEL_C_LPT} \
@@ -145,6 +169,9 @@ fi
 # shellcheck disable=SC2086
 if vlib::step_check "panel_d" "${VLIB_CACHE_DIR}/panel_d.npz"; then
     vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/run.py" \
+        --glass "${GLASS_SNAP}" \
+        --tiles "${GLASS_TILES}" \
+        --tiles-per-chunk "${TILES_PER_CHUNK}" \
         --Lbox "${LBOX}" \
         --nmesh ${PANEL_D_NMESH} \
         --lpt ${PANEL_D_LPT} \

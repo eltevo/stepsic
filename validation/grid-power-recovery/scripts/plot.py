@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 '''
-Plot measured-to-reference power ratios from grid-recovery archives.
+Plot measured-to-reference power ratios from power-recovery archives.
 
 The four panels compare:
 
-    Panel A, Resolution dependence (multiple nmesh, fixed z/LPT/method)
+    Panel A, Fourier mesh dependence (multiple nmesh, fixed z/LPT/method)
     Panel B, Redshift dependence   (multiple z, fixed nmesh/LPT/method)
     Panel C, LPT order comparison  (1LPT vs 2LPT, fixed nmesh/z/method)
     Panel D, MAS scheme comparison (NGP/CIC/TSC, fixed nmesh/z/LPT)
@@ -40,6 +40,7 @@ from numpy.typing import NDArray
 
 from validation._common.plotting import atomic_savefig, setup_matplotlib
 from validation._common.artifacts import load_archive
+from validation._common.fields import z_tag
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -52,13 +53,6 @@ ArrayI: TypeAlias = NDArray[np.int64]
 MAS_LABELS = {'ngp': 'NGP', 'cic': 'CIC', 'tsc': 'TSC'}
 
 
-def _z_tag(z: float) -> str:
-    '''Format a redshift as it appears in an archive key.'''
-    if np.isclose(z, round(z)):
-        return str(int(round(z)))
-    return f'{z:.1f}'
-
-
 @dataclass
 class CurveData:
     '''One P(k) ratio curve ready for plotting.'''
@@ -67,6 +61,7 @@ class CurveData:
     nmesh: int
     label: str
     k_ny: float  # Nyquist wavenumber [h/Mpc]
+    zorder: float = 3
 
 
 def _load_lpt_ratio(
@@ -81,9 +76,8 @@ def _load_lpt_ratio(
 
     Returns ``None`` if the keys are not found in ``data``.
     '''
-    zt = _z_tag(z)
-    lpt_key = f'lpt{lpt_order}_{method}_{nmesh}_z{zt}'
-    ref_key = f'ref_{method}_{nmesh}_z{zt}'
+    lpt_key = f'lpt{lpt_order}_{method}_{nmesh}_{z_tag(z)}'
+    ref_key = f'ref_{method}_{nmesh}_{z_tag(z)}'
 
     try:
         k = data[f'{lpt_key}_k']
@@ -117,13 +111,15 @@ def build_panel_a(
     method: str = 'cic',
     z: float = 31.0,
 ) -> list[CurveData]:
-    '''Panel A: resolution dependence.'''
+    '''Panel A: Fourier mesh dependence.'''
     lbox = _get_lbox(data)
     curves = []
-    for nmesh in nmesh_list:
+    for i, nmesh in enumerate(nmesh_list):
         c = _load_lpt_ratio(data, lpt_order, method, nmesh, z, lbox)
         if c is not None:
             c.label = rf'${nmesh}^3$'
+            # Coarser meshes end at lower k; draw them over the finer ones.
+            c.zorder = 3 + len(nmesh_list) - i
             curves.append(c)
     return curves
 
@@ -204,7 +200,8 @@ def _draw_panel(
     # Data curves
     for curve in curves:
         ax.semilogx(
-            curve.k, curve.ratio, '-', lw=1.2, label=curve.label, zorder=3,
+            curve.k, curve.ratio, '-', lw=1.2, label=curve.label,
+            zorder=curve.zorder,
         )
 
     # Nyquist markers, collect unique values
@@ -260,7 +257,7 @@ def _draw_panel(
         fontsize=6,
         loc='lower left',
         frameon=False,
-        ncol=len(curves) + 2,
+        ncol=len(labels),
         handlelength=1.5,
         columnspacing=1.0,
     )
@@ -285,11 +282,9 @@ def plot_validation(
     ylim : tuple
         Common y-axis limits for all panels.
     '''
-    setup_matplotlib()
-
     panel_keys = ['a', 'b', 'c', 'd']
     titles = {
-        'a': r'(a) Resolution',
+        'a': r'(a) Fourier mesh',
         'b': r'(b) Redshift',
         'c': r'(c) LPT order',
         'd': r'(d) MAS scheme',
@@ -415,6 +410,7 @@ def parse_args() -> argparse.Namespace:
 
 if __name__ == '__main__':
     args = parse_args()
+    setup_matplotlib()
 
     panels: dict[str, list[CurveData]] = {}
 

@@ -26,7 +26,7 @@ LPT_POWER_KEY = re.compile(
 )
 # The figure deliberately exposes near-Nyquist LPT/MAS transfer. Restrict the
 # statistical recovery claim to the common large-scale regime, while retaining
-# the first complete Fourier shell for low-resolution smoke profiles.
+# the first complete Fourier shell for the low-resolution small profile.
 _COMPARISON_KMAX_FRACTION_NYQUIST = 0.1
 _MINIMUM_COMPARISON_KFUND_MULTIPLE = 1.5
 
@@ -51,7 +51,7 @@ def evaluate(
         for archive in archives:
             data = load_npz(archive)
             parameters["panels"].append(metadata_parameters(data))
-            sample_count = int(data["meta_n_total"])
+            sample_count = int(data["meta_nreal"])
             lbox_value = np.asarray(data["meta_lbox"], dtype=np.float64)
             if lbox_value.size != 1:
                 raise ValueError("meta_lbox must be a positive scalar")

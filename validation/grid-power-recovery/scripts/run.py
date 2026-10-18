@@ -2,7 +2,7 @@
 '''
 Measure how well particle power recovers the input spectrum.
 
-The script varies mesh resolution, LPT order, target redshift, and mass-assignment method, then writes the measurements to a NumPy archive.
+The particle load is a periodic glass, tiled to fill the box and displaced with LPT. The script varies the Fourier mesh, LPT order, target redshift, and interpolation method, always with the interpolation window compensated, then writes the measurements to a NumPy archive. The power spectrum is measured on a mesh as fine as the load, whatever the Fourier mesh.
 
 ``--debug-field`` also records power directly from the Fourier field. Paired-fixed runs omit this by default because the ratio is identically one.
 
@@ -10,21 +10,13 @@ Usage
 -----
 ::
 
-    # Panel A: resolution dependence (64, 128, 256 at z=31, 2LPT, CIC)
-    python validate_grid_run.py --nmesh 64 128 256 --lpt 2 --z 31 \\
-        --method cic --paired -o panel_a.npz
+    # Panel A: three Fourier meshes on a 256^3 glass tiled four times per side
+    python run.py --glass glass.hdf5 --tiles 4 --nmesh 128 256 512 \\
+        --lpt 2 --z 31 --method cic --paired -o panel_a.npz
 
-    # Panel B: redshift dependence (z=63, 31, 15 at 128^3, 2LPT, CIC)
-    python validate_grid_run.py --nmesh 128 --lpt 2 --z 63 31 15 \\
-        --method cic --paired -o panel_b.npz
-
-    # Panel C: 1LPT vs 2LPT stress test (z=15, 128^3, CIC)
-    python validate_grid_run.py --nmesh 128 --lpt 1 2 --z 15 \\
-        --method cic --paired -o panel_c.npz
-
-    # Panel D: MAS comparison (NGP, CIC, TSC at 256^3, z=31, 2LPT)
-    python validate_grid_run.py --nmesh 256 --lpt 2 --z 31 \\
-        --method ngp cic tsc --paired -o panel_d.npz
+    # Panel D: interpolation methods
+    python run.py --glass glass.hdf5 --tiles 4 --nmesh 512 \\
+        --lpt 2 --z 31 --method ngp cic tsc --paired -o panel_d.npz
 '''
 
 from __future__ import annotations
@@ -40,26 +32,20 @@ from typing import Iterable
 import numpy as np
 
 from validation._common.evaluation import atomic_savez
-from scipy.interpolate import CubicSpline
 
-from stepsic.field import (
-    create_grid,
-    cubic_voxels,
-    fourier_kmod,
-    wrap,
-)
-from stepsic.pk import (
-    _bin_isotropic_modes,
-    measure_pk,
-    measure_pk_from_delta_k,
-)
+from stepsic.field import cubic_voxels
+from stepsic.pk import measure_pk_from_delta_k
 
-from validation._common.cosmology_fields import (
+from validation._common.fields import (
     ArrayF,
     ArrayI,
     GrowthData,
+    InterlacedPowerMeter,
+    band_average_reference_pk,
     generate_field,
     init_cosmology,
+    iter_tiled_load,
+    load_glass_tile,
     run_lpt,
     z_tag,
 )
@@ -75,31 +61,6 @@ def _iter_lpt_orders(lpt_orders: Iterable[int]) -> list[int]:
     if invalid:
         raise ValueError(f'Unsupported LPT orders requested: {invalid}')
     return orders
-
-
-def _band_average_reference_pk(
-    kh_input: ArrayF,
-    pk_input: ArrayF,
-    nvox: ArrayI,
-    dk: float,
-    boxsize: ArrayF,
-    *,
-    kmin: float | None,
-    kmax: float | None,
-    dk_bin: float | None,
-) -> tuple[ArrayF, ArrayF, ArrayI]:
-    '''Band-average the input theory P(k) over the exact discrete Fourier modes.'''
-    kmod = fourier_kmod(nvox, dk, hermitian=True)
-    pk_spline = CubicSpline(
-        np.log(kh_input), np.log(pk_input), extrapolate=False,
-    )
-    pk_grid = np.zeros_like(kmod)
-    mask = kmod > 0.0
-    pk_grid[mask] = np.exp(pk_spline(np.log(kmod[mask])))
-    return _bin_isotropic_modes(
-        pk_grid, kmod, nvox, boxsize, dk,
-        kmin=kmin, kmax=kmax, dk_bin=dk_bin,
-    )
 
 
 def _run_single_field(
@@ -122,43 +83,6 @@ def _run_single_field(
     )
 
 
-def _run_single_lpt(
-    seed_i: int,
-    lpt_order: int,
-    growth: GrowthData,
-    nvox: ArrayI,
-    dk: float,
-    boxsize: ArrayF,
-    pos_grid: ArrayF,
-    compensate: bool,
-    method: str,
-    nmesh: int,
-    *,
-    kmax: float,
-    paired: bool,
-    counter_phase: bool,
-) -> tuple[ArrayF, ArrayF, ArrayI]:
-    r'''Generate one LPT realisation and measure its particle P(k).'''
-    delta_k = generate_field(
-        nvox, dk, growth, seed_i, paired=paired, counter_phase=counter_phase,
-    )
-
-    compensate = method != 'cic'
-    xpert, _ = run_lpt(
-        pos_grid, delta_k, nvox, dk, growth,
-        lpt_order, method, compensate=compensate,
-    )
-    pos_wrapped = wrap(xpert, boxsize)
-
-    # Measurement uses a fixed MAS (CIC + deconvolution + interlacing)
-    # independent of the LPT interpolation method under test.
-    return measure_pk(
-        pos_wrapped, boxsize, nmesh,
-        method='cic', deconvolve=True, interlace=True, subtract_shot=False,
-        kmin=None, kmax=kmax, dk_bin=None,
-    )
-
-
 # ---------------------------------------------------------------------------
 # Archive key convention
 # ---------------------------------------------------------------------------
@@ -171,9 +95,12 @@ def _run_single_lpt(
 #   lpt{order}_{method}_{nmesh}_z{z}_pk
 #   lpt{order}_{method}_{nmesh}_z{z}_nmodes
 #
+#   load_{nmesh}_k, load_{nmesh}_pk    - P(k) of the undisplaced load in the
+#                                        bins of Fourier mesh {nmesh}
+#
 #   field_{method}_{nmesh}_z{z}_*      (only with --debug-field)
 #
-# Scalar metadata live under meta_* keys.
+# Scalar metadata live under meta_* keys. {nmesh} is the Fourier mesh.
 
 
 def run_validation(
@@ -185,23 +112,25 @@ def run_validation(
     seed: int,
     output: str,
     *,
+    glass: str,
+    tiles: int,
+    tiles_per_chunk: int = 4,
     nreal: int = 1,
     paired: bool = False,
-    compensate: bool = True,
     kmax_fraction_nyquist: float = 1.0,
     debug_field: bool = False,
 ) -> None:
     r'''Run LPT P(k) validation across all requested parameter combinations.
 
     The outer loop order is:  redshift -> nmesh -> method -> lpt_order.
-    Cosmology (CAMB + growth factors) is computed once; grid setup
-    (``create_grid``) once per nmesh; LPT + P(k) once per
-    (method, lpt_order) combination.
+    Cosmology (CAMB + growth factors) is computed once; LPT + P(k) once per
+    (method, lpt_order) combination. The load is displaced and deposited
+    ``tiles_per_chunk`` tiles at a time.
 
     Parameters
     ----------
     nmesh_list : list of int
-        Grid resolutions to validate.
+        Fourier mesh resolutions to validate.
     lpt_orders : list of int
         LPT orders to run (1 and/or 2).
     lbox_scalar : float
@@ -209,18 +138,22 @@ def run_validation(
     redshifts : list of float
         Target redshift(s) for the ICs.
     methods : list of str
-        Mass-assignment scheme(s): ``'ngp'``, ``'cic'``, ``'tsc'``.
+        Interpolation scheme(s) of the LPT step: ``'ngp'``, ``'cic'``, ``'tsc'``.
     seed : int
         Base RNG seed.
     output : str
         Path for the output ``.npz`` file.
+    glass : str
+        Periodic cubic glass snapshot (Gadget HDF5).
+    tiles : int
+        Number of copies of the glass along each side of the box.
+    tiles_per_chunk : int
+        Number of glass copies held in memory at once.
     nreal : int
         Number of independent white-noise realisations to average.
     paired : bool
         If ``True``, expand each realisation into an Angulo & Pontzen
         (2016) paired-fixed pair.
-    compensate : bool
-        If ``True``, apply the standard LPT compensation kernel.
     kmax_fraction_nyquist : float
         Maximum measured `k` as a fraction of the mesh Nyquist frequency.
     debug_field : bool
@@ -234,17 +167,24 @@ def run_validation(
     boxsize = np.array([lbox_scalar] * 3, dtype=np.float64)
     lpt_orders = _iter_lpt_orders(lpt_orders)
 
-    # Determine the maximum k any mesh will need, so CAMB covers it.
-    # The P(k) bins extend up to kmax + k_fund (the upper edge of the last bin),
-    # so kmax_camb must reach there - a flat 5% buffer is too small for coarse
-    # meshes where k_fund is a significant fraction of k_ny.
-    k_fund_box = 2.0 * np.pi / np.max(boxsize)
-    max_requested_k = 0.0
-    for nmesh in nmesh_list:
-        _, dk_tmp = cubic_voxels(nmesh, boxsize)
-        k_ny_tmp = np.pi / dk_tmp
-        max_requested_k = max(max_requested_k, kmax_fraction_nyquist * k_ny_tmp)
-    kmax_camb = max_requested_k + k_fund_box
+    tile_side = lbox_scalar / tiles
+    tile = load_glass_tile(glass, tile_side)
+    n_load = round(len(tile) ** (1.0 / 3.0)) * tiles
+    if n_load < max(nmesh_list):
+        raise ValueError(
+            f'The load has {n_load} particles per side, fewer than the '
+            f'finest Fourier mesh ({max(nmesh_list)}).'
+        )
+    # The spectrum is measured on a mesh as fine as the load.
+    nvox_meas, dk_meas = cubic_voxels(n_load, boxsize)
+
+    def tiled_load():
+        return iter_tiled_load(tile, tile_side, tiles, tiles_per_chunk)
+
+    # The field takes P(k) at every mesh mode, out to the corner at sqrt(3) k_Ny
+    # of the finest mesh.
+    k_ny_max = max(np.pi / cubic_voxels(nmesh, boxsize)[1] for nmesh in nmesh_list)
+    kmax_camb = 1.05 * np.sqrt(3.0) * k_ny_max
 
     members_per_real = 2 if paired else 1
     n_total = nreal * members_per_real
@@ -262,6 +202,9 @@ def run_validation(
     results['meta_seed'] = np.int64(seed)
     results['meta_nreal'] = np.int64(nreal)
     results['meta_paired'] = np.bool_(paired)
+    results['meta_glass'] = np.array(str(glass))
+    results['meta_tiles'] = np.int64(tiles)
+    results['meta_load_per_side'] = np.int64(n_load)
     results['meta_kmax_frac_ny'] = np.float64(kmax_fraction_nyquist)
     results['meta_n_total'] = np.int64(n_total)
 
@@ -282,26 +225,32 @@ def run_validation(
 
         for nmesh in nmesh_list:
             nvox, dk = cubic_voxels(nmesh, boxsize)
-            n_part = int(np.prod(nvox))
             k_ny = np.pi / dk
             kmax = kmax_fraction_nyquist * k_ny
 
             log.info('%s', '=' * 72)
             log.info(
                 'z = %g | Mesh %d^3 (%dx%dx%d) | dk = %.6f Mpc/h | '
-                'N = %d | k_Ny = %.4f h/Mpc | k_max = %.4f h/Mpc',
-                z, nmesh, nvox[0], nvox[1], nvox[2], dk, n_part, k_ny, kmax,
+                'load = %d^3 | k_Ny = %.4f h/Mpc | k_max = %.4f h/Mpc',
+                z, nmesh, nvox[0], nvox[1], nvox[2], dk, n_load, k_ny, kmax,
             )
             log.info('%s', '=' * 72)
 
-            pos_grid, _ = create_grid(nvox, dk)
+            if f'load_{nmesh}_k' not in results:
+                meter = InterlacedPowerMeter(nvox_meas, boxsize)
+                for chunk in tiled_load():
+                    meter.add(chunk)
+                k_load, pk_load, _ = meter.power(kmax=kmax)
+                results[f'load_{nmesh}_k'] = k_load
+                results[f'load_{nmesh}_pk'] = pk_load
 
             for method in methods:
                 # Band-averaged reference
                 ref_prefix = f'ref_{method}_{nmesh}_{zk}'
                 if f'{ref_prefix}_k' not in results:
-                    k_ref, pk_ref, nmodes_ref = _band_average_reference_pk(
-                        growth.kh_camb, growth.pk_input, nvox, dk, boxsize,
+                    k_ref, pk_ref, nmodes_ref = band_average_reference_pk(
+                        growth.kh_camb, growth.pk_input,
+                        nvox_meas, dk_meas, boxsize,
                         kmin=None, kmax=kmax, dk_bin=None,
                     )
                     results[f'{ref_prefix}_k'] = k_ref
@@ -358,13 +307,19 @@ def run_validation(
                                 lpt_order, nmesh, method.upper(), z,
                                 seed_i, tag, i_real, nreal,
                             )
-                            k_p, pk_p, _ = _run_single_lpt(
-                                seed_i, lpt_order, growth,
-                                nvox, dk, boxsize, pos_grid,
-                                compensate, method, nmesh,
-                                kmax=kmax, paired=paired,
+                            delta_k = generate_field(
+                                nvox, dk, growth, seed_i, paired=paired,
                                 counter_phase=counter_phase,
                             )
+                            meter = InterlacedPowerMeter(nvox_meas, boxsize)
+                            for chunk in tiled_load():
+                                xpert, _ = run_lpt(
+                                    chunk, delta_k, nvox, dk, growth,
+                                    lpt_order, method, compensate=True,
+                                )
+                                meter.add(xpert)
+                            del delta_k
+                            k_p, pk_p, _ = meter.power(kmax=kmax)
                             if not (np.array_equal(k_ref.shape, k_p.shape)
                                     and np.allclose(k_ref, k_p)):
                                 raise RuntimeError(
@@ -402,7 +357,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         '--nmesh', type=int, nargs='+', default=[128],
-        help='Mesh resolution(s) to test.',
+        help='Fourier mesh resolution(s) to test.',
     )
     parser.add_argument(
         '--lpt', type=int, nargs='+', default=[1, 2],
@@ -419,7 +374,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--method', type=str, nargs='+', default=['cic'],
         choices=['ngp', 'cic', 'tsc'],
-        help='Mass-assignment scheme(s).',
+        help='Interpolation scheme(s) of the LPT step.',
     )
     parser.add_argument(
         '--seed', type=int, default=137,
@@ -435,8 +390,16 @@ def parse_args() -> argparse.Namespace:
         help='Enable Angulo & Pontzen (2016) paired-fixed averaging.',
     )
     parser.add_argument(
-        '--compensate', action='store_true',
-        help='Apply the standard LPT compensation kernel.',
+        '--glass', type=str, required=True,
+        help='Periodic cubic glass snapshot (Gadget HDF5).',
+    )
+    parser.add_argument(
+        '--tiles', type=int, default=1,
+        help='Copies of the glass along each side of the box.',
+    )
+    parser.add_argument(
+        '--tiles-per-chunk', type=int, default=4, dest='tiles_per_chunk',
+        help='Glass copies held in memory at once.',
     )
     parser.add_argument(
         '--kmax-frac-ny', type=float, default=0.8,
@@ -467,7 +430,9 @@ if __name__ == '__main__':
         output=args.output,
         nreal=args.nreal,
         paired=args.paired,
-        compensate=args.compensate,
+        glass=args.glass,
+        tiles=args.tiles,
+        tiles_per_chunk=args.tiles_per_chunk,
         kmax_fraction_nyquist=args.kmax_fraction_nyquist,
         debug_field=args.debug_field,
     )
