@@ -2,14 +2,13 @@
 '''
 Plot three-dimensional particle samples from the available glasses.
 
-Each panel shows a random sample from one glass geometry:
+Each panel shows a random sample from one glass geometry, coloured by particle
+mass where the masses differ, so the heavier outer shells stand out:
 
     (a) Cubical glass (from random pre-glass)
     (b) Cubical glass (from grid pre-glass)
     (c) Spherical glass
     (d) Cylindrical glass
-
-The projection shows the particle distribution and the boundary of each glass.
 
 Usage
 -----
@@ -21,7 +20,7 @@ Usage
         --spherical    validation/glass-quality/runs/medium/cache/spherical/glass/snapshot_0001.hdf5 \\
         --cylindrical  validation/glass-quality/runs/medium/cache/cylindrical/glass/snapshot_0001.hdf5 \\
         --target-radius 500.0 \\
-        -o validation/glass-quality/runs/medium/output/glass.pdf
+        -o validation/glass-quality/runs/medium/output/supplementary/glass-generation-3d.pdf
 
 Any subset of panels can be omitted; missing panels are left blank.
 The ``--target-radius`` value must match ``R_3D`` in ``validation/glass-quality/config.env``
@@ -34,320 +33,24 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import TypeAlias
 
-import h5py
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
 import numpy as np
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (side-effect import)
-from numpy.typing import NDArray
 
-from validation._common.plotting import atomic_savefig, setup_matplotlib
+from plot import load_glass, rescale_to_radius
+from validation._common.plotting import (
+    atomic_savefig,
+    draw_panel_3d,
+    set_cylinder_aspect,
+    set_equal_aspect_3d,
+    setup_matplotlib,
+    subsample,
+)
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
-
-ArrayF: TypeAlias = NDArray[np.float64]
-
-
-def log_mass_to_colors(
-    mass: np.ndarray,
-    *,
-    vmin: float | None = None,
-    vmax: float | None = None,
-    cmap_name: str = 'plasma_r',
-) -> np.ndarray:
-    """Map positive particle masses to a logarithmic colormap."""
-    mass = np.asarray(mass, dtype=np.float64)
-
-    if np.any(mass <= 0.0):
-        raise ValueError('Masses must be strictly positive for logarithmic colouring.')
-
-    if vmin is None:
-        vmin = float(np.min(mass))
-    if vmax is None:
-        vmax = float(np.max(mass))
-
-    if vmin <= 0.0:
-        raise ValueError(f'vmin must be > 0 for LogNorm, got {vmin}.')
-    if vmax <= vmin:
-        raise ValueError(
-            f'vmax must be > vmin for LogNorm, got vmin={vmin}, vmax={vmax}.'
-        )
-
-    norm = LogNorm(vmin=vmin, vmax=vmax)
-    cmap = plt.get_cmap(cmap_name)
-    return cmap(norm(mass))
-
-
-def load_glass(path: str, part_type: int = 1) -> tuple[ArrayF, ArrayF]:
-    '''Read particle positions and masses from a Gadget-format HDF5 file.
-
-    Parameters
-    ----------
-    path : str
-        Path to the HDF5 snapshot.
-    part_type : int
-        Particle type group index (default 1 = dark matter).
-
-    Returns
-    -------
-    pos : ndarray, shape (N, 3)
-        Particle positions.
-    mass : ndarray, shape (N,)
-        Particle masses.
-    '''
-    with h5py.File(path, 'r') as f:
-        grp = f[f'PartType{part_type}']
-        pos = grp['Coordinates'][:]
-        mass = grp['Masses'][:]
-    log.info('Loaded %d particles from %s', pos.shape[0], path)
-    return pos.astype(np.float64), mass.astype(np.float64)
-
-
-def get_header(path: str, key: str, default=None):
-    '''Read a single header attribute from a Gadget-HDF5 file.'''
-    with h5py.File(path, 'r') as f:
-        return f['/Header'].attrs.get(key, default)
-
-
-def rescale_to_radius(
-    pos: ArrayF,
-    target_radius: float,
-    geometry: str,
-) -> ArrayF:
-    """Rescale expanded glass particles to a displayable extent.
-
-    During reverse-gravity relaxation in StePS, non-periodic axes expand
-    beyond the nominal domain. For non-periodic geometries StePS writes
-    ``L_BOX = 0`` into the HDF5 header (it is unused at run time), so the
-    header cannot be used as a rescaling anchor. Instead this function uses
-    the *actual particle extent* as the source scale and ``target_radius``
-    (the physical R_3D passed to StePS) as the target.
-
-    This rescaling is purely cosmetic - it restores the intended visual
-    shape for the paper figure without modifying the physics.
-
-    Parameters
-    ----------
-    pos : ndarray, shape (N, 3)
-        Particle positions (modified in-place, also returned).
-    target_radius : float
-        Desired half-extent after rescaling [Mpc]. Pass the same value as
-        ``R_3D`` in ``validation/glass-quality/config.env``.
-        For spherical: applied to all three axes.
-        For cylindrical: applied to x and y only (z is periodic and correct).
-    geometry : str
-        ``'spherical'`` or ``'cylindrical'``.
-
-    Returns
-    -------
-    ndarray, shape (N, 3)
-        Rescaled positions.
-    """
-    if geometry == 'spherical':
-        axes = [0, 1, 2]
-    elif geometry == 'cylindrical':
-        axes = [0, 1]
-    else:
-        raise ValueError(
-            f"rescale_to_radius: geometry must be 'spherical' or 'cylindrical', "
-            f"got {geometry!r}"
-        )
-
-    target_diameter = 2.0 * target_radius
-
-    for ax in axes:
-        lo, hi = pos[:, ax].min(), pos[:, ax].max()
-        extent = hi - lo
-        if extent == 0.0:
-            log.warning('Axis %d has zero extent - skipping rescale.', ax)
-            continue
-        centre = 0.5 * (lo + hi)
-        scale = target_diameter / extent
-        pos[:, ax] = centre + (pos[:, ax] - centre) * scale
-        log.info(
-            'Rescaled axis %d: extent %.4f -> %.4f (factor %.6f)',
-            ax, extent, target_diameter, scale,
-        )
-
-    return pos
-
-
-def subsample(
-    pos: ArrayF,
-    fraction: float,
-    *,
-    seed: int = 42,
-) -> ArrayF:
-    '''Return a random subsample of particle positions.
-
-    Parameters
-    ----------
-    pos : ndarray, shape (N, 3)
-        Full particle array.
-    fraction : float
-        Fraction of particles to keep, in (0, 1].
-    seed : int
-        RNG seed for reproducibility.
-
-    Returns
-    -------
-    ndarray, shape (M, 3)
-        Subsampled positions.
-    '''
-    n_total = pos.shape[0]
-    n_keep = max(1, int(n_total * fraction))
-    if n_keep >= n_total:
-        return pos
-    rng = np.random.default_rng(seed)
-    idx = rng.choice(n_total, size=n_keep, replace=False)
-    return pos[idx]
-
-
-def _draw_panel_3d(
-    ax: Axes3D,
-    pos: ArrayF,
-    mass: ArrayF,
-    title: str,
-    *,
-    fraction: float = 0.08,
-    point_size: float = 0.5,
-    point_color: str | None = None,
-    point_vmin: float | None = None,
-    point_vmax: float | None = None,
-    point_alpha: float = 0.25,
-    elev: float = 22.0,
-    azim: float = -42.0,
-) -> int:
-    """Draw a 3D scatter of a subsampled particle distribution."""
-    n_total = pos.shape[0]
-    n_keep = max(1, int(n_total * fraction))
-
-    if n_keep >= n_total:
-        idx = np.arange(n_total)
-    else:
-        rng = np.random.default_rng(42)
-        idx = rng.choice(n_total, size=n_keep, replace=False)
-
-    sub = pos[idx]
-    sub_mass = mass[idx]
-    n_plot = sub.shape[0]
-
-    if point_color is None:
-        if np.allclose(sub_mass, sub_mass[0]):
-            point_color = 'k'
-        else:
-            point_color = log_mass_to_colors(
-                sub_mass,
-                vmin=point_vmin,
-                vmax=point_vmax,
-            )
-
-    ax.scatter(
-        sub[:, 0], sub[:, 1], sub[:, 2],
-        s=point_size,
-        c=point_color,
-        alpha=point_alpha,
-        edgecolors='none',
-        rasterized=True,
-        depthshade=True,
-    )
-
-    ax.view_init(elev=elev, azim=azim)
-
-    # Clean up axes - for this figure, the *shape* is the message.
-    # Tick labels clutter 3D panels at publication scale.
-    ax.set_xticklabels([])
-    ax.set_yticklabels([])
-    ax.set_zticklabels([])
-    ax.tick_params(axis='both', which='both', length=0, pad=0)
-
-    # Subtle pane styling: white panes, light grid
-    for pane in (ax.xaxis.pane, ax.yaxis.pane, ax.zaxis.pane):
-        pane.fill = False
-        pane.set_edgecolor('0.80')
-
-    for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
-        axis._axinfo['grid']['color'] = (0.85, 0.85, 0.85, 0.5)
-        axis._axinfo['grid']['linewidth'] = 0.4
-
-    ax.text2D(
-        0.03, 0.96, title,
-        transform=ax.transAxes, fontsize=7,
-        va='top', ha='left',
-        bbox=dict(facecolor='white', edgecolor='none', alpha=0.80, pad=1.5),
-    )
-
-    return n_plot
-
-
-def _set_equal_aspect_3d(ax: Axes3D, pos: ArrayF, pad: float = 0.05) -> None:
-    '''Force equal aspect ratio on a 3D axes by setting matching limits.
-
-    Parameters
-    ----------
-    ax : Axes3D
-        The 3D axes to adjust.
-    pos : ndarray, shape (N, 3)
-        Particle positions (full set, not subsampled) for extent computation.
-    pad : float
-        Fractional padding around the data extent.
-    '''
-    mins = pos.min(axis=0)
-    maxs = pos.max(axis=0)
-    centres = 0.5 * (mins + maxs)
-    half_range = 0.5 * (1.0 + pad) * (maxs - mins).max()
-
-    ax.set_box_aspect((1, 1, 1))
-    ax.set_xlim(centres[0] - half_range, centres[0] + half_range)
-    ax.set_ylim(centres[1] - half_range, centres[1] + half_range)
-    ax.set_zlim(centres[2] - half_range, centres[2] + half_range)
-
-
-def _set_cylinder_aspect(
-    ax: Axes3D,
-    pos: ArrayF,
-    r_max: float,
-    z_min: float,
-    z_max: float,
-    xy_centre: ArrayF,
-    pad: float = 0.05,
-) -> None:
-    '''Set 3D limits for a cylindrical geometry.
-
-    Uses the physical aspect ratio of the cylinder so that a squat
-    cylinder looks squat. The x-y extent is set by ``r_max`` and the
-    z extent by ``[z_min, z_max]``.
-
-    Parameters
-    ----------
-    ax : Axes3D
-        The 3D axes.
-    pos : ndarray, shape (N, 3)
-        Particle positions (unused; kept for API symmetry with
-        ``_set_equal_aspect_3d``).
-    r_max : float
-        Maximum cylindrical radius.
-    z_min, z_max : float
-        Axial extent of the cylinder.
-    xy_centre : ndarray, shape (2,)
-        Centre of the particle distribution in the x-y plane.
-    pad : float
-        Fractional padding.
-    '''
-    r_padded = r_max * (1.0 + pad)
-    z_centre = 0.5 * (z_min + z_max)
-    z_half = 0.5 * (z_max - z_min) * (1.0 + pad)
-
-    half_range = max(r_padded, z_half)
-
-    ax.set_box_aspect((1, 1, 1))
-    ax.set_xlim(xy_centre[0] - half_range, xy_centre[0] + half_range)
-    ax.set_ylim(xy_centre[1] - half_range, xy_centre[1] + half_range)
-    ax.set_zlim(z_centre - half_range, z_centre + half_range)
 
 
 def plot_glasses(
@@ -416,31 +119,20 @@ def plot_glasses(
         elif key == 'cylindrical':
             pos = rescale_to_radius(pos, target_radius, 'cylindrical')
 
-        # Set axis limits based on geometry
-        if key in ('cubic_random', 'cubic_grid', 'spherical'):
-            _set_equal_aspect_3d(ax, pos)
-
-        elif key == 'cylindrical':
-            centre = pos.mean(axis=0)
-            dx = pos[:, 0] - centre[0]
-            dy = pos[:, 1] - centre[1]
-            r_max = float(np.max(np.sqrt(dx**2 + dy**2)))
-            _set_cylinder_aspect(
-                ax, pos, r_max,
-                z_min=float(pos[:, 2].min()),
-                z_max=float(pos[:, 2].max()),
-                xy_centre=centre[:2],
-            )
-
+        if key == 'cylindrical':
+            set_cylinder_aspect(ax, pos)
         else:
-            raise ValueError(f'Unknown panel key: {key}')
+            set_equal_aspect_3d(ax, pos)
 
-        n_plotted = _draw_panel_3d(
-            ax, pos, mass, title,
-            fraction=fraction,
-            elev=elev,
-            azim=azim,
-        )
+        sub, sub_mass = subsample(pos, fraction, masses=mass)
+        if np.allclose(sub_mass, sub_mass[0]):
+            colors = 'k'
+        else:
+            norm = LogNorm(vmin=sub_mass.min(), vmax=sub_mass.max())
+            colors = plt.get_cmap('plasma_r')(norm(sub_mass))
+        draw_panel_3d(ax, sub, title, sizes=0.5, colors=colors, elev=elev, azim=azim)
+        n_plotted = sub.shape[0]
+
         log.info(
             '%s: N_total = %d, N_shown = %d (%.1f%%)',
             key, n_total, n_plotted, 100.0 * n_plotted / n_total,

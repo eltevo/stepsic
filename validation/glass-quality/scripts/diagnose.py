@@ -177,8 +177,8 @@ def diagnose(
 ) -> dict[str, np.ndarray]:
     pos = np.asarray(pos, dtype=np.float64)
     mass = np.asarray(mass, dtype=np.float64)
-    if pos.ndim != 2 or pos.shape[1:] != (3,) or len(pos) == 0:
-        raise ValueError('positions must have shape (n, 3) with n > 0')
+    if pos.ndim != 2 or pos.shape[1:] != (3,) or len(pos) < 2:
+        raise ValueError('positions must have shape (n, 3) with n >= 2')
     if (
         mass.shape != (len(pos),)
         or not np.all(np.isfinite(mass))
@@ -189,8 +189,8 @@ def diagnose(
         )
     if not np.all(np.isfinite(pos)):
         raise ValueError('positions must be finite')
-    if accel is not None and np.asarray(accel).shape != pos.shape:
-        raise ValueError('accelerations must match the position array')
+    if accel is not None and (np.asarray(accel).shape != pos.shape or not np.all(np.isfinite(accel))):
+        raise ValueError('accelerations must be finite and match the position array')
     if geometry not in ('cubical', 'spherical', 'cylindrical'):
         raise ValueError('geometry must be cubical, spherical, or cylindrical')
     if min(nzones, pk_nmesh, nprof) < 1:
@@ -246,6 +246,10 @@ def diagnose(
         pos_w = wrap(pos.copy(), np.array([boxsize] * 3))
         tree = cKDTree(pos_w, boxsize=boxsize)
         d_nn = tree.query(pos_w, k=2)[0][:, 1]
+    elif geometry == 'cylindrical':
+        copies = np.concatenate([pos + [0, 0, offset] for offset in (-lz, 0., lz)])
+        tree = cKDTree(copies)
+        d_nn = tree.query(pos, k=2)[0][:, 1]
     else:
         tree = cKDTree(pos)
         d_nn = tree.query(pos, k=2)[0][:, 1]
@@ -298,6 +302,7 @@ def diagnose(
         results['prof_rho'] = m_bin / vols / rho_mean
         sum_u = np.bincount(idx, weights=u, minlength=nprof)
         cnt = np.bincount(idx, minlength=nprof).astype(np.float64)
+        results['prof_count'] = cnt
         with np.errstate(invalid='ignore'):
             results['prof_u'] = np.where(cnt > 0, sum_u / cnt, np.nan)
         if has_force:
@@ -332,14 +337,14 @@ def diagnose(
         results['power_rmax'] = power_rmax
         results['power_boxsize'] = power_boxsize
 
-        # Equal-particle radial zones keep the force comparison balanced.
-        zone_edges = np.quantile(r, np.linspace(0.0, 1.0, nzones + 1))
-        zone_edges[0], zone_edges[-1] = 0.0, r_max
+        zone_edges = np.linspace(0.0, r_max, nzones + 1)
         results['zone_edges'] = zone_edges
         zone_q = []
         for iz in range(nzones):
             r0, r1 = zone_edges[iz], zone_edges[iz + 1]
             in_z = (r >= r0) & (r < r1) if iz < nzones - 1 else (r >= r0)
+            if not np.any(in_z):
+                raise ValueError('physical force zone contains no particles')
             if has_force:
                 zone_q.append([
                     np.sqrt(np.mean(q[in_z]**2)), np.median(q[in_z]),

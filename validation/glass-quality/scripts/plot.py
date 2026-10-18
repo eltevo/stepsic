@@ -42,7 +42,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 
-from validation._common.plotting import atomic_savefig, setup_matplotlib
+from validation._common.plotting import atomic_savefig, setup_matplotlib, subsample
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -73,12 +73,6 @@ def load_glass(path: str, part_type: int = 1) -> tuple[ArrayF, ArrayF]:
         mass = grp['Masses'][:]
     log.info('Loaded %d particles from %s', pos.shape[0], path)
     return pos.astype(np.float64), mass.astype(np.float64)
-
-
-def get_header(path: str, key: str, default=None):
-    '''Read a single header attribute from a Gadget-HDF5 file.'''
-    with h5py.File(path, 'r') as f:
-        return f['/Header'].attrs.get(key, default)
 
 
 def rescale_to_radius(
@@ -212,37 +206,6 @@ def pick_grid_layer(pos: ArrayF) -> ArrayF:
     return pos[mask][:, [0, 2]]
 
 
-def subsample(
-    pos: ArrayF,
-    fraction: float,
-    *,
-    seed: int = 42,
-) -> ArrayF:
-    '''Return a random subsample of particle positions.
-
-    Parameters
-    ----------
-    pos : ndarray, shape (N, D)
-        Full particle array (works for any number of columns).
-    fraction : float
-        Fraction of particles to keep, in (0, 1].
-    seed : int
-        RNG seed for reproducibility.
-
-    Returns
-    -------
-    ndarray, shape (M, D)
-        Subsampled positions.
-    '''
-    n_total = pos.shape[0]
-    n_keep = max(1, int(n_total * fraction))
-    if n_keep >= n_total:
-        return pos
-    rng = np.random.default_rng(seed)
-    idx = rng.choice(n_total, size=n_keep, replace=False)
-    return pos[idx]
-
-
 def _draw_panel_2d(
     ax: plt.Axes,
     xz: ArrayF,
@@ -255,7 +218,7 @@ def _draw_panel_2d(
 ) -> int:
     """Draw a 2D X-Z scatter on *ax* and return the number of plotted points."""
     if fraction < 1.0:
-        xz = subsample(xz, fraction)
+        xz, _ = subsample(xz, fraction)
 
     n_plot = xz.shape[0]
 

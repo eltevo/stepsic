@@ -131,7 +131,14 @@ if vlib::step_check "twins"; then
             echo "  [skip] no ${geom} glass snapshot"; continue; }
         vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/twin.py" \
             "${snap}" "${TWIN_DIR}/twin_${geom}.hdf5" \
-            --geometry "${geom}" --seed "${DIAG_TWIN_SEED}"
+            --geometry "${geom}" --seed "${DIAG_TWIN_SEED}" \
+            --radius-mpc-h "${R_3D}" --length-mpc-h "${LZ}" --boxsize-mpc-h "${LBOX}"
+        if [[ "${geom}" != cubical ]]; then
+            vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/twin.py" \
+                "${snap}" "${TWIN_DIR}/angular_${geom}.hdf5" \
+                --geometry "${geom}" --seed "${DIAG_TWIN_SEED}" --angular-only \
+                --radius-mpc-h "${R_3D}" --length-mpc-h "${LZ}"
+        fi
     done
     vlib::step_done "twins"
 fi
@@ -191,10 +198,6 @@ _force_dump() {
     local l_box="${5}" r_sim="${6}" soft="${7}" ewald_table="${8:-}"
     local out="${FORCE_DIR}/${name}"
     local dump="${out}/initial_conditions_0000.hdf5"
-    if [[ -f "${dump}" ]]; then
-        echo "  [cached] force dump: ${name}"
-        return 0
-    fi
     mkdir -p "${out}"
     GLASS_A_START="${FORCE_A_START}" GLASS_A_MAX="${FORCE_A_MAX}" \
     GLASS_TIME_LIMIT_MIN="${FORCE_TIME_LIMIT_MIN}" \
@@ -235,17 +238,21 @@ if vlib::step_check "forces"; then
     if [[ -n "${SNAP_SPHERICAL}" && -f "${SNAP_SPHERICAL}" ]]; then
         _force_dump "glass_spherical" "${SNAP_SPHERICAL}" \
             "${FORCE_BIN_SPHERICAL}" 0 0 "${R_3D}" "${GLASS_SOFT_SHELL}"
-        _force_dump "twin_spherical" "${TWIN_DIR}/twin_spherical.hdf5" \
-            "${FORCE_BIN_SPHERICAL}" 0 0 "${R_3D}" "${GLASS_SOFT_SHELL}"
+        for control in twin angular; do
+            _force_dump "${control}_spherical" "${TWIN_DIR}/${control}_spherical.hdf5" \
+                "${FORCE_BIN_SPHERICAL}" 0 0 "${R_3D}" "${GLASS_SOFT_SHELL}"
+        done
     fi
 
     if [[ -n "${SNAP_CYLINDRICAL}" && -f "${SNAP_CYLINDRICAL}" ]]; then
         _force_dump "glass_cylindrical" "${SNAP_CYLINDRICAL}" \
             "${FORCE_BIN_CYLINDRICAL}" 4 "${LZ}" "${R_3D}" \
             "${GLASS_SOFT_SHELL}" "S1R2_Ewald_table_higres.hdf5"
-        _force_dump "twin_cylindrical" "${TWIN_DIR}/twin_cylindrical.hdf5" \
-            "${FORCE_BIN_CYLINDRICAL}" 4 "${LZ}" "${R_3D}" \
-            "${GLASS_SOFT_SHELL}" "S1R2_Ewald_table_higres.hdf5"
+        for control in twin angular; do
+            _force_dump "${control}_cylindrical" "${TWIN_DIR}/${control}_cylindrical.hdf5" \
+                "${FORCE_BIN_CYLINDRICAL}" 4 "${LZ}" "${R_3D}" \
+                "${GLASS_SOFT_SHELL}" "S1R2_Ewald_table_higres.hdf5"
+        done
     fi
     vlib::step_done "forces"
 fi
@@ -282,6 +289,12 @@ if vlib::step_check "diagnose"; then
             "$(_diag_input "twin_${geom}" "${TWIN_DIR}/twin_${geom}.hdf5")" \
             -o "${DIAG_DIR}/diag_twin_${geom}.npz" \
             --geometry "${geom}" "${GEOMETRY_ARGS[@]}" "${DIAG_ARGS[@]}"
+        if [[ "${geom}" != cubical ]]; then
+            vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/diagnose.py" \
+                "$(_diag_input "angular_${geom}" "${TWIN_DIR}/angular_${geom}.hdf5")" \
+                -o "${DIAG_DIR}/diag_angular_${geom}.npz" \
+                --geometry "${geom}" "${GEOMETRY_ARGS[@]}" "${DIAG_ARGS[@]}"
+        fi
     done
     # Rescaled tori: diagnose one tile (z < LBOX/s).
     if [[ -n "${SNAP_CUBICAL}" && -f "${SNAP_CUBICAL}" ]]; then
@@ -308,6 +321,12 @@ if vlib::step_check "plot"; then
             --glass "${g}" --twin "${t}" --label "${geom}" \
             -o "${FIGURES}/glass-quality-${geom}.pdf"
         echo "  -> ${FIGURES}/glass-quality-${geom}.pdf"
+        angular="${DIAG_DIR}/diag_angular_${geom}.npz"
+        if [[ "${geom}" != cubical && -f "${angular}" ]]; then
+            vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot-diagnostics.py" \
+                --glass "${g}" --twin "${angular}" --label "${geom}, fixed-radius randomization" \
+                -o "${FIGURES}/glass-angular-${geom}.pdf"
+        fi
     done
     # Rescale summary needs force data on every point.
     RESCALE_PLOT_ARGS=()
@@ -341,6 +360,12 @@ if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
             figure="${FIGURES}/glass-quality-${geom}.pdf"
             [[ -f "${figure}" ]] && FIGURE_ARGS+=(--figure "${figure}")
         fi
+        angular="${DIAG_DIR}/diag_angular_${geom}.npz"
+        if [[ -f "${angular}" ]]; then
+            EVALUATE_ARGS+=(--angular "${geom}" "${angular}")
+            figure="${FIGURES}/glass-angular-${geom}.pdf"
+            [[ -f "${figure}" ]] && FIGURE_ARGS+=(--figure "${figure}")
+        fi
     done
     for s in 1 ${RESCALE_ASPECTS}; do
         archive="${DIAG_DIR}/diag_tiled_s${s}.npz"
@@ -350,6 +375,8 @@ if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
     vlib::run_python "${STEPSIC_ENV}" \
         "${BASEDIR}/scripts/evaluate-diagnostics.py" \
         "${EVALUATE_ARGS[@]}" "${FIGURE_ARGS[@]}" \
+        --density-min-count "${DIAG_DENSITY_MIN_COUNT}" \
+        --density-rmax-frac "${DIAG_DENSITY_RMAX_FRAC}" \
         --output "${OUTPUT}/result.json"
     vlib::step_done "evaluate"
 fi

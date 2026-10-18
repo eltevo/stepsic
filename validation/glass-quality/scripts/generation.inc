@@ -16,7 +16,7 @@
 #    2. Write StePS parameter files
 #    3. Compile StePS GPU binaries
 #    4. Run StePS glass relaxation
-#    Then: 5. Plot all available glass snapshots
+#    Then: 5. Plot x-z slices and three-dimensional views of the glasses
 #
 #  Usage:
 #    bash run.sh [OPTIONS]
@@ -24,7 +24,7 @@
 #  Options (standard):
 #    --size=SIZE       small, medium (default), or approved large profile
 #    --step=N          Geometry sub-step to start from (1–4, default 1)
-#    --plot-only       Skip all geometry pipelines; regenerate figure only
+#    --plot-only       Skip all geometry pipelines; regenerate figures only
 #    --force           Not used in glass (pass --no-clean to re-run)
 #    --clean           Delete configs/, params/, builds/, and cache dirs
 #    --config=PATH     Select a typed custom TOML profile
@@ -36,7 +36,6 @@
 #                       Values: cubical, spherical, cylindrical, all
 #                       (default: all)
 #    --no-clean        Keep geometry output directories for this run
-#    --plot-3d         Use the 3D scatter plot (default: 2D slice plot)
 #
 #  GEOM_START_STEP env var:
 #    Sets the intra-geometry start step (1=preglass, 2=param, 3=build, 4=run).
@@ -74,21 +73,22 @@ source "${BASEDIR}/../_common/lib.sh"
 vlib::parse_args "$@"
 vlib::prepare_campaign glass-quality "${BASEDIR}" "${BASEDIR}/config.env"
 
-vlib::declare_steps cubical spherical cylindrical plot
+vlib::declare_steps cubical spherical cylindrical plot plot_3d
+vlib::manifest_implementation plot "${BASEDIR}/scripts/plot.py"
+vlib::manifest_implementation plot_3d \
+    "${BASEDIR}/scripts/plot-3d.py" "${BASEDIR}/scripts/plot.py"
 
 # Parse glass-specific flags from VLIB_EXTRA_ARGS
 RUN_GEOMS="all"
 DO_CLEAN="yes"
-PLOT_MODE="2D"
 
 for arg in "${VLIB_EXTRA_ARGS[@]+"${VLIB_EXTRA_ARGS[@]}"}"; do
     case "${arg}" in
         --run=*)    RUN_GEOMS="${arg#--run=}" ;;
         --no-clean) DO_CLEAN="no" ;;
-        --plot-3d)  PLOT_MODE="3D" ;;
         *)
             echo "ERROR: Unknown argument '${arg}'." >&2
-            echo "Usage: $0 [--run=GEOM,...] [--step=N] [--plot-only] [--no-clean] [--plot-3d] ..." >&2
+            echo "Usage: $0 [--run=GEOM,...] [--step=N] [--plot-only] [--no-clean] ..." >&2
             exit 1
             ;;
     esac
@@ -160,7 +160,6 @@ FIGURES="${OUTPUT}/supplementary"
 
 if (( VLIB_LIST_STEPS )); then
     vlib::profile_summary
-    echo "  Selected plot: ${PLOT_MODE}"
     echo ""
     echo "  Geometry sub-steps (controlled by --step=N or GEOM_START_STEP):"
     echo "     - preglass    - generate pre-glass ICs via stepsic"
@@ -252,7 +251,7 @@ fi
 
 echo ""
 echo "------------------------------------------------------------------------"
-echo "  Generating validation figure"
+echo "  Generating validation figures"
 echo "------------------------------------------------------------------------"
 
 SNAP_CUBIC_RANDOM="$(vlib::find_last_snap "${OUTDIR}/cubic_random/glass")"
@@ -287,22 +286,23 @@ if [[ ${#PLOT_ARGS[@]} -eq 0 ]]; then
     exit 1
 fi
 
-PLOT_SCRIPT="${BASEDIR}/scripts/plot.py"
-PLOT_DIMENSION_ARGS=(--slice-thickness 100)
-if [[ "${PLOT_MODE}" == "3D" ]]; then
-    PLOT_SCRIPT="${BASEDIR}/scripts/plot-3d.py"
-    PLOT_DIMENSION_ARGS=()
-fi
-vlib::manifest_implementation plot "${PLOT_SCRIPT}"
-
 if vlib::step_check "plot" "${FIGURES}/glass-generation.pdf"; then
-    vlib::run_python "${STEPSIC_ENV}" "${PLOT_SCRIPT}" \
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot.py" \
         "${PLOT_ARGS[@]}" \
         --target-radius "${R_3D}" \
-        "${PLOT_DIMENSION_ARGS[@]+"${PLOT_DIMENSION_ARGS[@]}"}" \
+        --slice-thickness 100 \
         --fraction 1.0 \
         -o "${FIGURES}/glass-generation.pdf"
     vlib::step_done "plot"
+fi
+
+if vlib::step_check "plot_3d" "${FIGURES}/glass-generation-3d.pdf"; then
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot-3d.py" \
+        "${PLOT_ARGS[@]}" \
+        --target-radius "${R_3D}" \
+        --fraction 1.0 \
+        -o "${FIGURES}/glass-generation-3d.pdf"
+    vlib::step_done "plot_3d"
 fi
 
 vlib::report_done
