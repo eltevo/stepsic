@@ -240,6 +240,7 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('HALOFIT', ptype=PType.STRING, label="Halofit version", condition=lambda P: P.get('SPECTRUM') == 'camb' and P.get('NONLINEAR', False)),
     Param('INPUT_SPECTRUM', ptype=PType.PATH, label="Input spectrum file", condition=lambda P: P.get('SPECTRUM') == 'input'),
     Param('INPUT_SPECTRUM_UNIT_L_IN_CM', label=None, condition=lambda P: P.get('SPECTRUM') == 'input'),
+    Param('SAVE_SPECTRUM', ptype=PType.BOOL, label="Save power spectrum", condition=lambda P: P.get('SPECTRUM') == 'camb'),
 
     # -- Internal unit system for validation ---------------------------
     Param('UNIT_L_IN_CM', label=None),
