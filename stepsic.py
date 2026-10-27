@@ -139,10 +139,19 @@ def main():
                 omk=params.get('OMK', 0.0), mnu=params['MNU'], nnu=params['NNU'],
                 YHe=params['YHE'], TCMB=params['TCMB'], zrei=params['ZREI'],
                 w0=params['W0'], wa=params['WA'], nonlinear=False)
-            kh, pk, pk3 = cosmo_camb.get_spectrum(
-                z=0, As=params['AS'], ns=params['NS'],
-                sigma8_init=params['SIGMA8'] if params['RESCALE_SIGMA8'] else None,
-                kmin=1/np.min(params['LBOX']), kmax=100, npoints=2048)
+            if params['NMESH'] == 0:
+                nres_tab, mass_tab = create_nres_mass_map(
+                                params['NMESHSAMPLES'], ic_orig.mass_list, ic_orig.M_box, params['LBOX'], silent=True)
+                kmin=np.pi/np.max(params['LBOX']) #half the fundamental mode of the box
+                kmax=4*np.max(cubic_voxels(nres_tab[-1], params['LBOX'])[0])*np.pi/np.max(params['LBOX']) #2x the Nyquist frequency of the finest grid
+            else:
+                kmin=np.pi/np.max(params['LBOX']) #half the fundamental mode of the box
+                kmax=4*params['NMESH']*np.pi/np.max(params['LBOX']) #2x the Nyquist frequency of the grid
+            npoints=2048
+            log.info("Generating the linear power spectrum using CAMB: kmin = %.4e h/Mpc, kmax = %.4e h/Mpc, npoints = %d" % (kmin, kmax, npoints))
+            kh, pk, pk3 = cosmo_camb.get_spectrum( z=0, As=params['AS'], ns=params['NS'],
+                                sigma8_init=params['SIGMA8'] if params['RESCALE_SIGMA8'] else None,
+                                kmin=kmin, kmax=kmax, npoints=npoints)
             pk = pk[0]*D1**2  # Backscale P(k,z=0) with D1^2 to desired `z`
         elif params['SPECTRUM'] == 'input':
             # Should contain 2 rows or columns: log(k) and a scaled log(P^3(k))
