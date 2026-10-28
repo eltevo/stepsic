@@ -24,6 +24,12 @@ from colossus.cosmology import cosmology
 
 log = logging.getLogger(__name__)
 
+# Lowest kmax [h/Mpc] for CAMB's transfer functions. sigma_8 integrates P(k)
+# against an 8 Mpc/h top-hat and needs them well past 1 h/Mpc; beyond that,
+# CAMB's sigma_8 still varies by ~2e-4 with kmax, so one fixed value gives
+# every spectrum up to that kmax the same normalization.
+SIGMA8_KMAX = 100.0
+
 
 def hubble_a(a, H0, omega_m, omega_l):
     r"""
@@ -337,7 +343,8 @@ class CAMBCosmology:
         kmin : float
             Minimum wavenumber in :math:`h^{-1}\,\mathrm{Mpc}`.
         kmax : float
-            Maximum wavenumber in :math:`h^{-1}\,\mathrm{Mpc}`.
+            Maximum wavenumber in :math:`h^{-1}\,\mathrm{Mpc}`. The transfer
+            functions are computed to at least ``SIGMA8_KMAX``.
         npoints : int
             Number of wavenumber points.
         component : str
@@ -346,13 +353,14 @@ class CAMBCosmology:
             'delta_baryon' for baryonic matter, etc. See CAMB documentation
             for more details.
         """
+        kmax_transfer = max(kmax, SIGMA8_KMAX)
         if self.params.NonLinear != camb.model.NonLinear_none:
             # Non-linear corrections are baked into the transfer functions,
             # so rescaling As requires full recomputations.
             sigma8, As = self._rescale_As(
-                sigma8_init, As=As, ns=ns, kmax=kmax, component=component)
+                sigma8_init, As=As, ns=ns, kmax=kmax_transfer, component=component)
             log.info(f'Value for matter fluctuation amplitude used: {sigma8 = :.4f}')
-            self.params.set_matter_power(redshifts=np.atleast_1d(z).tolist(), kmax=kmax)
+            self.params.set_matter_power(redshifts=np.atleast_1d(z).tolist(), kmax=kmax_transfer)
             results = camb.get_results(self.params)
         else:
             # Linear theory: compute the transfer functions once (including
@@ -363,7 +371,7 @@ class CAMBCosmology:
             if not np.any(np.isclose(z_req, 0.0)):
                 z_calc.append(0.0)
             self.params.InitPower.set_params(As=As, ns=ns)
-            self.params.set_matter_power(redshifts=z_calc, kmax=kmax)
+            self.params.set_matter_power(redshifts=z_calc, kmax=kmax_transfer)
             results = camb.get_results(self.params)
 
             def sigma8_z0():

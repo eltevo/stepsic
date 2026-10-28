@@ -67,6 +67,7 @@ vlib::stepsic::write_toml() {
     local ROTATE_V; ROTATE_V="$(_tv ROTATE 0.0)"
     local USE_DOUBLE_V; USE_DOUBLE_V="$(_tv USE_DOUBLE false)"
     local SAVE_WHITE_NOISE_V; SAVE_WHITE_NOISE_V="$(_tv SAVE_WHITE_NOISE false)"
+    local SAVE_SPECTRUM_V; SAVE_SPECTRUM_V="$(_tv SAVE_SPECTRUM false)"
     local INPUT_SPECTRUM_V; INPUT_SPECTRUM_V="$(_tv INPUT_SPECTRUM none)"
     # Optional cosmological overrides (empty = use cosmology.toml defaults).
     # Set OMEGA_M=1.0 and OMEGA_L=0.0 for EdS pre-glass ICs so that particle
@@ -121,6 +122,7 @@ ROTATE = ${ROTATE_V}
 IC_FORMAT = "hdf5"
 USE_DOUBLE = ${USE_DOUBLE_V}
 SAVE_WHITE_NOISE = ${SAVE_WHITE_NOISE_V}
+SAVE_SPECTRUM = ${SAVE_SPECTRUM_V}
 UNIT_L_IN_CM = 3.085678e24
 UNIT_M_IN_G = 1.989e44
 UNIT_V_IN_KMPS = 20.738652969844207

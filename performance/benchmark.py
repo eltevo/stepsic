@@ -67,6 +67,7 @@ WORKLOAD = {
     'IC_PREFIX': 'performance',
     'IC_FORMAT': 'hdf5',
     'SAVE_WHITE_NOISE': False,
+    'SAVE_SPECTRUM': False,
     'COSMOLOGY': 'Planck2018EE+BAO',
     'SPECTRUM': 'camb',
     'RESCALE_SIGMA8': True,
