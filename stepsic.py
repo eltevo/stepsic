@@ -132,6 +132,15 @@ def main():
         log.info(f"1st vel. prefac(z={params['REDSHIFT']}) = {aHf1:.6f}")
         log.info(f"2nd vel. prefac(z={params['REDSHIFT']}) = {aHf2:.6f}")
 
+        # Meshes from coarse to fine: one per sampled particle mass for the
+        # multiresolution IC (NMESH = 0), otherwise the single NMESH mesh.
+        if params['NMESH'] == 0:
+            nres_tab, mass_tab = create_nres_mass_map(
+                params['NMESHSAMPLES'], ic_orig.mass_list, ic_orig.M_box, params['LBOX'])
+            hierarchy = [cubic_voxels(res, params['LBOX']) for res in nres_tab]
+        else:
+            hierarchy = [cubic_voxels(params['NMESH'], params['LBOX'])]
+
         # Construct the linear power spectrum and backscale it to `z`
         if params['SPECTRUM'] == 'camb':
             cosmo_camb = CAMBCosmology(
@@ -139,10 +148,16 @@ def main():
                 omk=params.get('OMK', 0.0), mnu=params['MNU'], nnu=params['NNU'],
                 YHe=params['YHE'], TCMB=params['TCMB'], zrei=params['ZREI'],
                 w0=params['W0'], wa=params['WA'], nonlinear=False)
-            kh, pk, pk3 = cosmo_camb.get_spectrum(
-                z=0, As=params['AS'], ns=params['NS'],
-                sigma8_init=params['SIGMA8'] if params['RESCALE_SIGMA8'] else None,
-                kmin=1/np.min(params['LBOX']), kmax=100, npoints=2048)
+            # From half the box fundamental mode to 4x the Nyquist frequency
+            # of the finest mesh, beyond its corner mode sqrt(3) pi / dk, so
+            # no mesh mode falls outside the tabulated range.
+            kmin = np.pi / np.max(params['LBOX'])
+            kmax = 4 * np.pi / hierarchy[-1][1]
+            npoints=2048
+            log.info("Generating the linear power spectrum using CAMB: kmin = %.4e h/Mpc, kmax = %.4e h/Mpc, npoints = %d" % (kmin, kmax, npoints))
+            kh, pk, pk3 = cosmo_camb.get_spectrum( z=0, As=params['AS'], ns=params['NS'],
+                                sigma8_init=params['SIGMA8'] if params['RESCALE_SIGMA8'] else None,
+                                kmin=kmin, kmax=kmax, npoints=npoints)
             pk = pk[0]*D1**2  # Backscale P(k,z=0) with D1^2 to desired `z`
         elif params['SPECTRUM'] == 'input':
             # Should contain 2 rows or columns: log(k) and a scaled log(P^3(k))
@@ -160,9 +175,6 @@ def main():
             # Then it calculates the displacement and velocity fields for
             # each grid, which are then interpolated on top of each other to
             # create the final IC.
-            nres_tab, mass_tab = create_nres_mass_map(
-                params['NMESHSAMPLES'], ic_orig.mass_list, ic_orig.M_box, params['LBOX'])
-            hierarchy = [cubic_voxels(res, params['LBOX']) for res in nres_tab]
             displacement, velocity = multiresolution_lpt(
                 ic_orig.pos, ic_orig.mass, mass_tab, hierarchy,
                 density_samples(kh, pk, hierarchy, params),
@@ -187,7 +199,7 @@ def main():
             # generate a single IC with a grid of the specified resolution.
             # This is useful for testing purposes or for generating ICs with
             # a specific resolution.
-            nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
+            nvox, dk = hierarchy[0]
             # White noise field for complete reproducibility
             field = white_noise(nvox=nvox, seed=params['SEED'], dtype=params['DTYPE'])
             delta_k = generate_delta_k(kh, pk, nvox, dk, field=field, paired=params['PAIRED'], fixed=params['FIXED'], dtype=params['DTYPE'])
@@ -259,6 +271,9 @@ def main():
             f.create_dataset('ic_white_noise', data=scipy.fft.irfftn(field, workers=-1))
         with h5py.File(run_dir / 'ic_delta_k.hdf5', 'w') as f:
             f.create_dataset('ic_delta_k', data=delta_k)
+    if params['LPTORDER'] > 0 and params['SAVE_SPECTRUM']:
+        np.savetxt(run_dir / 'ic_target_pk.txt', np.column_stack((kh, pk)),
+                   header=f"k [h/Mpc], P(k) [(Mpc/h)^3] at z = {params['REDSHIFT']}")
 
     log.info(f'The IC building took {(time.time() - start):.4f} s.')
 

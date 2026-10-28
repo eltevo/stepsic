@@ -84,7 +84,7 @@ def configuration(geometry, domain, work):
         TYPE='glass', INPUT_GLASS=str(domain.glass), SEED=42, USE_DOUBLE=True, COMOVING=True,
         HINDEPENDENT=False, ROTATE=0., NMESH=0, NMESHSAMPLES=4, LPTORDER=2,
         REDSHIFT=REDSHIFT, INTERPOLATION='cic', COMPENSATE=False, SPHEREMODE=False,
-        PAIRED=False, FIXED=False, IC_FORMAT='hdf5', SAVE_WHITE_NOISE=False,
+        PAIRED=False, FIXED=False, IC_FORMAT='hdf5', SAVE_WHITE_NOISE=False, SAVE_SPECTRUM=False,
         COSMOLOGY='Planck2018EE+BAO', SPECTRUM='camb', RESCALE_SIGMA8=True, NONLINEAR=False,
         UNIT_L_IN_CM=float(UNIT_L), UNIT_M_IN_G=float(UNIT_M),
         UNIT_V_IN_KMPS=float(UNIT_V), IC_DIR=str(work.resolve()), IC_PREFIX=geometry,

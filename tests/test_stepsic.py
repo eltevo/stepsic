@@ -239,6 +239,23 @@ def test_camb_ic__displacement_and_velocity_scale_with_linear_growth(stepsic_run
     np.testing.assert_allclose(v9, velocity * v19, rtol=0.0, atol=5e-4 * np.abs(v9).max())
 
 
+def test_camb_ic__target_spectrum_covers_every_mesh_mode(stepsic_run, tmp_path) -> None:
+    """The CAMB spectrum is tabulated over every mode of the mesh, so none is extrapolated.
+
+    In a 120 x 120 x 12 box with NMESH = 8 cells along the short side, the
+    cubic cells are 1.5 Mpc/h wide. The mesh modes then run from the box
+    fundamental 2 pi / 120 to the corner of the Nyquist cube, sqrt(3) pi / 1.5.
+    """
+    stepsic_run(
+        TYPE="grid", NGRID=8, NMESH=8, LBOX=[120.0, 120.0, 12.0], COI=[0.0, 0.0, 0.0],
+        SAVE_SPECTRUM=True,
+    )
+    (path,) = tmp_path.glob("ics-*/*/ic_target_pk.txt")
+    k = np.loadtxt(path)[:, 0]
+    assert k[0] <= 2.0 * np.pi / 120.0
+    assert k[-1] >= np.sqrt(3.0) * np.pi / 1.5
+
+
 def test_spherical_glass_ic__keeps_the_load_and_returns_input_units(
     stepsic_run, power_law, tmp_path
 ) -> None:

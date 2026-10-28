@@ -139,6 +139,7 @@ IC_DIR = "output"        # Base output directory for the generated files. Subdir
 IC_PREFIX = "stepsic"    # Name prefix of the output subdirectories and files.
 IC_FORMAT = "hdf5"       # Output file format. Options: "hdf5", "gadget", "ascii"
 SAVE_WHITE_NOISE = false # If 'true', delta_k and the white noise will be saved into separate hdf5 files for reproducibility.
+SAVE_SPECTRUM = false    # If 'true', the target power spectrum at `REDSHIFT` is saved to ic_target_pk.txt as columns k [h/Mpc] and P(k) [(Mpc/h)^3].
 
 
 # -- 5. Cosmology parameters -------------------------------------------
