@@ -268,8 +268,10 @@ def main():
             f.create_dataset('ic_white_noise', data=scipy.fft.irfftn(field, workers=-1))
         with h5py.File(run_dir / 'ic_delta_k.hdf5', 'w') as f:
             f.create_dataset('ic_delta_k', data=delta_k)
-    if params['SAVE_SPECTRUM']:
-        np.savetxt(run_dir / 'ic_target_pk.txt', np.column_stack((kh, pk)), header='k [h/Mpc], P(k) [(Mpc/h)^3]')
+    if params['LPTORDER'] > 0 and params['SAVE_SPECTRUM']:
+        np.savetxt(run_dir / 'ic_target_pk.txt', np.column_stack((kh, pk)),
+                   header=f"k [h/Mpc], P(k) [(Mpc/h)^3] at z = {params['REDSHIFT']}")
+
     log.info(f'The IC building took {(time.time() - start):.4f} s.')
 
 if __name__ == "__main__":

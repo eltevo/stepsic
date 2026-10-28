@@ -26,6 +26,7 @@ IC_DIR = "tests/data"
 IC_PREFIX = "tiny"
 IC_FORMAT = "hdf5"
 SAVE_WHITE_NOISE = false
+SAVE_SPECTRUM = false
 
 COSMOLOGY = "Planck2018EE+BAO+SN"
 H0 = 70.0

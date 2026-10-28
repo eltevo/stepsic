@@ -216,6 +216,7 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('IC_PREFIX', ptype=PType.STRING, label="IC name prefix"),
     Param('IC_FORMAT', ptype=PType.STRING, label="Output format", choices=('ascii', 'gadget', 'hdf5')),
     Param('SAVE_WHITE_NOISE', ptype=PType.BOOL, label="Save white noise field"),
+    Param('SAVE_SPECTRUM', ptype=PType.BOOL, label="Save target power spectrum"),
 
     # -- Stereographic projection --------------------------------------
     Param('R_3D', label="Euclidean sim. radius", h_scaled=True, h_display=True, h_precision=4),
@@ -240,7 +241,6 @@ IC_PARAMS: tuple[Param, ...] = (
     Param('HALOFIT', ptype=PType.STRING, label="Halofit version", condition=lambda P: P.get('SPECTRUM') == 'camb' and P.get('NONLINEAR', False)),
     Param('INPUT_SPECTRUM', ptype=PType.PATH, label="Input spectrum file", condition=lambda P: P.get('SPECTRUM') == 'input'),
     Param('INPUT_SPECTRUM_UNIT_L_IN_CM', label=None, condition=lambda P: P.get('SPECTRUM') == 'input'),
-    Param('SAVE_SPECTRUM', ptype=PType.BOOL, label="Save power spectrum", condition=lambda P: P.get('SPECTRUM') == 'camb'),
 
     # -- Internal unit system for validation ---------------------------
     Param('UNIT_L_IN_CM', label=None),
