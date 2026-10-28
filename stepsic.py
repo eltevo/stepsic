@@ -132,6 +132,15 @@ def main():
         log.info(f"1st vel. prefac(z={params['REDSHIFT']}) = {aHf1:.6f}")
         log.info(f"2nd vel. prefac(z={params['REDSHIFT']}) = {aHf2:.6f}")
 
+        # Meshes from coarse to fine: one per sampled particle mass for the
+        # multiresolution IC (NMESH = 0), otherwise the single NMESH mesh.
+        if params['NMESH'] == 0:
+            nres_tab, mass_tab = create_nres_mass_map(
+                params['NMESHSAMPLES'], ic_orig.mass_list, ic_orig.M_box, params['LBOX'])
+            hierarchy = [cubic_voxels(res, params['LBOX']) for res in nres_tab]
+        else:
+            hierarchy = [cubic_voxels(params['NMESH'], params['LBOX'])]
+
         # Construct the linear power spectrum and backscale it to `z`
         if params['SPECTRUM'] == 'camb':
             cosmo_camb = CAMBCosmology(
@@ -139,14 +148,11 @@ def main():
                 omk=params.get('OMK', 0.0), mnu=params['MNU'], nnu=params['NNU'],
                 YHe=params['YHE'], TCMB=params['TCMB'], zrei=params['ZREI'],
                 w0=params['W0'], wa=params['WA'], nonlinear=False)
-            if params['NMESH'] == 0:
-                nres_tab, mass_tab = create_nres_mass_map(
-                                params['NMESHSAMPLES'], ic_orig.mass_list, ic_orig.M_box, params['LBOX'], silent=True)
-                kmin=np.pi/np.max(params['LBOX']) #half the fundamental mode of the box
-                kmax=4*np.max(cubic_voxels(nres_tab[-1], params['LBOX'])[0])*np.pi/np.max(params['LBOX']) #2x the Nyquist frequency of the finest grid
-            else:
-                kmin=np.pi/np.max(params['LBOX']) #half the fundamental mode of the box
-                kmax=4*params['NMESH']*np.pi/np.max(params['LBOX']) #2x the Nyquist frequency of the grid
+            # From half the box fundamental mode to 4x the Nyquist frequency
+            # of the finest mesh, beyond its corner mode sqrt(3) pi / dk, so
+            # no mesh mode falls outside the tabulated range.
+            kmin = np.pi / np.max(params['LBOX'])
+            kmax = 4 * np.pi / hierarchy[-1][1]
             npoints=2048
             log.info("Generating the linear power spectrum using CAMB: kmin = %.4e h/Mpc, kmax = %.4e h/Mpc, npoints = %d" % (kmin, kmax, npoints))
             kh, pk, pk3 = cosmo_camb.get_spectrum( z=0, As=params['AS'], ns=params['NS'],
@@ -169,9 +175,6 @@ def main():
             # Then it calculates the displacement and velocity fields for
             # each grid, which are then interpolated on top of each other to
             # create the final IC.
-            nres_tab, mass_tab = create_nres_mass_map(
-                params['NMESHSAMPLES'], ic_orig.mass_list, ic_orig.M_box, params['LBOX'])
-            hierarchy = [cubic_voxels(res, params['LBOX']) for res in nres_tab]
             displacement, velocity = multiresolution_lpt(
                 ic_orig.pos, ic_orig.mass, mass_tab, hierarchy,
                 density_samples(kh, pk, hierarchy, params),
@@ -196,7 +199,7 @@ def main():
             # generate a single IC with a grid of the specified resolution.
             # This is useful for testing purposes or for generating ICs with
             # a specific resolution.
-            nvox, dk = cubic_voxels(params['NMESH'], params['LBOX'])
+            nvox, dk = hierarchy[0]
             # White noise field for complete reproducibility
             field = white_noise(nvox=nvox, seed=params['SEED'], dtype=params['DTYPE'])
             delta_k = generate_delta_k(kh, pk, nvox, dk, field=field, paired=params['PAIRED'], fixed=params['FIXED'], dtype=params['DTYPE'])

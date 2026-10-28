@@ -105,8 +105,7 @@ def create_nres_mass_map(
         n_grid_samples: int,
         mass_list: RealField,
         M_box: float,
-        boxsize: FloatVec3,
-        silent=False
+        boxsize: FloatVec3
 ) -> tuple[RealField, RealField]:
     """
     Map ascending particle masses to a coarse-to-fine mesh hierarchy.
@@ -158,8 +157,7 @@ def create_nres_mass_map(
     nvox = np.zeros((n_grid_samples, 3), dtype=int)
     for i in range(n_grid_samples):
         nvox[i], dk = cubic_voxels(nres_tab[i], boxsize)
-    if not silent:
-        print(tabulate([*zip(nvox[:,0], nvox[:,1], nvox[:,2], mass_tab)],
+    print(tabulate([*zip(nvox[:,0], nvox[:,1], nvox[:,2], mass_tab)],
                    headers=['Resolution_x', 'Resolution_y', 'Resolution_z', 'Mass [1e11 Msol/h]'],
                    floatfmt=('.0f', '.0f', '.0f', '.6f')))
     return nres_tab, mass_tab
