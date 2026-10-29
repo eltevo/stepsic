@@ -234,7 +234,11 @@ def measure(work, inputs, count):
     estimate, lower, upper = simultaneous_intervals(
         seed_s, nbootstrap=BOOTSTRAP_RESAMPLES, seed=BOOTSTRAP_SEED,
         confidence=SIMULTANEOUS_CONFIDENCE)
-    result = dict(seed_component_s_mpc_h2=seed_components, seed_s_mpc_h2=seed_s,
+    # Change of S between adjacent boxes: mean and standard error over seeds.
+    seed_change = np.diff(seed_s, axis=1)
+    result = dict(s_change_mpc_h2=seed_change.mean(axis=0),
+                  s_change_error_mpc_h2=seed_change.std(axis=0, ddof=1) / np.sqrt(len(seeds)),
+                  seed_component_s_mpc_h2=seed_components, seed_s_mpc_h2=seed_s,
                   rms_mpc_h=np.sqrt(seed_s.mean(axis=0)), change_percent=estimate,
                   lower_percent=lower, upper_percent=upper,
                   component_change_percent=rms_changes(seed_components.mean(axis=0)),

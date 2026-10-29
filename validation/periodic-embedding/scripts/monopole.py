@@ -320,9 +320,21 @@ def measure(geometry, spec, alphas, seeds, growth):
                 f'{t:g}:{m:.3f}/{p:.3f}' for t, m, p in zip(angles[family], ratio, rho[offset:offset + n]))
             offset += n
         print(line, flush=True)
+        # RMS over the realizations with standard errors from the fourth
+        # moments, the off-diagonal share of the traceless strain, and the
+        # largest boundary-minus-direct differences in units of the prediction.
+        count = len(seeds)
+        strain_rms = np.sqrt(np.mean(total))
+        share = np.mean(offdiagonal) / np.mean(total)
         result.update({f'{geometry}_a{alpha}_{key}': value for key, value in dict(
             flux=flux, direct=direct, predicted=predicted, mesh=nvox, cell_mpc_h=cell,
-            boundary_points=len(positions), strain=strain, strain_direct=strain_direct, strain_predicted_variance=strain_predicted).items()})
+            boundary_points=len(positions), strain=strain, strain_direct=strain_direct, strain_predicted_variance=strain_predicted,
+            rms=rms, rms_error=np.sqrt(np.mean((flux**2 - rms**2)**2) / count) / (2 * rms),
+            strain_rms=strain_rms, strain_rms_predicted=scale,
+            strain_rms_error=np.sqrt(np.mean((total - strain_rms**2)**2) / count) / (2 * strain_rms),
+            offdiagonal_share=share, offdiagonal_share_predicted=predicted_offdiagonal / strain_predicted.sum(),
+            offdiagonal_share_error=np.sqrt(np.mean((offdiagonal - share * total)**2) / count) / np.mean(total),
+            direct_difference=np.max(abs(flux - direct)) / predicted, strain_direct_difference=gap.max()).items()})
         offset = 0
         for family in families:
             n = len(angles[family])
@@ -339,6 +351,9 @@ def measure(geometry, spec, alphas, seeds, growth):
     result[f'{geometry}_radius_mpc_h'] = radius
     diagonal, off = ((4 / 45, 1 / 15) if dimension == 3 else (1 / 8, 1 / 8))
     result[f'{geometry}_strain_continuum_variance'] = variance * np.where(np.eye(dimension, dtype=bool), diagonal, off)
+    continuum_strain = result[f'{geometry}_strain_continuum_variance']
+    result[f'{geometry}_strain_rms_continuum'] = np.sqrt(continuum_strain.sum())
+    result[f'{geometry}_offdiagonal_share_continuum'] = 1 - np.trace(continuum_strain) / continuum_strain.sum()
     nyquist = np.pi / box(spec, 1)[1]
     result[f'{geometry}_opposite_continuum'] = continuum_correlation(geometry, spec, spline, kmin, nyquist)
     print(f'{geometry} continuum: {result[f"{geometry}_continuum"]:.4e}, '

@@ -67,6 +67,12 @@ KMIN = 1e-5
 KMAX = 50.
 FILTER_FLOOR = 1e-12
 PAIR_PADDINGS = (1, 2, 3)
+# The region of high resolution holds the particles at most this many times
+# heavier than the lightest.
+HIGH_RESOLUTION_MASS_RATIO = 8.
+# Correlation of opposite boundary points that marks a direction as tied to
+# its periodic image.
+OPPOSITE_THRESHOLD = .1
 TABLE_TARGETS = (10., 50., 100., 200.)
 THETAS = (0., 5., 10., 15., 22.5, 30., 45.)
 BODY_DIAGONAL_DEGREES = 54.7356103172
@@ -329,8 +335,20 @@ def main():
         result[f'{geometry}_axis_sqrt_s_parallel'] = np.array(sqrt_s_parallel)
         result[f'{geometry}_axis_sqrt_s_parallel_reference'] = np.sqrt(
             2. * (parallel_reference(np.zeros(1))[0] - parallel_reference(s)))
+        one = np.flatnonzero(paddings == 1)[0]
         for family, values in correlation.items():
             result[f'{geometry}_opposite_{family}_correlation'] = np.array(values)
+            # Angle from a box axis at which the alpha = 1 correlation falls to
+            # OPPOSITE_THRESHOLD, linear between the sampled angles, and the
+            # share of the boundary within that angle of an axis: six caps of
+            # the sphere, four sectors of the lateral surface of the cylinder.
+            degrees, value = result[f'{geometry}_opposite_{family}_degrees'], values[one]
+            i = np.flatnonzero(value < OPPOSITE_THRESHOLD)[0]
+            angle = degrees[i - 1] + (degrees[i] - degrees[i - 1]) * (
+                (value[i - 1] - OPPOSITE_THRESHOLD) / (value[i - 1] - value[i]))
+            share = 4 * np.radians(angle) / np.pi if cylinder else 3 * (1 - np.cos(np.radians(angle)))
+            result[f'{geometry}_opposite_{family}_threshold_degrees'] = angle
+            result[f'{geometry}_opposite_{family}_threshold_share'] = share
         result[f'{geometry}_opposite_correlation_reference'] = (
             reference(np.array([spec['diameter']]))[0] / c0_reference)
         if with_pairs:
@@ -350,6 +368,19 @@ def main():
                 result[f'{key}_pair_s'] = np.array(pair_s[region]).reshape(len(pair_paddings), len(counts))
                 result[f'{key}_pair_s_reference'] = pair_structure(
                     reference_at, c0_reference, inputs[f'{geometry}_q_mpc_h'], pair_data[f'{key}_pairs'], counts)
+            # Largest |sigma_12 - reference| over the direction cuts at the
+            # separations between particles of the region of high resolution.
+            q, masses = inputs[f'{geometry}_q_mpc_h'], inputs[f'{geometry}_masses']
+            distance = np.linalg.norm(q[:, :2] if cylinder else q, axis=1)
+            radius = distance[masses <= HIGH_RESOLUTION_MASS_RATIO * masses.min()].max()
+            difference = np.zeros(len(paddings))
+            for name in DIRECTIONS[geometry]:
+                inside = result[f'{geometry}_{name}_separation_mpc_h'] <= 2 * radius
+                deviation = (result[f'{geometry}_{name}_sqrt_s'][:, inside]
+                             - result[f'{geometry}_{name}_sqrt_s_reference'][inside])
+                difference = np.maximum(difference, np.abs(deviation).max(axis=1))
+            result[f'{geometry}_high_resolution_radius_mpc_h'] = radius
+            result[f'{geometry}_high_resolution_difference_mpc_h'] = difference
     atomic_savez(args.output, **result)
 
     for geometry, spec in domains.items():
