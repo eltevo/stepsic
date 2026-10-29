@@ -219,8 +219,8 @@ ActivePartFracForPMinsteadOfEwald 0.05
 DesNumNgb                       64
 MaxNumNgbDeviation              1
 
-UnitLength_in_cm                3.085678e24
-UnitMass_in_g                   1.989e44
+UnitLength_in_cm                3.085677581491367e24
+UnitMass_in_g                   1.9884098706980508e44
 UnitVelocity_in_cm_per_s        1.0e5
 GravityConstantInternal         0
 
