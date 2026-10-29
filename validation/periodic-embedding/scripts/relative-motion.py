@@ -100,9 +100,11 @@ def parameters(config, work):
 
 def load_glass(config, params):
     data = CosmoData.load_snapshot(Path(config['INPUT_GLASS']))
-    # These StePS glasses store comoving Mpc. Convert units without deforming the load.
-    data.pos = np.asarray(data.pos, dtype=np.float64) * params['H']
+    # The stretch from the header radius to R_3D also takes the comoving Mpc
+    # of these StePS glasses to Mpc/h.
+    data.pos = np.asarray(data.pos, dtype=np.float64)
     data.mass = np.asarray(data.mass, dtype=np.float64)
+    data.rescale_snapshot_size(params)
     data.rescale_snapshot_mass(params)
     data.center_snapshot(params)
     return data

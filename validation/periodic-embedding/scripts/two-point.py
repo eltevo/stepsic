@@ -234,7 +234,7 @@ def main():
     parser.add_argument('--spherical-radius-mpc', type=float, required=True)
     parser.add_argument('--cylindrical-radius-mpc', type=float, required=True)
     parser.add_argument('--cylindrical-period-mpc', type=float, required=True)
-    parser.add_argument('--spherical-cells', type=int, default=288,
+    parser.add_argument('--spherical-cells', type=int, default=360,
                         help='cells across the sphere diameter')
     parser.add_argument('--cylindrical-cells', type=int, default=48,
                         help='cells along the axial period')

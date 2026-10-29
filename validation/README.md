@@ -98,7 +98,7 @@ DIRECT_REFERENCE_CYLINDRICAL_RADIUS=750 \
 bash validation/spherical-ic/run.sh --size=medium --step=7
 ```
 
-`periodic-embedding` adds eight steps. They compare boxes one, two and three domain diameters wide with the infinite universe, for the sphere and the cylinder of the two glasses.
+`periodic-embedding` adds eight steps. They compare boxes one, two and three domain diameters wide with the infinite universe, for the sphere and the cylinder of the two glasses, both stretched to the radius `RELATIVE_MOTION_SPHERICAL_RADIUS` = `RELATIVE_MOTION_CYLINDRICAL_RADIUS` = 750 Mpc.
 
 - `two_point` sums over the Fourier modes of each box, without random fields, to get the RMS relative displacement of two points as a function of their separation, and the correlation of the displacements at opposite points of the boundary. `monopole` generates 200 2LPT realizations in each box and measures, on the boundary of the domain, its mean density contrast, its mean strain and the same opposite-point correlation, next to their predictions from the modes. `plot_two_point` draws both (`output/embedding-two-point.pdf`).
 - `glass_prepare`, `glass_run`, `glass_measure` and `plot_relative_motion` displace the complete glasses in each box and show by how many percent the RMS relative displacement of particle pairs changes with box width, with the change expected from the modes drawn on the same axes (`output/supplementary/embedding-relative-motion.pdf`). Twenty seeds scatter by more than the expected changes, so this figure shows that nothing else changes.
