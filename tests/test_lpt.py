@@ -40,8 +40,8 @@ def test_lpt1__particle_density_reproduces_input_modes(tiny_chunks) -> None:
     Continuity gives delta = -div(Psi) at first order, so the Eulerian
     density of the Zel'dovich particles must equal the input delta mode
     by mode, up to terms of relative size delta_rms ~ 1e-4. Sign, gradient
-    axis, Poisson normalisation, or registration of the particle lattice
-    with the FFT mesh all break this identity at O(1).
+    axis, Poisson normalisation, or an error in where the particles are
+    read on the FFT mesh all break this identity at O(1).
     """
     kh = np.geomspace(1e-3, 1e2, 64)
     delta_k = generate_delta_k(kh, 1e-8 / kh, (N, N, N), CELL, seed=42)
@@ -98,7 +98,8 @@ def test_lpt1__off_grid_particles_receive_their_own_displacement(
     and with unit amplitude once `compensate` divides that window out. A
     kernel centred off the node hands every particle the displacement of a
     point displaced by a fraction of this mesh's cell; meshes of different
-    cell size then disagree, which breaks multiresolution registration.
+    cell size then disagree, and the origin shift no longer gives the
+    multiresolution levels a common origin.
     """
     amplitude = 0.1
     q = _lattice()

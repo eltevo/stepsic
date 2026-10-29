@@ -16,8 +16,8 @@ adjacent-level difference with a mode-sum prediction:
 * the covariance of the shared modes is the position average of the product
   of the two levels' CIC transfers.
 
-A control evaluates both levels at the undisplaced particle position, without
-the production origin registration. The fields use 1LPT and fixed amplitudes.
+A control evaluates both levels at the particle position q, without the
+production origin shift. The fields use 1LPT and fixed amplitudes.
 """
 
 import argparse
@@ -39,10 +39,10 @@ def cic_transfer(k, cell, u):
     return (1 - u) * np.exp(-1j * k * u * cell) + u * np.exp(1j * k * (1 - u) * cell)
 
 
-def cross_transfer(k, fine, coarse, extent, registered, samples=200_000):
+def cross_transfer(k, fine, coarse, extent, shifted, samples=200_000):
     """Position average of the fine times conjugate coarse CIC transfers."""
     position = (np.arange(samples) + .5) / samples * extent
-    if registered:
+    if shifted:
         u_fine, u_coarse, phase = position / fine % 1, position / coarse % 1, 1.
     else:
         # Each level's first cell center lies at -L/2 + cell/2.
@@ -79,11 +79,11 @@ def predicted_difference(meshes, cells, spline):
     for coarse in range(len(cells) - 1):
         fine = coarse + 1
         extent = meshes[coarse] * cells[coarse]
-        for registered in (True, False):
-            factors = [cross_transfer(mode_axes(n, cells[coarse])[0], cells[fine], cells[coarse], length, registered)
+        for shifted in (True, False):
+            factors = [cross_transfer(mode_axes(n, cells[coarse])[0], cells[fine], cells[coarse], length, shifted)
                        for n, length in zip(meshes[coarse], extent)]
             covariance = mode_sum(meshes[coarse], cells[coarse], spline, factors)
-            result[coarse, registered] = variance[fine] + variance[coarse] - 2 * covariance
+            result[coarse, shifted] = variance[fine] + variance[coarse] - 2 * covariance
     return result
 
 
@@ -101,26 +101,26 @@ def measure(inputs, geometry, seeds):
         fields = density_samples(k, power, hierarchy, dict(SEED=int(seed), DTYPE=np.float64, PAIRED=False, FIXED=True))
         level = {}
         for j, ((mesh, cell), delta_k) in enumerate(zip(hierarchy, fields)):
-            # Production evaluates level j at q + (cell - finest)/2 (the origin registration).
-            for registered, shift in ((True, (cell - finest) / 2), (False, 0.)):
+            # Production evaluates level j at q + (cell - finest)/2 (the origin shift).
+            for shifted, shift in ((True, (cell - finest) / 2), (False, 0.)):
                 x = q + shift
                 displaced, _ = lpt1(x.copy(), delta_k, mesh, cell, g1=g1, aHf1=aHf1, method='cic')
-                level[j, registered] = displaced - x
-        for coarse, registered in predicted:
-            difference = level[coarse + 1, registered] - level[coarse, registered]
-            measured[coarse, registered].append(np.mean(difference**2, axis=0))
+                level[j, shifted] = displaced - x
+        for coarse, shifted in predicted:
+            difference = level[coarse + 1, shifted] - level[coarse, shifted]
+            measured[coarse, shifted].append(np.mean(difference**2, axis=0))
         print(f'{geometry} seed {seed}: done', flush=True)
 
     result = {}
-    for (coarse, registered), prediction in predicted.items():
-        values = np.array(measured[coarse, registered]).sum(axis=1)
+    for (coarse, shifted), prediction in predicted.items():
+        values = np.array(measured[coarse, shifted]).sum(axis=1)
         mean, error = values.mean(), values.std(ddof=1) / np.sqrt(len(values))
-        label = 'registered' if registered else 'unregistered'
+        label = 'shifted' if shifted else 'unshifted'
         print(f'{geometry} cells {cells[coarse]:.2f} -> {cells[coarse + 1]:.2f} {label}: '
               f'rms difference predicted {np.sqrt(prediction.sum()):.5f}, measured {np.sqrt(mean):.5f} '
               f'(variance ratio {mean / prediction.sum():.4f} +/- {error / prediction.sum():.4f})', flush=True)
         result[f'{geometry}_pair{coarse}_{label}_predicted'] = prediction
-        result[f'{geometry}_pair{coarse}_{label}_measured'] = np.array(measured[coarse, registered])
+        result[f'{geometry}_pair{coarse}_{label}_measured'] = np.array(measured[coarse, shifted])
     result[f'{geometry}_cells_mpc_h'] = cells
     result[f'{geometry}_meshes'] = meshes
     return result

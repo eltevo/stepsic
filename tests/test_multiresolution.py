@@ -14,8 +14,8 @@ def test_multiresolution_lpt__aligns_levels_and_blends_linearly_in_mass(tiny_chu
     Both levels draw the same white-noise modes, and the spectrum has no
     power at |k| >= 4 k_f, so the 8^3 and 16^3 meshes represent the same
     continuous field. The particles sit on even-indexed voxel centres of the
-    finest mesh, which are nodes of both meshes once each mesh's FFT origin
-    is registered on the finest voxel centre; CIC then reads exact node
+    finest mesh, which are nodes of both meshes once the origin shift puts
+    each mesh's FFT origin on the finest voxel centre; CIC then reads exact node
     values, so a particle must get the same displacement from either level.
     A particle's mass selects the levels by linear interpolation on the mass
     table (constant beyond its ends).

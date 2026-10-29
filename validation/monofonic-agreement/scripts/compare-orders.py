@@ -122,7 +122,7 @@ def main():
         meta_box_mpc_h=np.float64(box),
         meta_redshift=np.float64(args.redshift),
         meta_origin_offsets_cells=np.array(list(offsets.values())),
-        meta_registration=np.array(
+        meta_origins=np.array(
             'same white-noise lattice indices; '
             'coordinate origins differ by half a cell'
         ),

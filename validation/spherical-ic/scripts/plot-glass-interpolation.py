@@ -11,7 +11,7 @@ lines give the size of the second-order term relative to the displacement.
 Panel (b) shows the RMS difference between the displacements that two
 adjacent multiresolution levels give the same particle, from
 periodic-embedding/scripts/mixing-variance.py, against the cell of the
-coarser level, with and without the origin registration. Symbols are means
+coarser level, with and without the origin shift. Symbols are means
 over the seeds with their standard errors; lines are the mode sums.
 
 The strip under each panel is the ratio of measurement to prediction.
@@ -30,8 +30,8 @@ from validation._common.plotting import atomic_savefig, setup_matplotlib
 MARKERS = {'spherical': 'o', 'cylindrical': 's'}
 NAMES = {'spherical': 'Sphere', 'cylindrical': 'Cylinder'}
 MESH_COLORS = {128: '#000000', 256: '#0072B2'}
-REGISTRATION = {'registered': ('#009E73', 'with registration'),
-                'unregistered': ('#D55E00', 'without registration')}
+SHIFT = {'shifted': ('#009E73', 'with shift'),
+         'unshifted': ('#D55E00', 'without shift')}
 
 
 def relative_rms(case, use=slice(None)):
@@ -70,14 +70,14 @@ def plot_fixed_mesh(top, strip, cases):
 def plot_levels(top, strip, mixing):
     for geometry, marker in MARKERS.items():
         cells = mixing[f'{geometry}_cells_mpc_h']
-        for label, (color, _) in REGISTRATION.items():
+        for label, (color, _) in SHIFT.items():
             predicted = np.array([mixing[f'{geometry}_pair{pair}_{label}_predicted'].sum()
                                   for pair in range(len(cells) - 1)])
             samples = np.array([mixing[f'{geometry}_pair{pair}_{label}_measured'].sum(axis=1)
                                 for pair in range(len(cells) - 1)])
             mean = samples.mean(axis=1)
             error = samples.std(axis=1, ddof=1) / np.sqrt(samples.shape[1])
-            fill = color if label == 'registered' else 'white'
+            fill = color if label == 'shifted' else 'white'
             style = dict(color=color, marker=marker, ms=3.5, mfc=fill, lw=.8, capsize=1.5, ls='none')
             top.plot(cells[:-1], np.sqrt(predicted), color=color, lw=1.1)
             top.errorbar(cells[:-1], np.sqrt(mean), yerr=error / (2 * np.sqrt(mean)), **style)
@@ -88,8 +88,8 @@ def plot_levels(top, strip, mixing):
     top.set_yticks((.05, .1, .2), labels=('0.05', '0.1', '0.2'), minor=False)
     top.tick_params(which='minor', labelleft=False, labelbottom=False)
     strip.tick_params(which='minor', labelbottom=False)
-    strip.set_xlabel(r'Cell of the coarser level [$h^{-1}\mathrm{Mpc}$]', fontsize=9)
-    handles = [Line2D([], [], color=color, lw=1.1, label=label) for color, label in REGISTRATION.values()]
+    strip.set_xlabel(r'Cell size of the coarser level [$h^{-1}\mathrm{Mpc}$]', fontsize=9)
+    handles = [Line2D([], [], color=color, lw=1.1, label=label) for color, label in SHIFT.values()]
     handles += [Line2D([], [], color='0.4', marker=MARKERS[g], ms=3.5, ls='none', label=NAMES[g]) for g in MARKERS]
     top.legend(handles=handles, fontsize=7, frameon=False, loc='lower right')
 
