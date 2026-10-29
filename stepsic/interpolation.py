@@ -84,8 +84,11 @@ class GridGeometry:
 # 
 # Define separable interpolation kernels with properties:
 # - support: number of grid points spanned by the kernel
-# - base_offset: offset from floor(grid) to the first grid point involved
-# - weights(dx): function returning interpolation weights for fractional position dx in [0, 1)
+# - floor_shift: shift added to the grid coordinate g before its floor is
+#   taken; 0.5 for odd support, so the kernel centres on the nearest node
+# - base_offset: offset from floor(g + floor_shift) to the first grid point involved
+# - weights(dx): function returning interpolation weights for the fractional
+#   position dx = g + floor_shift - floor(g + floor_shift) in [0, 1)
 #
 # You can define new kernels by subclassing `InterpolationKernel` and adding them
 # to the `KERNELS` registry.
@@ -109,6 +112,15 @@ class InterpolationKernel(ABC):
     def weights(self, dx: RealField) -> tuple[RealField, ...]:
         """Compute interpolation weights for fractional position dx in [0, 1)."""
         pass
+
+    @property
+    def floor_shift(self) -> float:
+        """Shift added to the grid coordinate before its floor is taken.
+
+        A kernel of odd support is centred on the nearest grid point, one of
+        even support on the cell that contains the position.
+        """
+        return 0.5 * (self.support % 2)
 
     @property
     def order(self) -> int:
@@ -342,7 +354,7 @@ class FieldInterpolator:
         ) -> None:
         """Accumulate interpolated values for one particle chunk into ``result``."""
         # Convert positions to fractional grid coordinates
-        g = self.geometry.pos_to_grid(x)  # (N, 3)
+        g = self.geometry.pos_to_grid(x) + self.kernel.floor_shift  # (N, 3)
         g_int = np.floor(g).astype(np.int32, copy=False)
         g_frc = (g - g_int).astype(self.dtype, copy=False)
 
@@ -459,10 +471,10 @@ class FieldDepositor:
         grid = np.zeros((ncomp, *nvox), dtype=self.dtype)
  
         # Convert positions to fractional grid coordinates
-        g = self.geometry.pos_to_grid(x)  # (N, 3)
+        g = self.geometry.pos_to_grid(x) + self.kernel.floor_shift  # (N, 3)
         g_int = np.floor(g).astype(np.int32, copy=False)
         g_frc = (g - g_int).astype(self.dtype, copy=False)
- 
+
         # Compute 1-D weights along each axis; shape (support, N)
         wx, wy, wz = (
             np.vstack(self.kernel.weights(g_frc[:, i])) for i in range(3)
