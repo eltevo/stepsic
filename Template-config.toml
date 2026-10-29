@@ -176,7 +176,7 @@ RESCALE_SIGMA8 = true  # If `true`, `AS` is rescaled so that the linear total-ma
 NONLINEAR = false    # If `true`, the non-linear corrections will be applied to the power spectrum. In cosmological IC generation, this is not a valid method, as we approximate the linear regime with LPT.
 HALOFIT = "mead2020"  # Check `camb.NonLinearModel.Halofit` for possible values.
 INPUT_SPECTRUM = "./examples/LCDM2018_input_spectrum.txt"  # Path to the file with the power spectrum. This file should be in the format of two columns: log(k) and log(P^3(k)). If `SPECTRUM` is `camb`, this file will be ignored.
-INPUT_SPECTRUM_UNIT_L_IN_CM = 3.085677581491367e24
+INPUT_SPECTRUM_UNIT_L_IN_CM = 3.085677581491367e24  # Length unit of k in `INPUT_SPECTRUM` in cm, default is 1 Mpc.
 
 # -- 6. File units -----------------------------------------------------
 #

@@ -48,6 +48,7 @@ from stepsic.particles import create_grid, create_particles, create_shell_partic
 from stepsic.lpt import log_lpt, lpt1, lpt2
 from stepsic.parameters import CosmoParameters
 from stepsic.multiresolution import create_nres_mass_map, density_samples, multiresolution_lpt
+from stepsic.units import UNIT_L
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -162,7 +163,9 @@ def main():
         elif params['SPECTRUM'] == 'input':
             # Should contain 2 rows or columns: log(k) and a scaled log(P^3(k))
             kh_log, pk3_log = np.genfromtxt(params['INPUT_SPECTRUM'])
-            kh, pk3 = np.exp(kh_log), np.exp(pk3_log)
+            # k is tabulated per INPUT_SPECTRUM_UNIT_L_IN_CM; P^3(k) is dimensionless
+            kh = np.exp(kh_log) * UNIT_L / params['INPUT_SPECTRUM_UNIT_L_IN_CM']
+            pk3 = np.exp(pk3_log)
             pk = pk3 / (kh**3/(2*np.pi**2))
 
         log.info('Calculating the displacement and velocity field...')
