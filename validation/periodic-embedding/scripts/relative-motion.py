@@ -17,7 +17,7 @@ from stepsic.multiresolution import (
     _mass_interp_weights, create_nres_mass_map, density_samples, multiresolution_lpt,
 )
 from stepsic.parameters import CosmoParameters
-from stepsic.units import UNIT_L, UNIT_M, UNIT_V
+from stepsic.units import UNIT_L, UNIT_M
 from validation._common.fields import VALIDATION_COSMOLOGY, init_cosmology
 from validation._common.evaluation import atomic_savez, load_npz
 from validation._common.displacement import (
@@ -87,7 +87,7 @@ def configuration(geometry, domain, work):
         PAIRED=False, FIXED=False, IC_FORMAT='hdf5', SAVE_WHITE_NOISE=False, SAVE_SPECTRUM=False,
         COSMOLOGY='Planck2018EE+BAO', SPECTRUM='camb', RESCALE_SIGMA8=True, NONLINEAR=False,
         UNIT_L_IN_CM=float(UNIT_L), UNIT_M_IN_G=float(UNIT_M),
-        UNIT_V_IN_KMPS=float(UNIT_V), IC_DIR=str(work.resolve()), IC_PREFIX=geometry,
+        UNIT_V_IN_KMPS=1.0, IC_DIR=str(work.resolve()), IC_PREFIX=geometry,
     )
 
 

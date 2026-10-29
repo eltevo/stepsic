@@ -74,7 +74,7 @@ WORKLOAD = {
     'NONLINEAR': False,
     'UNIT_L_IN_CM': 3.085678e24,
     'UNIT_M_IN_G': 1.989e44,
-    'UNIT_V_IN_KMPS': 20.738652969844207,
+    'UNIT_V_IN_KMPS': 1.0,
 }
 
 

@@ -124,9 +124,9 @@ def main():
         log.info(f"D2(z={params['REDSHIFT']}) = {D2:.6f}")
 
         # Bernardeau et al. 2002, eq. 99
-        # Velocity prefactors (a*H*f) should be in km/s/Mpc
-        Hz = hubble_a(params['SCALE'], params['H0'], params['OMEGA_M'], params['OMEGA_L'])
-        log.info(f'Initial Hubble parameter: {Hz} km/s/Mpc')
+        # Velocity prefactors (a*H*f) are in internal units
+        Hz = hubble_a(params['SCALE'], params['H0_INTERNAL'], params['OMEGA_M'], params['OMEGA_L'])
+        log.info(f'Initial Hubble parameter: {Hz} (internal units)')
         aHf1 = params['SCALE'] * Hz * F_omega(params['SCALE'], params['OMEGA_M'], params['OMEGA_L'])
         aHf2 = params['SCALE'] * Hz * F2_omega(params['SCALE'], params['OMEGA_M'], params['OMEGA_L'])
         log.info(f"1st vel. prefac(z={params['REDSHIFT']}) = {aHf1:.6f}")
@@ -227,13 +227,20 @@ def main():
             if not params['SAVE_WHITE_NOISE']:
                 del delta_k
 
-        # Prepare the IC for final output
-        ic.vel /= params['H']  # Convert to [km/s] in all cases
-        ic.vel /= np.sqrt(params['SCALE'])  # Gadget/StePS convention
         ic.periodic_shift(params)
 
-        if params['TYPE'] == 'glass':
-            ic.from_internal_units(params)
+    # Convert the IC from internal units to the output conventions and units
+    if params['GEOMETRY'] == 'spherical':
+        log.info('Restoring the sphere to its center of interest...')
+        ic.pos += params['COI']
+
+    if params['LPTORDER'] > 0:
+        if params['COMOVING']:
+            ic.vel /= np.sqrt(params['SCALE'])  # Gadget/StePS convention
+        else:
+            log.info('Converting the IC to proper coordinates...')
+            ic.pos *= params['SCALE']
+            ic.vel += ic.pos * Hz
 
     if not params['HINDEPENDENT']:
         log.info('Converting the IC to H0 dependent units...')
@@ -244,26 +251,20 @@ def main():
         params['R_3D'] /= params['H']
         params['D_4D'] /= params['H']
 
-    if params['GEOMETRY'] == 'spherical':
-        log.info('Restoring the sphere to its center of interest...')
-        ic.pos += params['COI']
-
-    if not params['COMOVING'] and params['LPTORDER'] > 0:
-        log.info('Converting the IC to proper coordinates...')
-        ic.pos *= params['SCALE']
-        ic.vel *= np.sqrt(params['SCALE'])
-        ic.vel += ic.pos * Hz
+    # The header describes the configured volume, in the units of the particles
+    ic.Lbox, ic.R_sim = params['LBOX'][2], params['R_3D']
+    ic.from_internal_units(params)
 
     # Save the generated files
     run_dir = ensure_run_dir(params)
     header = {
-        'BoxSize': params['LBOX'][2],
+        'BoxSize': ic.Lbox,
         'Redshift': params['REDSHIFT'],
         'Omega0': params['OMEGA_M'],
         'OmegaLambda': params['OMEGA_L'],
         'HubbleParam': params['H'],
         'dtype': params['DTYPE'],
-        'SimulationRadius': params['R_3D'],
+        'SimulationRadius': ic.R_sim,
     }
     ic.save_snapshot(path=run_dir / 'ic.hdf5', fmt=params['IC_FORMAT'], **header)
     if params['LPTORDER'] > 0 and params['SAVE_WHITE_NOISE']:

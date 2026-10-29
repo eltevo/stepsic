@@ -146,6 +146,7 @@ COSMO_PARAMS: tuple[Param, ...] = (
 
 COSMO_DERIVED: tuple[Param, ...] = (
     Param('H',        label='h',           fmt=".6f"),
+    Param('H0_INTERNAL', label='H0',       fmt=".6f", unit='(internal units)'),
     Param('RHO_CRIT', label='rho_crit',    fmt=".3e", unit='(internal units)'),
     Param('RHO_MEAN', label='rho_mean',    fmt=".3e", unit='(internal units)'),
     Param('OMMH2',    label='Omega_m h^2', fmt=".6f"),
@@ -163,7 +164,7 @@ COSMO_DERIVED: tuple[Param, ...] = (
 #  right after OMEGA_M, etc.).  Keeping a flat display list avoids
 #  contorting the validation tables just to get the log output pretty.
 _COSMO_DISPLAY_KEYS: tuple[str, ...] = (
-    'H0', 'H',
+    'H0', 'H', 'H0_INTERNAL',
     'RHO_CRIT', 'RHO_MEAN',
     'OMEGA_M', 'OMMH2',
     'OMEGA_C', 'OMCH2',
@@ -455,7 +456,8 @@ def compute_derived_cosmo(P: dict) -> None:
     """Compute derived cosmological quantities from base parameters."""
     h = P['H0'] / 100.0
     P["H"] = h
-    P["RHO_CRIT"] = 3 * (100 / UNIT_V)**2 / (8*np.pi) # h^2 as we use [U/h] internally
+    P["H0_INTERNAL"] = 100 / UNIT_V  # 100 h km/s/Mpc; h cancels as we use [U/h] internally
+    P["RHO_CRIT"] = 3 * P["H0_INTERNAL"]**2 / (8*np.pi)
     P["RHO_MEAN"] = P["OMEGA_M"] * P["RHO_CRIT"]
     P["OMMH2"] = P["OMEGA_M"] * h**2
     P["OMBH2"] = P["OMEGA_B"] * h**2
