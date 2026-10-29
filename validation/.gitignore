@@ -7,6 +7,7 @@
 **/configs/
 **/*.ipynb
 monofonic-agreement/monofonic/
+monofonic-agreement/monofonic-aliased/
 
 !_profiles/
 !_profiles/*.toml

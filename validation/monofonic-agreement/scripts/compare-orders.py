@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 '''
-Compare the first-order fields and the second-order corrections of stepsic
-and monofonIC at matched particle IDs.
+Compare the first-order fields, the second-order corrections and the total
+2LPT fields of stepsic and monofonIC at matched particle IDs.
 
 The second-order correction of each code is the difference between its 2LPT
-and 1LPT snapshots from the same white noise. The script reports the relative
-RMS residual of every field and, per wavenumber bin, the amplitude ratio and
-the cross-correlation between the two codes.
+and 1LPT snapshots from the same white noise; the total field is the sum of
+the first-order field and the correction. The script reports the relative RMS
+residual of every field and, per wavenumber bin, the amplitude ratio, the
+cross-correlation and the RMS of the difference relative to the monofonIC
+field. It also reports, for each code, the RMS second-order displacement
+relative to the RMS first-order displacement.
 
 The campaign step isolated_orders runs it on the snapshots of the 1LPT and
-2LPT runs of one mesh size.
+2LPT runs of one mesh size, and once more with the monofonIC 2LPT snapshot
+from a build with aliased convolutions.
 
 Usage
 -----
@@ -50,8 +54,14 @@ def read(path, nmesh):
     return pos, vel
 
 
+def rms_length(vectors):
+    '''Return the RMS over particles of the vector magnitude.'''
+    return np.sqrt(np.mean(np.sum(vectors**2, axis=-1)))
+
+
 def mode_statistics(first, second, mesh, box):
-    '''Bin the amplitude ratio and cross-correlation of two vector fields.'''
+    '''Bin the amplitude ratio, cross-correlation and relative difference of
+    two vector fields; the difference is relative to the second field.'''
     fields = [
         rfftn(field.reshape(mesh, mesh, mesh, 3), axes=(0, 1, 2))
         for field in (first, second)
@@ -81,10 +91,12 @@ def mode_statistics(first, second, mesh, box):
     cross = mean(np.sum((fields[0] * fields[1].conj()).real, axis=-1))
     if np.any(auto[0] <= 0) or np.any(auto[1] <= 0):
         raise ValueError('a field has no power in a wavenumber bin')
+    difference = mean(np.sum(abs(fields[0] - fields[1])**2, axis=-1))
     return (
         mean(kmag),
         np.sqrt(auto[0] / auto[1]),
         cross / np.sqrt(auto[0] * auto[1]),
+        np.sqrt(difference / auto[1]),
     )
 
 
@@ -136,16 +148,29 @@ def main():
         ),
         **provenance,
     )
-    for name, fields in (('first', linear), ('second', quadratic)):
+    total = [
+        [lin + quad for lin, quad in zip(lin_fields, quad_fields)]
+        for lin_fields, quad_fields in zip(linear, quadratic)
+    ]
+    for name, fields in (
+        ('first', linear), ('second', quadratic), ('total', total),
+    ):
         for j, field_name in enumerate(('displacement', 'velocity')):
             key = f'{name}_{field_name}'
             first, second = fields[0][j], fields[1][j]
-            k, transfer, cross = mode_statistics(first, second, mesh, box)
+            k, transfer, cross, difference = mode_statistics(
+                first, second, mesh, box,
+            )
             residual = np.sqrt(np.mean((first - second)**2) / np.mean(second**2))
             arrays[f'{key}_rms_residual'] = np.float64(residual)
             arrays[f'{key}_transfer'] = transfer
             arrays[f'{key}_cross_correlation'] = cross
+            arrays[f'{key}_relative_difference'] = difference
             print(f'{key}: raw RMS residual {residual:.8g}')
+    for code, lin, quad in zip(offsets, linear, quadratic):
+        ratio = rms_length(quad[0]) / rms_length(lin[0])
+        arrays[f'{code}_second_to_first_displacement_rms'] = np.float64(ratio)
+        print(f'{code}: second-order / first-order RMS displacement {ratio:.8g}')
     arrays['k_h_mpc'] = k
     atomic_savez(args.output, **arrays)
 

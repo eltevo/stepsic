@@ -25,10 +25,16 @@ set -euo pipefail
 #    4. compare         - measure P(k), displacement, and velocity differences
 #    5. plot            - 3-panel comparison figure
 #    6. evaluate        - checks written to result.json
-#    7. isolated_orders      - per-order amplitude ratio and correlation of the
-#                              displacement modes of the 1LPT and 2LPT runs
-#    8. plot_isolated_orders - article figure isolated-orders.pdf
-#  Steps 7-8 run only in the medium run root, from the custom runs of the
+#    7. build_monofonic_aliased - monofonIC with aliased convolutions, built
+#                                 from a copy of the prepared source
+#    8. run_monofonic_aliased   - that build on the 2LPT profiles
+#    9. isolated_orders         - per-order amplitude ratio and correlation of
+#                                 the displacement modes of the 1LPT and 2LPT
+#                                 runs, relative difference of the total
+#                                 displacement, and the same statistics for the
+#                                 aliased monofonIC second order
+#   10. plot_isolated_orders    - article figure isolated-orders.pdf
+#  Steps 7-10 run only in the medium run root, from the custom runs of the
 #  profiles monofonic-{64,128,256}-lpt{1,2} (ISOLATED_NMESH); a run of any
 #  other profile skips them.
 #
@@ -82,7 +88,7 @@ if [[ "${VLIB_SIZE}" == medium && -n "${ISOLATED_NMESH}" ]]; then
     ISOLATED_ORDERS=1
 fi
 vlib::declare_steps run_stepsic build_monofonic run_monofonic compare plot evaluate \
-    isolated_orders plot_isolated_orders
+    build_monofonic_aliased run_monofonic_aliased isolated_orders plot_isolated_orders
 vlib::manifest_implementation run_stepsic \
     "${BASEDIR}/scripts/export-stepsic-pk.py"
 vlib::manifest_implementation build_monofonic \
@@ -117,6 +123,10 @@ if (( ISOLATED_ORDERS )); then
                 "$(_isolated_run "${_n}" "${_order}")/cache/stepsic/ic.hdf5" \
                 "$(_isolated_run "${_n}" "${_order}")/cache/monofonic/monofonic_ics.hdf5"
         done
+        vlib::manifest_input run_monofonic_aliased \
+            "$(_isolated_run "${_n}" 2)/config/generated/monofonic.conf" \
+            "$(_isolated_run "${_n}" 2)/cache/stepsic/camb_transfer.dat" \
+            "$(_isolated_run "${_n}" 2)/cache/stepsic/ic.hdf5"
     done
 fi
 
@@ -150,6 +160,13 @@ MONOFONIC_DIR="${MONOFONIC_DIR:-${BASEDIR}/monofonic}"
 MONOFONIC_BUILD="${MONOFONIC_BUILD:-${MONOFONIC_DIR}/build}"
 MONOFONIC_BIN="${MONOFONIC_BUILD}/monofonIC"
 vlib::manifest_implementation run_monofonic "${MONOFONIC_BIN}"
+
+# CMake writes include/cmake_config.hh into the source tree, so the build with
+# aliased convolutions works on its own copy of the prepared source.
+MONOFONIC_ALIASED_DIR="${BASEDIR}/monofonic-aliased"
+MONOFONIC_ALIASED_BUILD="${MONOFONIC_ALIASED_DIR}/build"
+MONOFONIC_ALIASED_BIN="${MONOFONIC_ALIASED_BUILD}/monofonIC"
+vlib::manifest_implementation run_monofonic_aliased "${MONOFONIC_ALIASED_BIN}"
 
 # Stable paths for outputs.
 STEPSIC_TOML="${CONFIGS_DIR}/stepsic_monofonic.toml"
@@ -209,6 +226,51 @@ _ensure_monofonic_env() {
         cmake compilers openmpi "fftw=*=mpi_openmpi_*" \
         gsl "hdf5=*=mpi_openmpi_*" pkg-config
     echo "  -> ${MONOFONIC_ENV} created."
+}
+
+# Configure and compile monofonIC from source tree $1 in build directory $2;
+# further arguments go to CMake.
+_build_monofonic() {
+    local source_dir="${1}" build_dir="${2}"
+    shift 2
+
+    echo "  Configuring with CMake..."
+    rm -rf "${build_dir}"
+    mkdir -p "${build_dir}"
+    local mono_prefix
+    mono_prefix="$(vlib::run_shell_in_env "${MONOFONIC_ENV}" 'echo "${CONDA_PREFIX}"')"
+
+    vlib::run_in_env "${MONOFONIC_ENV}" cmake \
+        -S "${source_dir}" \
+        -B "${build_dir}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_PREFIX_PATH="${mono_prefix}" \
+        -DENABLE_PANPHASIA=OFF \
+        -DENABLE_CLASS=ON \
+        -DBUILD_TESTING=OFF \
+        "$@"
+
+    echo "  Compiling..."
+    vlib::run_in_env "${MONOFONIC_ENV}" cmake \
+        --build "${build_dir}" \
+        --parallel "$(nproc)"
+}
+
+# Compare the 1LPT and 2LPT runs of mesh size $1 order by order, with the
+# monofonIC 2LPT snapshot $2; the archive goes to $3.
+_compare_orders() {
+    local one two
+    one="$(_isolated_run "${1}" 1)/cache"
+    two="$(_isolated_run "${1}" 2)/cache"
+    vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/compare-orders.py" \
+        --stepsic-one "${one}/stepsic/ic.hdf5" \
+        --stepsic-two "${two}/stepsic/ic.hdf5" \
+        --monofonic-one "${one}/monofonic/monofonic_ics.hdf5" \
+        --monofonic-two "${2}" \
+        --nmesh "${1}" \
+        --box-mpc-h "${LBOX}" \
+        --redshift "${Z_INIT}" \
+        --output "${3}"
 }
 
 # ============================================================================
@@ -285,25 +347,7 @@ elif vlib::step_check "build_monofonic" "${MONOFONIC_BIN}"; then
 
     _prepare_monofonic_source
     _ensure_monofonic_env
-
-    echo "  Configuring with CMake..."
-    rm -rf "${MONOFONIC_BUILD}"
-    mkdir -p "${MONOFONIC_BUILD}"
-    _mono_prefix="$(vlib::run_shell_in_env "${MONOFONIC_ENV}" 'echo "${CONDA_PREFIX}"')"
-
-    vlib::run_in_env "${MONOFONIC_ENV}" cmake \
-        -S "${MONOFONIC_DIR}" \
-        -B "${MONOFONIC_BUILD}" \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_PREFIX_PATH="${_mono_prefix}" \
-        -DENABLE_PANPHASIA=OFF \
-        -DENABLE_CLASS=ON \
-        -DBUILD_TESTING=OFF
-
-    echo "  Compiling..."
-    vlib::run_in_env "${MONOFONIC_ENV}" cmake \
-        --build "${MONOFONIC_BUILD}" \
-        --parallel "$(nproc)"
+    _build_monofonic "${MONOFONIC_DIR}" "${MONOFONIC_BUILD}"
 
     if [[ ! -f "${MONOFONIC_BIN}" ]]; then
         echo "ERROR: monofonIC binary not found after build: ${MONOFONIC_BIN}" >&2
@@ -456,28 +500,86 @@ if vlib::step_check "evaluate" "${OUTPUT}/result.json"; then
         --output "${OUTPUT}/result.json"
     vlib::step_done "evaluate"
 fi
-# -- Steps 7-8: isolated orders (medium run root only) -----------------------
+# -- Steps 7-10: isolated orders (medium run root only) ----------------------
 ISOLATED_ARCHIVES=()
+ALIASED_ARCHIVES=()
+ALIASED_ICS=()
 if (( ISOLATED_ORDERS )); then
     for _n in ${ISOLATED_NMESH}; do
         ISOLATED_ARCHIVES+=("${VLIB_CACHE_DIR}/isolated-orders-${_n}.npz")
+        ALIASED_ARCHIVES+=("${VLIB_CACHE_DIR}/isolated-orders-aliased-${_n}.npz")
+        ALIASED_ICS+=("${VLIB_CACHE_DIR}/monofonic-aliased-${_n}/monofonic_ics.hdf5")
     done
-    if vlib::step_check "isolated_orders" "${ISOLATED_ARCHIVES[@]}"; then
+
+    # -- Step 7: build_monofonic_aliased -------------------------------------
+    if vlib::step_check "build_monofonic_aliased" "${MONOFONIC_ALIASED_BIN}"; then
+        _ensure_monofonic_env
+        echo "  Copying the prepared source: ${MONOFONIC_DIR}"
+        rm -rf "${MONOFONIC_ALIASED_DIR}"
+        mkdir -p "${MONOFONIC_ALIASED_DIR}"
+        tar -C "${MONOFONIC_DIR}" --anchored \
+            --exclude=./build --exclude=./include/cmake_config.hh -cf - . \
+            | tar -C "${MONOFONIC_ALIASED_DIR}" -xf -
+
+        # The production build fetched CLASS; reuse it so both builds
+        # compile identical CLASS code.
+        _build_monofonic "${MONOFONIC_ALIASED_DIR}" "${MONOFONIC_ALIASED_BUILD}" \
+            -DCONVOLVER_TYPE=NAIVE \
+            -DFETCHCONTENT_SOURCE_DIR_CLASS="${MONOFONIC_BUILD}/_deps/class-src"
+
+        if [[ ! -f "${MONOFONIC_ALIASED_BIN}" ]]; then
+            echo "ERROR: monofonIC binary not found after build: ${MONOFONIC_ALIASED_BIN}" >&2
+            exit 1
+        fi
+        if ! grep -q '^#define USE_CONVOLVER_NAIVE' \
+                "${MONOFONIC_ALIASED_DIR}/include/cmake_config.hh"; then
+            echo "ERROR: ${MONOFONIC_ALIASED_DIR} was not configured with aliased convolutions." >&2
+            exit 1
+        fi
+        echo "  -> ${MONOFONIC_ALIASED_BIN}"
+        vlib::step_done "build_monofonic_aliased"
+    fi
+
+    # -- Step 8: run_monofonic_aliased ---------------------------------------
+    # The convolver enters only the second-order term, so the 1LPT runs are
+    # not repeated. A single rank writes a single file.
+    if vlib::step_check "run_monofonic_aliased" "${ALIASED_ICS[@]}"; then
+        _ensure_monofonic_env
         for _n in ${ISOLATED_NMESH}; do
-            _one="$(_isolated_run "${_n}" 1)/cache"
-            _two="$(_isolated_run "${_n}" 2)/cache"
-            vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/compare-orders.py" \
-                --stepsic-one "${_one}/stepsic/ic.hdf5" \
-                --stepsic-two "${_two}/stepsic/ic.hdf5" \
-                --monofonic-one "${_one}/monofonic/monofonic_ics.hdf5" \
-                --monofonic-two "${_two}/monofonic/monofonic_ics.hdf5" \
-                --nmesh "${_n}" \
-                --box-mpc-h "${LBOX}" \
-                --redshift "${Z_INIT}" \
-                --output "${VLIB_CACHE_DIR}/isolated-orders-${_n}.npz"
+            _dir="${VLIB_CACHE_DIR}/monofonic-aliased-${_n}"
+            vlib::clear_dir "${_dir}"
+            sed "s|^filename[[:space:]]*=.*|filename        = ${_dir}/monofonic_ics.hdf5|" \
+                "$(_isolated_run "${_n}" 2)/config/generated/monofonic.conf" \
+                | vlib::atomic_text "${_dir}/monofonic.conf"
+            echo "  Config: ${_dir}/monofonic.conf"
+            (
+                cd "${_dir}"
+                vlib::run_in_env "${MONOFONIC_ENV}" \
+                    mpirun -np 1 "${MONOFONIC_ALIASED_BIN}" monofonic.conf
+            )
+            if [[ ! -f "${_dir}/monofonic_ics.hdf5" ]]; then
+                echo "ERROR: monofonIC did not produce ${_dir}/monofonic_ics.hdf5." >&2
+                exit 1
+            fi
+        done
+        vlib::step_done "run_monofonic_aliased"
+    fi
+
+    # -- Step 9: isolated_orders ---------------------------------------------
+    if vlib::step_check "isolated_orders" \
+            "${ISOLATED_ARCHIVES[@]}" "${ALIASED_ARCHIVES[@]}"; then
+        for _n in ${ISOLATED_NMESH}; do
+            _compare_orders "${_n}" \
+                "$(_isolated_run "${_n}" 2)/cache/monofonic/monofonic_ics.hdf5" \
+                "${VLIB_CACHE_DIR}/isolated-orders-${_n}.npz"
+            _compare_orders "${_n}" \
+                "${VLIB_CACHE_DIR}/monofonic-aliased-${_n}/monofonic_ics.hdf5" \
+                "${VLIB_CACHE_DIR}/isolated-orders-aliased-${_n}.npz"
         done
         vlib::step_done "isolated_orders"
     fi
+
+    # -- Step 10: plot_isolated_orders ---------------------------------------
     if vlib::step_check "plot_isolated_orders" "${OUTPUT}/isolated-orders.pdf"; then
         vlib::run_python "${STEPSIC_ENV}" "${BASEDIR}/scripts/plot-isolated-orders.py" \
             "${ISOLATED_ARCHIVES[@]}" \
@@ -485,8 +587,10 @@ if (( ISOLATED_ORDERS )); then
         vlib::step_done "plot_isolated_orders"
     fi
 else
-    vlib::step_skip "isolated_orders" "medium run root with ISOLATED_NMESH only"
-    vlib::step_skip "plot_isolated_orders" "medium run root with ISOLATED_NMESH only"
+    for _step in build_monofonic_aliased run_monofonic_aliased isolated_orders \
+                 plot_isolated_orders; do
+        vlib::step_skip "${_step}" "medium run root with ISOLATED_NMESH only"
+    done
 fi
 
 vlib::report_done
